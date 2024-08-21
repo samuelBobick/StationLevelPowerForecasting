@@ -12,22 +12,42 @@ from itertools import product
 
 import warnings
 # Suppress all warnings
-warnings.filterwarnings("ignore")
+# warnings.filterwarnings("ignore")
 
 
 class NeuralNet:
 
-    def __init__(self, x_dim=16, lookahead=16, alpha=0.2, input_size=22, hidden_size=64, output_size=16, num_hidden_layers=2, activation=nn.ReLU(), learning_rate=0.01, epochs=1000):
+    def __init__(self, x_dim=16, lookahead=16, alpha=2, input_size=22, hidden_size=64, output_size=16, num_hidden_layers=2, activation=nn.ReLU(), learning_rate=0.01, epochs=1000):
+        """
+        Args:
+            x_dim (int, optional): How many past timesteps ahead we want to use as inputs. Defaults to 16.
+            lookahead (int, optional): How many timesteps ahead we want to predict. Defaults to 16.
+            alpha (float, optional): . Defaults to 2.
+
+            Neural Net Parameters:
+            input_size (int, optional): Defaults to 22.
+            hidden_size (int, optional): Defaults to 64.
+            output_size (int, optional): Defaults to 16.
+            num_hidden_layers (int, optional): Defaults to 2.
+            activation (_type_, optional): Defaults to nn.ReLU().
+            learning_rate (float, optional): Defaults to 0.01.
+            epochs (int, optional): Defaults to 1000.
+        """
         self.x_dim = x_dim
-        self.lookahead = 16
-        self.alpha = 0.2
-        self.epochs = alpha
+        self.lookahead = lookahead
+        self.alpha = alpha
+        self.epochs = epochs
 
         self.ffnn = FFNN(input_size, hidden_size, output_size, num_hidden_layers, activation)
         self.criterion = nn.MSELoss()
         self.optimizer = optim.Adam(self.ffnn.parameters(), lr=learning_rate)
 
     def fit(self, train):
+        """Train self.ffnn
+
+        Args:
+            train (DataFrame): Training dataframe train with columns "power", "workday", and "time"
+        """
         X_train, y_train = self.get_X_y(train, self.lookahead)
         X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
         y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
@@ -42,6 +62,14 @@ class NeuralNet:
 
 
     def predict(self, test):
+        """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
+
+        Args:
+            test (DataFrame): test DataFrame with columns "power", "workday", and "time"
+
+        Returns:
+            tuple (float, float, list): RMSE, weighted RMSE, array of predictions
+        """
         X_test, y_test = self.get_X_y(test, self.lookahead)
         X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
         y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
@@ -55,16 +83,25 @@ class NeuralNet:
 
         return rmse, wrmse, y_pred_test
 
-    def get_X_y(self, df, lookahead):
+    def get_X_y(self, df, x_dim):
+        """
+
+        Args:
+            df (DataFrame): DataFrame with columns "power", "workday", and "time"
+            x_dim (int): How many past timesteps ahead we want to use as inputs.
+
+        Returns:
+            tuple (X - a numpy array of features, y - a numpy array of power readings)
+        """
         power = df['power'].to_numpy()
         workday = df['workday'].to_numpy()
         time = df['time'].to_numpy()
         
-        power_chunks = [power[i:i+lookahead] for i in range(0, len(power) - lookahead, lookahead)]
-        workday = [workday[i] for i in range(0, len(power) - lookahead, lookahead)]
-        time = [time[i] for i in range(0, len(power) - lookahead, lookahead)]
+        power_chunks = [power[i:i+x_dim] for i in range(0, len(power) - x_dim, x_dim)]
+        workday = [workday[i] for i in range(0, len(power) - x_dim, x_dim)]
+        time = [time[i] for i in range(0, len(power) - x_dim, x_dim)]
         
-        y = [power[i:i+lookahead] for i in range(lookahead, len(power), lookahead)]
+        y = [power[i:i+x_dim] for i in range(x_dim, len(power), x_dim)]
 
         X = pd.DataFrame(data={"power" : power_chunks, "workday" : workday, "time" : time})
         y = pd.DataFrame(data={"power" : y})
@@ -105,8 +142,6 @@ class FFNN(nn.Module):
             x = self.activation(layer(x))
         x = torch.relu(self.fc_out(x))
         return x
-    
-
 
 
 class AsymmetricRMSELoss(nn.Module):

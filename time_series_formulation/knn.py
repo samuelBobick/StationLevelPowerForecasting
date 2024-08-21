@@ -11,18 +11,35 @@ from sklearn.metrics import mean_squared_error
 
 class KNN:
 
-    def __init__(self, x_dim=16, lookahead=16, n_neighbors=90, percentile=90, alpha=2):
-            self.lookahead = lookahead
-            self.x_dim = x_dim
+    def __init__(self, x_dim=16, lookahead=16, n_neighbors=10, percentile=90, alpha=2):
+        """_summary_
 
-            self.alpha = alpha
+        Args:
+            x_dim (int, optional): How many past timesteps ahead we want to use as inputs. Defaults to 16.
+            lookahead (int, optional): How many timesteps ahead we want to predict. Defaults to 16.
+            n_neighbors (int, optional): K in the KNN algorithm. Defaults to 10.
+            percentile (int, optional): What percentile of the KNN we take. Defaults to 90.
+            alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
+        """
+        self.lookahead = lookahead
+        self.x_dim = x_dim
 
-            self.n_neighbors = n_neighbors
-            self.percentile = percentile
-            self.knn = KNeighborsRegressor(n_neighbors=n_neighbors)
+        self.alpha = alpha
+
+        self.n_neighbors = n_neighbors
+        self.percentile = percentile
+        self.knn = KNeighborsRegressor(n_neighbors=n_neighbors)
 
 
     def fit(self, train):
+        """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
+
+        Args:
+            test (DataFrame): test DataFrame with columns "power", "workday", and "time"
+
+        Returns:
+            tuple (float, float, list): RMSE, weighted RMSE, array of predictions
+        """
         X_train, y_train = self.get_X_y(train, self.lookahead)
 
         self.models = {}
@@ -41,6 +58,13 @@ class KNN:
 
 
     def predict_single(self, X):
+        """
+        Args:
+            X (iterable): One test point
+
+        Returns:
+            iterable: Forecasted power time series for the given trianing point
+        """
         distances, indices = self.knn.kneighbors(X)
         nearest_neighbors_values = self.knn.y_test[indices]
         nth_percentile_values = np.percentile(nearest_neighbors_values, self.percentile, axis=1)
@@ -49,6 +73,15 @@ class KNN:
 
 
     def predict(self, test):
+        """
+        Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
+
+        Args:
+            test (DataFrame): test DataFrame with columns "power", "workday", and "time"
+
+        Returns:
+            tuple (float, float, list): RMSE, weighted RMSE, array of predictions
+        """
         X_test, y_test = self.get_X_y(test, self.lookahead)
 
         mses = []
