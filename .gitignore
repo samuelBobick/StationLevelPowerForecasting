@@ -1,1 +1,2 @@
 data/*.csv
+time_series_formulation/__pycache__
