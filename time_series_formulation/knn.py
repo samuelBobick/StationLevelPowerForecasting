@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsRegressor
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import root_mean_squared_error
 
 
 class KNN:
@@ -30,7 +30,6 @@ class KNN:
         self.percentile = percentile
         self.knn = KNeighborsRegressor(n_neighbors=n_neighbors)
 
-
     def fit(self, train):
         """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
 
@@ -45,17 +44,16 @@ class KNN:
         self.models = {}
         for t in [0, 4, 8, 12, 16, 20]:
             for w in [0, 1]:
-                knn_regressor = PercentileKNNRegressor(n_neighbors=self.n_neighbors, percentile=self.percentile)
-                mask = (X_train['time'] == t) & (X_train['workday'] == w)
-                X_input = X_train[mask]['power']  
-                y_input = y_train[mask]['power']  
+                knn_regressor = PercentileKNNRegressor(
+                    n_neighbors=self.n_neighbors, percentile=self.percentile
+                )
+                mask = (X_train["time"] == t) & (X_train["workday"] == w)
+                X_input = X_train[mask]["power"]
+                y_input = y_train[mask]["power"]
                 X_input = np.array([i for i in X_input])
                 y_input = np.array([i for i in y_input])
                 knn_regressor.fit(X_input, y_input)
                 self.models[(t, w)] = knn_regressor
-
-
-
 
     def predict_single(self, X):
         """
@@ -67,10 +65,10 @@ class KNN:
         """
         distances, indices = self.knn.kneighbors(X)
         nearest_neighbors_values = self.knn.y_test[indices]
-        nth_percentile_values = np.percentile(nearest_neighbors_values, self.percentile, axis=1)
+        nth_percentile_values = np.percentile(
+            nearest_neighbors_values, self.percentile, axis=1
+        )
         return nth_percentile_values
-    
-
 
     def predict(self, test):
         """
@@ -84,47 +82,95 @@ class KNN:
         """
         X_test, y_test = self.get_X_y(test, self.lookahead)
 
-        mses = []
-        wmses = []
+        rmses = []
+        rwmses = []
 
         forecasts = []
         for index, row in X_test.iterrows():
-            forecasts.append(self.models[(row['time'], row['workday'])].predict(np.array(row['power']).reshape(1, -1)))
+            forecasts.append(
+                self.models[(row["time"], row["workday"])].predict(
+                    np.array(row["power"]).reshape(1, -1)
+                )
+            )
 
         forecast = np.array([f[0] for f in forecasts]).flatten()
-        real = np.array([a for a in y_test['power'].to_numpy()]).flatten()
+        real = np.array([a for a in y_test["power"].to_numpy()]).flatten()
 
-        mse = mean_squared_error(forecast, real)
+        rmse = root_mean_squared_error(forecast, real)
 
         weights = self.alpha ** (1 + np.sign(forecast - real))
-        wmse = mean_squared_error(forecast, real, sample_weight=weights)
+        rwmse = root_mean_squared_error(forecast, real, sample_weight=weights)
 
-        mses.append(mse)
-        wmses.append(wmse)
+        rmses.append(rmse)
+        rwmses.append(rwmse)
 
-        return mse, wmse, forecast
-
-
+        return rmse, rwmse, forecast
 
     def get_X_y(self, df, lookahead):
-        power = df['power'].to_numpy()
-        workday = df['workday'].to_numpy()
-        time = df['time'].to_numpy()
-        
-        power_chunks = [power[i:i+self.x_dim] for i in range(0, len(power) - 32, lookahead)]
-        workday = [workday[i] for i in range(0, len(power) - 32, lookahead)]
-        time = [time[i] for i in range(0, len(power) - 32, lookahead)]
-        
-        y = [power[i:i+lookahead] for i in range(32, len(power), lookahead)]
+        df = df.copy()
+        # This algorithm only works with data starting at the beginning of an interval
+        # (hour= 0 or 4 or 8 , etc.).
+        # To make sure we start at the beginning of an interval, let's just start at the
+        # beginning of a day
+        df = df[
+            df["date"]
+            >= (pd.to_datetime(df.iloc[0]["date"].date()) + pd.Timedelta(days=1))
+        ]
 
-        X = pd.DataFrame(data={"power" : power_chunks, "workday" : workday, "time" : time})
-        y = pd.DataFrame(data={"power" : y})
+        power = df["power"].to_numpy()
+        workday = df["workday"].to_numpy()
+        time = (df["date"].dt.hour + df["date"].dt.minute / 60).to_numpy()
+
+        # to make sure the last y interval can have the lookahead size, we need to compute
+        # the final possible window interval
+        final_possible_window_index = len(power) - (len(power) % lookahead)
+        power_chunks = [
+            power[i : i + self.x_dim]
+            for i in range(0, final_possible_window_index - self.x_dim, lookahead)
+        ]
+        workday = [
+            workday[i]
+            for i in range(self.x_dim, final_possible_window_index, lookahead)
+        ]
+        time = [
+            time[i] for i in range(self.x_dim, final_possible_window_index, lookahead)
+        ]
+
+        y = [
+            power[i : i + lookahead]
+            for i in range(self.x_dim, final_possible_window_index, lookahead)
+        ]
+
+        X = pd.DataFrame(data={"power": power_chunks, "workday": workday, "time": time})
+        y = pd.DataFrame(data={"power": y})
 
         X = X.reset_index()
         y = y.reset_index()
 
         return X, y
-    
+
+    def get_X_y_2(self, df, lookahead):
+        power = df["power"].to_numpy()
+        workday = df["workday"].to_numpy()
+        time = (df["date"].dt.hour + df["date"].dt.minute / 60).to_numpy()
+
+        # TODO: In the "range" the self.x_dim was intitially replaced by "32"
+        power_chunks = [
+            power[i : i + self.x_dim]
+            for i in range(0, len(power) - self.x_dim, lookahead)
+        ]
+        workday = [workday[i] for i in range(self.x_dim, len(power), lookahead)]
+        time = [time[i] for i in range(self.x_dim, len(power), lookahead)]
+
+        y = [power[i : i + lookahead] for i in range(self.x_dim, len(power), lookahead)]
+
+        X = pd.DataFrame(data={"power": power_chunks, "workday": workday, "time": time})
+        y = pd.DataFrame(data={"power": y})
+
+        X = X.reset_index()
+        y = y.reset_index()
+
+        return X, y
 
 
 class PercentileKNNRegressor:
@@ -140,7 +186,8 @@ class PercentileKNNRegressor:
         distances, indices = self.knn.kneighbors(X)
         nearest_neighbors_values = self.knn._y[indices]
 
-        nth_percentile_values = np.percentile(nearest_neighbors_values, self.percentile, axis=1)
+        nth_percentile_values = np.percentile(
+            nearest_neighbors_values, self.percentile, axis=1
+        )
 
         return nth_percentile_values
-    
