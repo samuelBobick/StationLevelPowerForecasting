@@ -1,6 +1,6 @@
-import pandas as pd
-import os
 from pathlib import Path
+
+import pandas as pd
 
 
 def read_old_data():
