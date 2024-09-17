@@ -1,9 +1,13 @@
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
 
 def visualize_forecast(
-    test_data: pd.DataFrame, forecast: pd.DataFrame, number_of_days: int
+    test_data: pd.DataFrame,
+    forecast: pd.DataFrame,
+    number_of_days: int,
+    forecast_dates: np.ndarray,
 ) -> None:
     """
     Visualize the forecasted values.
@@ -19,9 +23,11 @@ def visualize_forecast(
             x=test_data["date"], y=test_data["power"], mode="lines", name="Actual"
         )
     )
+    # the forecasted data starts at t=0 but doesn't necessarly end at the end of the test data, in case the window size wasn't good
+    forecast_dates = pd.to_datetime(forecast_dates, unit="s")
     fig.add_trace(
         go.Scatter(
-            x=test_data["date"][-len(forecast) :],
+            x=forecast_dates,
             y=forecast,
             mode="lines",
             name="Forecast",

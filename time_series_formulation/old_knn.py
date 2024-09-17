@@ -2,11 +2,9 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import root_mean_squared_error
 from sklearn.neighbors import KNeighborsRegressor
-from slrp_ev_data.feature_engineering import feature_engineering
-from slrp_ev_data.window_generator import WindowGenerator
 
 
-class KNN:
+class OldKNN:
 
     def __init__(self, x_dim=16, lookahead=16, n_neighbors=10, percentile=90, alpha=2):
         """_summary_
@@ -28,7 +26,8 @@ class KNN:
         self.knn = KNeighborsRegressor(n_neighbors=n_neighbors)
 
     def fit(self, train: pd.DataFrame):
-        """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
+        """DEPRECIATED
+        Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
 
         Args:
             test (DataFrame): test DataFrame with columns "power", "workday", and "time"
@@ -36,27 +35,24 @@ class KNN:
         Returns:
             tuple (float, float, list): RMSE, weighted RMSE, array of predictions
         """
-        X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
+        X_train, y_train = self.get_X_y(train, self.lookahead)
 
         self.models = {}
-        for t_w in range(6):
+        for t in [0, 4, 8, 12, 16, 20]:
             for w in [0, 1]:
                 knn_regressor = PercentileKNNRegressor(
                     n_neighbors=self.n_neighbors, percentile=self.percentile
                 )
-                mask = (X_train["time_window"] == t_w) & (X_train["workday"] == w)
-                X_input = (
-                    X_train[mask]
-                    .drop(
-                        [col for col in X_train.columns if not col.startswith("power")],
-                        axis=1,
-                    )
-                    .to_numpy()
-                )
-                y_input = y_train[mask].to_numpy()
+
+                mask = (X_train["time"] == t) & (X_train["workday"] == w)
+                X_input = X_train[mask]["power"]
+                y_input = y_train[mask]["power"]
+
+                X_input = np.array([i for i in X_input])
+                y_input = np.array([i for i in y_input])
 
                 knn_regressor.fit(X_input, y_input)
-                self.models[(t_w, w)] = knn_regressor
+                self.models[(t, w)] = knn_regressor
 
     def predict_single(self, X):
         """
@@ -74,7 +70,7 @@ class KNN:
         return nth_percentile_values
 
     def predict(self, test):
-        """
+        """DEPRECIATED
         Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
 
         Args:
@@ -83,24 +79,23 @@ class KNN:
         Returns:
             tuple (float, float, list): RMSE, weighted RMSE, array of predictions
         """
-        X_test, y_test, y_dates = self.get_X_y(test, return_y_date=True)  # type: ignore
+        X_test, y_test, y_dates = self.get_X_y(
+            test, self.lookahead, return_y_dates=True
+        )
 
         rmses = []
         rwmses = []
 
         forecasts = []
         for index, row in X_test.iterrows():
-            input = (
-                row.drop([col for col in row.index if not col.startswith("power")])
-                .to_numpy()
-                .reshape(1, -1)
-            )
             forecasts.append(
-                self.models[(row["time_window"], row["workday"])].predict(input)
+                self.models[(row["time"], row["workday"])].predict(
+                    np.array(row["power"]).reshape(1, -1)
+                )
             )
 
         forecast = np.array([f[0] for f in forecasts]).flatten()
-        real = y_test.to_numpy().flatten()
+        real = np.array([a for a in y_test["power"].to_numpy()]).flatten()
 
         rmse = root_mean_squared_error(forecast, real)
 
@@ -110,58 +105,11 @@ class KNN:
         rmses.append(rmse)
         rwmses.append(rwmse)
 
-        y_dates = y_dates.to_numpy().flatten()
+        forecast_dates = np.array([a for a in y_dates["time"].to_numpy()]).flatten()
 
-        return rmse, rwmse, forecast, y_dates
+        return rmse, rwmse, forecast, forecast_dates
 
-    def get_X_y(
-        self,
-        df,
-        return_y_date: bool = False,
-        overlapping_windows: bool = False,
-    ):
-        # TODO Remove when not trying to compare with old KNN
-        df = df.copy()
-        # This algorithm only works with data starting at the beginning of an interval
-        # (hour= 0 or 4 or 8 , etc.).
-        # To make sure we start at the beginning of an interval, let's just start at the
-        # beginning of a day
-        df = df[
-            df["date"]
-            >= (
-                pd.to_datetime(df.iloc[0]["date"].date())
-                + pd.Timedelta(days=1)
-                + pd.Timedelta(minutes=15)
-            )
-        ]
-        # -- TODO: Remove up to here
-        W = WindowGenerator(
-            input_width=self.x_dim,
-            label_width=self.lookahead,
-            shift=self.x_dim,
-            train_df=feature_engineering(df),
-            label_columns=["power", "date"],
-            overlapping_windows=overlapping_windows,
-            batch_size=1,
-        )
-
-        flat_inputs, flat_labels = W.flatten_dataset(
-            W.train,
-            cols_to_flatten=["power"],
-            cols_keep_last_value=["workday", "time_window"],
-            label_cols_to_flatten=["power"],
-        )
-        print(flat_inputs.shape, flat_labels.shape)
-
-        if return_y_date:
-            x_dates, y_dates = W.flatten_dataset(
-                W.train, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            )
-            return flat_inputs, flat_labels, y_dates
-        else:
-            return flat_inputs, flat_labels
-
-    def get_X_y_old(self, df, lookahead, return_y_dates: bool = False):
+    def get_X_y(self, df, lookahead, return_y_dates: bool = False):
         """DEPRECIATED"""
         df = df.copy()
         # This algorithm only works with data starting at the beginning of an interval
