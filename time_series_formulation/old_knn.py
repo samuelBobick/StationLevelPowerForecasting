@@ -116,6 +116,8 @@ class OldKNN:
         # (hour= 0 or 4 or 8 , etc.).
         # To make sure we start at the beginning of an interval, let's just start at the
         # beginning of a day
+        df = df.copy()
+        df["date"] = pd.to_datetime(df["date"], unit="s")
         df = df[
             df["date"]
             >= (

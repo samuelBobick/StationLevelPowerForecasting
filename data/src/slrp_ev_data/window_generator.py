@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import torch
+from torch.utils.data import Dataset
 
 from .feature_engineering import reverse_feature_engineering
 
@@ -19,7 +21,7 @@ class WindowGenerator:
         val_df: pd.DataFrame | None = None,
         label_columns: list[str] | None = None,
         overlapping_windows: bool = False,
-        batch_size: int = 32,
+        batch_size: int = 64,
     ):
         """_summary_
 
@@ -121,20 +123,25 @@ class WindowGenerator:
 
         return ds
 
-    def flatten_dataset(
+    def flatten_dataset_old(
         self,
         data,
         cols_to_flatten: list[str],
         cols_keep_last_value: list[str] = [],
         label_cols_to_flatten: list[str] = [],
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """For each example, flattens the 2D input data into a 1D array.
+        """DEPRECIATED - Use new function that is much faster
+        For each example, flattens the 2D input data into a 1D array.
 
 
         Args:
             data (output of WindowGenerator.make_dataset): dataset to flatten
-            cols_to_flatten (list[str]): List of column names to flatten. This will put the values of all the time steps as features
-            cols_keep_last_value (list[str], optional): List of column names that won't be flattened, but for which only the last value will be kept. Defaults to [].
+            cols_to_flatten (list[str]): List of column names to flatten. This will put the values
+                of all the time steps as features.
+            cols_keep_last_value (list[str], optional): List of column names that won't be flattened, but for which
+                only the last value will be kept. Defaults to [].
+            label_cols_to_flatten (list[str], optional): List of label column names to flatten.
+                Defaults to [].
 
         Returns:
             tuple[pd.DataFrame, pd.DataFrame]: Flattened inputs and labels
@@ -143,6 +150,8 @@ class WindowGenerator:
         >>> flat_inputs, flat_labels = w1.flatten_dataset(
         ...    w1.train, ["power"], ["date", "workday", "time_window"]
         ... )
+        In this case, you will have 1*inputs_width + 3 features for the inputs and
+        len(label_columns) * label_width
         """
         flat_inputs = []
         flat_labels = []
@@ -169,17 +178,20 @@ class WindowGenerator:
             # TODO: works only for batchsize = 1
             input_batch_item = inputs[0]
 
-            items_to_flatten = [
-                input_batch_item[:, self.column_indices[name]]
-                for name in cols_to_flatten
-            ]
+            items_to_flatten = np.concatenate(
+                [
+                    input_batch_item[:, self.column_indices[name]]
+                    for name in cols_to_flatten
+                ],
+                axis=-1,
+            )
             items_to_keep_last_value = [
                 input_batch_item[-1, self.column_indices[name]]
                 for name in cols_keep_last_value
             ]
 
             flat_inputs.append(
-                np.concatenate([*items_to_flatten, items_to_keep_last_value])
+                np.concatenate([items_to_flatten, items_to_keep_last_value])
             )
 
             ### Outputs
@@ -206,10 +218,141 @@ class WindowGenerator:
         flat_labels = pd.DataFrame(flat_labels, columns=label_column_names)
         return flat_inputs, flat_labels
 
+    def flatten_dataset(
+        self,
+        data,
+        cols_to_flatten: list[str],
+        cols_keep_last_value: list[str] = [],
+        label_cols_to_flatten: list[str] = [],
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """For each example, flattens the 2D input data into a 1D array.
+        This version is more efficient than the previous one and works with batch size > 1.
+        Use larger batch size to speed up the computation.
+
+        Args:
+            data (output of WindowGenerator.make_dataset): dataset to flatten
+            cols_to_flatten (list[str]): List of column names to flatten. This will put the values
+                of all the time steps as features.
+            cols_keep_last_value (list[str], optional): List of column names that won't be flattened, but for which
+                only the last value will be kept. Defaults to [].
+            label_cols_to_flatten (list[str], optional): List of label column names to flatten.
+                Defaults to [].
+
+        Returns:
+            tuple[pd.DataFrame, pd.DataFrame]: Flattened inputs and labels
+
+        Examples:
+        >>> flat_inputs, flat_labels = w1.flatten_dataset(
+        ...    w1.train, ["power"], ["date", "workday", "time_window"]
+        ... )
+        In this case, you will have 1*inputs_width + 3 features for the inputs and
+        len(label_columns) * label_width
+        """
+
+        flat_inputs = []
+        flat_labels = []
+
+        # Warn if not all columns are selected for flattening or keeping
+        columns_not_selected = [
+            col
+            for col in self.column_indices.keys()
+            if col not in (cols_to_flatten + cols_keep_last_value)
+        ]
+        if columns_not_selected:
+            print(
+                f"WARNING: The following columns will be dropped when flattening: {columns_not_selected}"
+            )
+        no_user_last_keep_value = False
+        if not cols_keep_last_value:
+            no_user_last_keep_value = True
+            # if the user didn't specify any columns to keep, we keep the last value of the last column
+            # so that the algorithm works. We will drop that column at the end
+            cols_keep_last_value = [list(self.column_indices.keys())[-1]]
+
+        # Precompute the indices for columns to flatten and keep last values
+        input_flatten_indices = [self.column_indices[name] for name in cols_to_flatten]
+        label_flatten_indices = [
+            self.label_columns_indices[name] for name in label_cols_to_flatten
+        ]
+        keep_last_value_indices = [
+            self.column_indices[name] for name in cols_keep_last_value
+        ]
+
+        # Process each batch in the dataset
+        for batch in data:
+            inputs, labels = batch
+
+            ### Flatten Inputs ###
+            # inputs shape: (batch_size, inputs_width, num_features)
+
+            # Gather and flatten columns across all time steps for each batch example
+            items_to_flatten = tf.gather(
+                inputs, input_flatten_indices, axis=-1
+            )  # shape: (batch_size, inputs_width, len(cols_to_flatten))
+            items_to_flatten = tf.reshape(
+                items_to_flatten, [inputs.shape[0], -1]
+            )  # Flatten across time steps per batch item
+            # shape: (batch_size, inputs_width * len(cols_to_flatten))
+
+            # Gather last value for the specified columns
+            items_to_keep_last_value = tf.gather(
+                inputs[:, -1, :], keep_last_value_indices, axis=-1
+            )  # shape: (batch_size, len(cols_keep_last_value))
+
+            # Concatenate flattened columns and the last values per example in the batch
+            flat_input = tf.concat(
+                [items_to_flatten, items_to_keep_last_value], axis=-1
+            )  # shape: (batch_size, flattened_features + len(cols_keep_last_value))
+            flat_inputs.append(
+                flat_input.numpy()
+            )  # Convert tensor to NumPy for DataFrame
+
+            ### Flatten Labels ###
+            # labels shape: (batch_size, time_steps, num_labels)
+
+            # Gather and flatten label columns across all time steps for each batch example
+            label_items_to_flatten = tf.gather(
+                labels, label_flatten_indices, axis=-1
+            )  # shape: (batch_size, time_steps, len(label_cols_to_flatten))
+            flat_label = tf.reshape(
+                label_items_to_flatten, [labels.shape[0], -1]
+            )  # Flatten across time steps per batch item
+            flat_labels.append(
+                flat_label.numpy()
+            )  # Convert tensor to NumPy for DataFrame compatibility
+
+        # Combine the batch data into final flattened arrays
+        flat_inputs = np.vstack(
+            flat_inputs
+        )  # Combine the flattened inputs across all batches
+        flat_labels = np.vstack(
+            flat_labels
+        )  # Combine the flattened labels across all batches
+
+        ### Generate Column Names ###
+        input_column_names = [
+            f"{name}_{i}" for name in cols_to_flatten for i in range(inputs.shape[1])
+        ] + cols_keep_last_value
+        label_column_names = [
+            f"{name}_{i}"
+            for name in label_cols_to_flatten
+            for i in range(labels.shape[1])
+        ]
+
+        # Convert lists to Pandas DataFrames
+        flat_inputs_df = pd.DataFrame(flat_inputs, columns=input_column_names)
+        if no_user_last_keep_value:
+            # if the user didn't specify any columns to keep the last value from but we had to select
+            # at least 1 for the algo to work. We must drop it now
+            flat_inputs_df.drop(columns=cols_keep_last_value, inplace=True)
+        flat_labels_df = pd.DataFrame(flat_labels, columns=label_column_names)
+
+        return flat_inputs_df, flat_labels_df
+
     def get_sequence_stride(self, overlapping_windows: bool):
         """Get the sequence stride based on the overlapping_windows attribute."""
         if not overlapping_windows:
-            return self.input_width
+            return self.label_width
         else:
             return 1
 
@@ -235,6 +378,39 @@ class WindowGenerator:
             # And cache it for next time
             self._example = result
         return result
+
+    def convert_to_torch_dataset(
+        self,
+        dataset: tf.data.Dataset,
+        cols_to_keep_as_features: list[str] | None = None,
+        cols_to_keep_as_labels: list[str] | None = None,
+    ) -> Dataset:
+        """Convert a TensorFlow dataset to a PyTorch dataset. The pytorch dataset doesn't have batches.
+
+        Args:
+            dataset (tf.data.Dataset): item from self.make_dataset()
+
+        Returns:
+            torch.utils.data.Dataset: a torch dataset. This doesn't have batches anymore. To get batches, use DataLoader.
+        """
+        if cols_to_keep_as_features is None:
+            # we are going to keep all the columns
+            keep_as_features_indices = list(self.column_indices.values())
+        else:
+            keep_as_features_indices = [
+                self.column_indices[name] for name in cols_to_keep_as_features
+            ]
+
+        if cols_to_keep_as_labels is None:
+            # we are going to keep all the columns
+            keep_as_label_indices = list(self.label_columns_indices.values())
+        else:
+            keep_as_label_indices = [
+                self.label_columns_indices[name] for name in cols_to_keep_as_labels
+            ]
+        return TFToTorchDataset(
+            dataset, keep_as_features_indices, keep_as_label_indices
+        )
 
     def plot(self, model=None, plot_col=None, max_subplots=3):
         inputs, labels = self.example
@@ -300,3 +476,50 @@ class WindowGenerator:
                 plt.title("Random data from the training set")
 
         plt.xlabel(f"Time [{self.data_freq}]")
+
+
+class TFToTorchDataset(Dataset):
+    def __init__(
+        self,
+        tf_dataset,
+        keep_last_value_indices: list[int],
+        keep_as_label_indices: list[int],
+    ):
+        self.inputs = []
+        self.labels = []
+
+        # Iterate over TensorFlow batches and flatten to individual samples
+        for batch in tf_dataset.as_numpy_iterator():
+            inputs, labels = batch
+            for i in range(len(inputs)):  # Unpack individual samples from the batch
+                self.inputs.append(inputs[i][:, keep_last_value_indices])
+                self.labels.append(labels[i][:, keep_as_label_indices])
+
+    def __len__(self):
+        """
+        Returns the total number of samples in the dataset.
+        This is required for PyTorch's DataLoader.
+        """
+        return len(self.inputs)
+
+    def __getitem__(self, idx):
+        """
+        Retrieves a single sample by index. This is required for PyTorch's DataLoader.
+        Returns:
+        - input_tensor: Input tensor for the specific sample
+        - label_tensor: Label tensor for the specific sample
+        """
+        input_tensor = torch.tensor(self.inputs[idx], dtype=torch.float32)
+        label_tensor = torch.tensor(self.labels[idx], dtype=torch.float32)
+        return input_tensor, label_tensor
+
+    def get_full_data(self):
+        """
+        Returns:
+        - input_tensor: Full dataset input as a PyTorch tensor (or NumPy array if preferred)
+        - label_tensor: Full dataset labels as a PyTorch tensor
+        """
+        # Convert lists of arrays to PyTorch tensors
+        input_tensor = torch.tensor(self.inputs, dtype=torch.float32)
+        label_tensor = torch.tensor(self.labels, dtype=torch.float32)
+        return input_tensor, label_tensor
