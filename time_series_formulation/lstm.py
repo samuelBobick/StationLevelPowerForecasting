@@ -8,11 +8,10 @@ import tensorboard as tb
 import tensorflow as tf
 import torch
 import torch.nn as nn
-from slrp_ev_data.feature_engineering import one_hot_encoding
-from slrp_ev_data.window_generator import WindowGenerator
+from slrp_ev_data.window_generator import TFToTorchDataset, WindowGenerator
 from torch.optim.adam import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 # PyTorch TensorBoard support
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -25,7 +24,7 @@ tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 # warnings.filterwarnings("ignore")
 
 
-class FFNN:
+class LSTM:
 
     def __init__(
         self,
@@ -34,12 +33,13 @@ class FFNN:
         alpha: int = 2,
         hidden_size: int = 64,
         output_size: int = 16,
-        num_hidden_layers: int = 2,
+        num_lstm_layers: int = 2,
         activation=nn.ReLU(),
         initial_learning_rate: float = 0.01,
-        scheduler_patience: int = 5,
+        scheduler_patience: int = 3,
         epochs: int = 100,
         time_mode: Literal["window", "cyclical"] = "cyclical",
+        batch_size: int = 64,
     ):
         """
         Args:
@@ -48,21 +48,21 @@ class FFNN:
             alpha (float, optional): . Defaults to 2.
 
             Neural Net Parameters:
-            input_size (int, optional): Defaults to 22. TODO: Should be 16 + 6 + 1, where 16 is the x_dim, 6 is the one-hot encoding of the time of day
-                (6 4-hours windows in a day), and 1 is the workday.
             hidden_size (int, optional): Defaults to 64.
             output_size (int, optional): Defaults to 16. TODO: Should be equal to lookahead (for now).
-            num_hidden_layers (int, optional): Defaults to 2.
+            num_hidden_layers (int, optional): Number of LSTM modules that are stacked. Defaults to 2.
             activation (_type_, optional): Activation function from pytorch. Defaults to nn.ReLU().
-            learning_rate (float, optional): Defaults to 0.01.
-            epochs (int, optional): Defaults to 1000.
+            initial_learning_rate (float, optional): Defaults to 0.01.
+            epochs (int, optional): Defaults to 100.
+            batc_size (int, optional): Defaults to 64.
         """
         self.x_dim = x_dim
         self.lookahead = lookahead
         self.alpha = alpha
         self.epochs = epochs
+        self.batch_size = batch_size
 
-        self.model_path = Path(__file__).parent / "model" / "basic_ffnn.pt"
+        self.model_path = Path(__file__).parent / "model" / "lstm.pt"
         self.model_path.parent.mkdir(exist_ok=True)
         self.tensorboard_path = Path(__file__).parent / "runs"
 
@@ -70,18 +70,18 @@ class FFNN:
         self.scheduler_patience = scheduler_patience
         if time_mode == "window":
             input_size = (
-                self.x_dim + 6 + 1
-            )  # 6 for one-hot encoding of time of day, 1 for workday
+                1 + 6 + 1
+            )  # 1 for power +  6 for one-hot encoding of time of day, 1 for workday
         elif time_mode == "cyclical":
             input_size = (
-                self.x_dim + 1 + 4
-            )  # 1 for workday, 4 for sin/cos of time of day
+                1 + 1 + 4
+            )  # 1 for power + 1 for workday, 4 for sin/cos of time of day
 
         self.model_inputs = (
+            output_size,
             input_size,
             hidden_size,
-            output_size,
-            num_hidden_layers,
+            num_lstm_layers,
             activation,
         )
         self.initial_learning_rate = initial_learning_rate
@@ -95,14 +95,15 @@ class FFNN:
         number_of_initial_models: int = 5,
     ) -> None:
         """Find best model (out of number_of_initial_models) and train it on the entire dataset"""
-        X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
-        train_loader = self.get_dataloader(X_train, y_train, batch_size=64)
+
+        train_loader = self.get_dataloader(
+            train, shuffle=True, overlapping_windows=True
+        )
 
         if val is not None:
-            X_val, y_val = self.get_X_y(val, overlapping_windows=False)  # type: ignore
-            val_loader = self.get_dataloader(X_val, y_val, batch_size=64, shuffle=False)
+            val_loader = self.get_dataloader(val, shuffle=False)
 
-            self.add_model_to_board(train_loader)
+        self.add_model_to_board(train_loader)
 
         self.best_vloss = np.inf
         # Train number_of_initial_models models and save the best one
@@ -111,7 +112,7 @@ class FFNN:
                 f"Training Initial Model {i + 1}/{number_of_initial_models}"
             )
             # Initialize model
-            self.model = FFNN_model(*self.model_inputs)
+            self.model = LSTM_model(*self.model_inputs)
             self.optimizer = Adam(
                 self.model.parameters(),
                 lr=self.initial_learning_rate,
@@ -126,7 +127,7 @@ class FFNN:
         # At this point, we have started training number_of_initial_models and we saved the best one
         # We can load the checkpoint of the best one and resume training
         # Initialize model
-        self.model = FFNN_model(*self.model_inputs)
+        self.model = LSTM_model(*self.model_inputs)
         self.optimizer = Adam(
             self.model.parameters(),
             lr=self.initial_learning_rate,
@@ -163,21 +164,21 @@ class FFNN:
         if writer is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             writer = SummaryWriter(
-                self.tensorboard_path / "basic_ffnn_{}".format(timestamp), max_queue=3
+                self.tensorboard_path / "lstm_{}".format(timestamp), max_queue=3
             )
 
         if epochs is None:
             epochs = self.epochs
 
         for epoch in tqdm(range(start_epoch, epochs), desc="Training Epochs"):
-            avg_loss = self._train_epoch(train_loader)
+            avg_loss = self._train_epoch(train_loader, writer, epoch)
 
             avg_vloss = self._get_val_loss(val_loader)
 
             # Log the running loss averaged per batch
             writer.add_scalars(
                 "Training vs. Validation Loss",
-                {"Training": avg_loss, "Validation": avg_vloss},
+                {"Validation": avg_vloss},  # "Training": avg_loss,
                 (epoch + 1) * len(train_loader),
             )
             writer.flush()
@@ -220,7 +221,7 @@ class FFNN:
 
         print(f"Training complete! Lowest validation loss is: {best_vloss}")
 
-    def _train_epoch(self, train_loader) -> float:
+    def _train_epoch(self, train_loader, writer, epoch) -> float:
         running_loss = 0.0
         self.model.train(
             True
@@ -228,6 +229,9 @@ class FFNN:
 
         for batch_number, batch in enumerate(train_loader):
             x_batch, y_batch = batch
+
+            # reshape y to have same shape as output (remove the 1 dimension at the end)
+            y_batch = y_batch.squeeze()
 
             self.optimizer.zero_grad()
             # Forward pass
@@ -241,6 +245,12 @@ class FFNN:
 
             running_loss += loss.item()
 
+            writer.add_scalars(
+                "Training vs. Validation Loss",
+                {"Training": loss.item()},
+                (epoch) * len(train_loader) + (batch_number + 1),
+            )
+
         return running_loss / len(train_loader)
 
     def _get_val_loss(self, val_loader) -> float:
@@ -252,6 +262,8 @@ class FFNN:
         with torch.no_grad():
             for val_batch_number, val_batch in enumerate(val_loader):
                 val_x_batch, val_y_batch = val_batch
+                # reshape y to have same shape as output (remove the 1 dimension at the end)
+                val_y_batch = val_y_batch.squeeze()
                 val_y_pred_batch = self.model(val_x_batch)
                 vloss = self.criterion(val_y_pred_batch.squeeze(), val_y_batch)
                 running_vloss += vloss.item()
@@ -267,11 +279,13 @@ class FFNN:
         Returns:
             tuple (float, float, list): RMSE, weighted RMSE, array of predictions
         """
-        X_test, y_test, y_dates = self.get_X_y(test, return_y_date=True, overlapping_windows=False)  # type: ignore
-        X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
-        y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32)
+        dataset, y_dates = self.get_dataset(
+            test, return_y_date=True, overlapping_windows=False
+        )
+        X_test_tensor, y_test_tensor = dataset.get_full_data()
+        y_test_tensor = y_test_tensor.squeeze()
 
-        self.model = FFNN_model(*self.model_inputs)
+        self.model = LSTM_model(*self.model_inputs)
         checkpoint = torch.load(self.model_path, weights_only=True)
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
@@ -298,15 +312,12 @@ class FFNN:
         forecast_dates = y_dates.to_numpy().flatten()
         return rmse, wrmse, y_pred_test_flat, forecast_dates
 
-    def get_X_y(
+    def get_dataset(
         self,
         df,
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> (
-        tuple[pd.DataFrame, pd.DataFrame]
-        | tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
-    ):
+    ) -> TFToTorchDataset | tuple[TFToTorchDataset, pd.DataFrame]:
         W = WindowGenerator(
             input_width=self.x_dim,
             label_width=self.lookahead,
@@ -315,36 +326,37 @@ class FFNN:
             label_columns=["power", "date"],
             overlapping_windows=overlapping_windows,
         )
-        cols_keep_last_value = ["workday"]
+        cols_to_keep_as_features = ["power", "workday"]
         if self.time_mode == "cyclical":
-            cols_keep_last_value += ["Day sin", "Day cos", "Year sin", "Year cos"]
+            cols_to_keep_as_features += ["Day sin", "Day cos", "Year sin", "Year cos"]
         elif self.time_mode == "window":
-            cols_keep_last_value += ["time_window"]
+            cols_to_keep_as_features += ["time_window"]
 
-        flat_inputs, flat_labels = W.flatten_dataset(
-            W.train,
-            cols_to_flatten=["power"],
-            cols_keep_last_value=cols_keep_last_value,
-            label_cols_to_flatten=["power"],
+        # TODO review the following for time_mode == "window" bc flattening is no longer necessary
+        # flat_inputs, flat_labels = W.flatten_dataset(
+        #     W.train,
+        #     cols_to_flatten=["power"],
+        #     label_cols_to_flatten=["power"],
+        # )
+        # if self.time_mode == "window":
+        #     flat_inputs = one_hot_encoding(flat_inputs, ["time_window"])
+        # print(f"Input shape: {flat_inputs.shape}, label shape: {flat_labels.shape}")
+        dataset = W.convert_to_torch_dataset(
+            W.train, cols_to_keep_as_features, cols_to_keep_as_labels=["power"]
         )
-        if self.time_mode == "window":
-            flat_inputs = one_hot_encoding(flat_inputs, ["time_window"])
-        print(f"Input shape: {flat_inputs.shape}, label shape: {flat_labels.shape}")
-
         if return_y_date:
             x_dates, y_dates = W.flatten_dataset(
                 W.train, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
             )
-            return flat_inputs, flat_labels, y_dates
+            return dataset, y_dates
         else:
-            return flat_inputs, flat_labels
+            return dataset
 
     def get_dataloader(
         self,
-        flat_x: pd.DataFrame,
-        flat_y: pd.DataFrame,
-        batch_size: int,
-        shuffle: bool = True,
+        df,
+        shuffle: bool = False,
+        overlapping_windows: bool = False,
     ) -> DataLoader:
         """Given the output from self.get_X_y, returns a DataLoader object, which makes it easier to train
         data in batches
@@ -352,26 +364,25 @@ class FFNN:
         Args:
             flat_x (pd.DataFrame): x output from self.get_X_y
             flat_y (pd.DataFrame): y output from self.get_X_y
-            batch_size (int): _description_
             shuffle (bool, optional): shuffling is advisable for the training data, but not for the test/val data.
                 Defaults to True.
+            overlapping_windows (bool, optional): _description_. Defaults to False.
 
         Returns:
-            DataLoader: _description_
+            DataLoader: Data put into batches, ready for training
         """
-        dataset = TensorDataset(flat_x, flat_y)
-        dataloader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle)
+        dataset = self.get_dataset(df, overlapping_windows=overlapping_windows)
+        dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=shuffle)  # type: ignore
         return dataloader
 
-    def add_model_to_board(self, train_loader: DataLoader):
-        writer = SummaryWriter(self.tensorboard_path / "basic_ffnn_model_schema")
+    def add_model_to_board(self, train_loader: DataLoader) -> None:
+        writer = SummaryWriter(self.tensorboard_path / "lstm_model_schema")
         # get some random training images
         dataiter = iter(train_loader)
         inputs, labels = next(dataiter)
 
-        model = FFNN_model(*self.model_inputs)
+        model = LSTM_model(*self.model_inputs)
         writer.add_graph(model, inputs)
-
         # Count the number of trainable parameters and add it to TensorBoard as a scalar
         total_params = count_parameters(model)
         writer.add_scalar("Model/Total_Parameters", total_params)
@@ -385,25 +396,55 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-class FFNN_model(nn.Module):
-    def __init__(
-        self, input_size, hidden_size, output_size, num_hidden_layers, activation
-    ):
-        super(FFNN_model, self).__init__()
-        self.hidden_layers = nn.ModuleList([nn.Linear(input_size, hidden_size)])
-        self.hidden_layers.extend(
-            [nn.Linear(hidden_size, hidden_size) for _ in range(num_hidden_layers - 1)]
-        )
+class LSTM_model(nn.Module):
+    def __init__(self, output_size, input_size, hidden_size, num_layers, activation):
+        super(LSTM_model, self).__init__()
+        self.num_layers = num_layers  # number of layers
+        self.hidden_size = hidden_size  # number of hidden units
         self.activation = activation
-        self.fc_out = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x) -> torch.Tensor:
-        for layer in self.hidden_layers:
-            x = self.activation(layer(x))
-        x = self.fc_out(x)
-        # Add a continuous activation function to unsure results are positive
-        x = nn.functional.softplus(x)
-        return x
+        self.lstm = nn.LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+        )
+        self.fc_1 = nn.Linear(hidden_size, 128)  # fully connected 1
+        self.fc = nn.Linear(128, output_size)  # fully connected last layer
+
+    def forward(self, x):
+        """
+        Forward pass of the LSTM model.
+
+        Args:
+            x: Input of shape [batch_size, seq_length, input_size], where seq_length
+               is the number of time steps, and input_size is the number of features.
+
+        Returns:
+            out: Output of the network
+        """
+        h_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(
+            x.device
+        )  # hidden state
+        c_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(
+            x.device
+        )  # internal state
+
+        # Propagate input through LSTM
+        output, (hn, cn) = self.lstm(
+            x, (h_0, c_0)
+        )  # lstm with input, hidden, and internal state
+
+        # hn is of size [num_layers, batch_size, hidden_size]
+        hn = hn[-1]  # reshaping the data for Dense layer next
+        out = self.activation(hn)
+        out = self.fc_1(out)  # first Dense
+        out = self.activation(out)
+        out = self.fc(out)  # Final Output
+        out = nn.functional.softplus(
+            out
+        )  # because we don't want the final values to be negative
+        return out
 
 
 class AsymmetricRMSELoss(nn.Module):
@@ -419,16 +460,3 @@ class AsymmetricRMSELoss(nn.Module):
             torch.mean((1 + (self.multiplier - 1) * mask.float()) * mse_loss)
         )
         return loss
-
-
-class TensorDataset(Dataset):
-    def __init__(self, x: pd.DataFrame, y: pd.DataFrame):
-        self.x = torch.tensor(x.values, dtype=torch.float32)
-        self.y = torch.tensor(y.values, dtype=torch.float32)
-        self.n_samples = x.shape[0]
-
-    def __getitem__(self, index):
-        return self.x[index], self.y[index]
-
-    def __len__(self):
-        return self.n_samples

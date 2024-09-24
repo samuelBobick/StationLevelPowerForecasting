@@ -1,14 +1,23 @@
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import root_mean_squared_error
 from sklearn.neighbors import KNeighborsRegressor
-from slrp_ev_data.feature_engineering import feature_engineering
 from slrp_ev_data.window_generator import WindowGenerator
 
 
 class KNN:
 
-    def __init__(self, x_dim=16, lookahead=16, n_neighbors=10, percentile=90, alpha=2):
+    def __init__(
+        self,
+        x_dim=16,
+        lookahead=16,
+        n_neighbors=10,
+        percentile=90,
+        alpha=2,
+        time_mode: Literal["window", "cyclical"] = "cyclical",
+    ):
         """_summary_
 
         Args:
@@ -22,6 +31,18 @@ class KNN:
         self.x_dim = x_dim
 
         self.alpha = alpha
+        self.time_mode = time_mode
+        if self.time_mode == "window":
+            self.cols_to_drop_for_model = [
+                "time_window",
+                "workday",
+            ]
+        elif self.time_mode == "cyclical":
+            self.cols_to_drop_for_model = [
+                "workday",
+                "Year sin",
+                "Year cos",
+            ]
 
         self.n_neighbors = n_neighbors
         self.percentile = percentile
@@ -39,24 +60,35 @@ class KNN:
         X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
 
         self.models = {}
-        for t_w in range(6):
-            for w in [0, 1]:
-                knn_regressor = PercentileKNNRegressor(
-                    n_neighbors=self.n_neighbors, percentile=self.percentile
-                )
-                mask = (X_train["time_window"] == t_w) & (X_train["workday"] == w)
-                X_input = (
-                    X_train[mask]
-                    .drop(
-                        [col for col in X_train.columns if not col.startswith("power")],
-                        axis=1,
-                    )
-                    .to_numpy()
-                )
-                y_input = y_train[mask].to_numpy()
+        if self.time_mode == "window":
+            for t_w in range(6):
+                for w in [0, 1]:
+                    mask = (X_train["time_window"] == t_w) & (X_train["workday"] == w)
 
-                knn_regressor.fit(X_input, y_input)
-                self.models[(t_w, w)] = knn_regressor
+                    self.models[(t_w, w)] = self.fit_model(X_train, y_train, mask)
+        elif self.time_mode == "cyclical":
+            for w in [0, 1]:
+                mask = X_train["workday"] == w
+                self.models[w] = self.fit_model(X_train, y_train, mask)
+
+    def fit_model(self, X_train, y_train, data_mask):
+        knn_regressor = PercentileKNNRegressor(
+            n_neighbors=self.n_neighbors, percentile=self.percentile
+        )
+
+        X_input = (
+            X_train[data_mask]
+            .drop(
+                self.cols_to_drop_for_model,
+                # [col for col in X_train.columns if not col.startswith("power")],
+                axis=1,
+            )
+            .to_numpy()
+        )
+        y_input = y_train[data_mask].to_numpy()
+
+        knn_regressor.fit(X_input, y_input)
+        return knn_regressor
 
     def predict_single(self, X):
         """
@@ -89,15 +121,15 @@ class KNN:
         rwmses = []
 
         forecasts = []
+
         for index, row in X_test.iterrows():
-            input = (
-                row.drop([col for col in row.index if not col.startswith("power")])
-                .to_numpy()
-                .reshape(1, -1)
-            )
-            forecasts.append(
-                self.models[(row["time_window"], row["workday"])].predict(input)
-            )
+            input = row.drop(self.cols_to_drop_for_model).to_numpy().reshape(1, -1)
+            if self.time_mode == "window":
+                forecasts.append(
+                    self.models[(row["time_window"], row["workday"])].predict(input)
+                )
+            elif self.time_mode == "cyclical":
+                forecasts.append(self.models[row["workday"]].predict(input))
 
         forecast = np.array([f[0] for f in forecasts]).flatten()
         real = y_test.to_numpy().flatten()
@@ -110,9 +142,9 @@ class KNN:
         rmses.append(rmse)
         rwmses.append(rwmse)
 
-        y_dates = y_dates.to_numpy().flatten()
+        forecast_dates = y_dates.to_numpy().flatten()
 
-        return rmse, rwmse, forecast, y_dates
+        return rmse, rwmse, forecast, forecast_dates
 
     def get_X_y(
         self,
@@ -126,29 +158,34 @@ class KNN:
         # (hour= 0 or 4 or 8 , etc.).
         # To make sure we start at the beginning of an interval, let's just start at the
         # beginning of a day
-        df = df[
-            df["date"]
-            >= (
-                pd.to_datetime(df.iloc[0]["date"].date())
-                + pd.Timedelta(days=1)
-                + pd.Timedelta(minutes=15)
-            )
-        ]
+        # df = df[
+        #     df["date"]
+        #     >= (
+        #         pd.to_datetime(pd.to_datetime(df.iloc[0]["date"], unit="s").date())
+        #         + pd.Timedelta(days=1)
+        #         + pd.Timedelta(minutes=15)
+        #     ).timestamp()
+        # ]
         # -- TODO: Remove up to here
         W = WindowGenerator(
             input_width=self.x_dim,
             label_width=self.lookahead,
-            shift=self.x_dim,
-            train_df=feature_engineering(df),
+            shift=self.lookahead,
+            train_df=df,
             label_columns=["power", "date"],
             overlapping_windows=overlapping_windows,
-            batch_size=1,
         )
+
+        cols_keep_last_value = ["workday"]
+        if self.time_mode == "cyclical":
+            cols_keep_last_value += ["Day sin", "Day cos", "Year sin", "Year cos"]
+        elif self.time_mode == "window":
+            cols_keep_last_value += ["time_window"]
 
         flat_inputs, flat_labels = W.flatten_dataset(
             W.train,
             cols_to_flatten=["power"],
-            cols_keep_last_value=["workday", "time_window"],
+            cols_keep_last_value=cols_keep_last_value,
             label_cols_to_flatten=["power"],
         )
         print(flat_inputs.shape, flat_labels.shape)

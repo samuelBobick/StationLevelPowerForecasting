@@ -1,4 +1,3 @@
-import pandas as pd
 import numpy as np
 from sklearn.metrics import root_mean_squared_error
 
@@ -28,13 +27,14 @@ class LastWeek:
 
         forecast = power[: -self.readings_per_day * 7]
         real = power[self.readings_per_day * 7 :]
+        forecast_dates = test.iloc[self.readings_per_day * 7 :]["date"].to_numpy()
 
         rmse = root_mean_squared_error(forecast, real)
 
         weights = self.alpha ** (1 + np.sign(forecast - real))
         rwmse = root_mean_squared_error(forecast, real, sample_weight=weights)
 
-        return rmse, rwmse, forecast
+        return rmse, rwmse, forecast, forecast_dates
 
     def fit(self, train):
         return

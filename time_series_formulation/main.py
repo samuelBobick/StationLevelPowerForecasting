@@ -1,43 +1,104 @@
-from collections.abc import Callable
 from typing import Literal
 
-from ffnn import NeuralNet
+from ffnn import FFNN
 from knn import KNN
 from last_week import LastWeek
+from lstm import LSTM
+from old_ffnn import old_NeuralNet
 from old_knn import OldKNN
 from similar_day import SimilarDay
 from slrp_ev_data import read_old_data, train_test_split
+from slrp_ev_data.feature_engineering import (
+    feature_engineering,
+    get_train_min_and_max,
+    reverse_feature_engineering,
+)
 from STL import STLARIMA
 from visualization import visualize_forecast
 
-model_choice: Literal[
-    "KNN", "OldKNN", "Neural Net", "STL with ARIMA", "Last Week", "Similar Day"
-] = "KNN"
+TypeModelChoice = Literal[
+    "KNN",
+    "OldKNN",
+    "Basic_NN",
+    "Old_Basic_NN",
+    "STL with ARIMA",
+    "Last Week",
+    "Similar Day",
+    "LSTM"
+]
+model_choice: TypeModelChoice = "LSTM"
+number_of_initial_models = 1
+x_dim = 96
+time_mode: Literal["cyclical", "window"] = "cyclical"
 
 if __name__ == "__main__":
-    dict_model: dict[str, Callable] = {
-        "KNN": KNN,
-        "OldKNN": OldKNN,
-        "Last Week": LastWeek,
-        "Similar Day": SimilarDay,
-        "Neural Net": NeuralNet,
-        "STL with ARIMA": STLARIMA,
-    }
     # Read the data
     data = read_old_data.read_old_data()
     train, val, test = train_test_split.train_test_split(data, generate_validation=True)  # type: ignore
+    normalize_parameters = get_train_min_and_max(train)
+    train_eng = feature_engineering(train, normalize_parameters)
+    val_eng = feature_engineering(val, normalize_parameters)
+    test_eng = feature_engineering(test, normalize_parameters)
 
-    model = dict_model[model_choice]()
-    model.fit(train)
+    dict_model: dict[TypeModelChoice, dict] = {
+        "KNN": {
+            "model": KNN,
+            "model_params": {"time_mode": time_mode},
+            "fit_params": {},
+        },
+        "OldKNN": {"model": OldKNN, "model_params": {}, "fit_params": {}},
+        "Last Week": {"model": LastWeek, "model_params": {}, "fit_params": {}},
+        "Similar Day": {"model": SimilarDay, "model_params": {}, "fit_params": {}},
+        "Old_Basic_NN": {"model": old_NeuralNet, "model_params": {}, "fit_params": {}},
+        "Basic_NN": {
+            "model": FFNN,
+            "model_params": {"time_mode": time_mode, "x_dim": x_dim},
+            "fit_params": {
+                "val": val_eng,
+                "number_of_initial_models": number_of_initial_models
+            },
+        },
+        "STL with ARIMA": {"model": STLARIMA, "model_params": {}, "fit_params": {}},
+        "LSTM": {
+            "model": LSTM,
+            "model_params": {"time_mode": time_mode, "x_dim": x_dim},
+            "fit_params": {
+                "val": val_eng,
+                "number_of_initial_models": number_of_initial_models
+            },
+        },
+    }
+    print("# Starting")
+    print(f"Model choice: {model_choice}, with the following parameters for the initialization: {dict_model[model_choice]["model_params"]} " +
+        f"and these ones for the training: {dict_model[model_choice]["fit_params"]}")
+    model = dict_model[model_choice]["model"](
+        **dict_model[model_choice]["model_params"]
+    )
+    model.fit(train_eng, **dict_model[model_choice]["fit_params"])
 
-    df_eval = test
-    rmse, wrmse, forecast, forecast_dates = model.predict(df_eval)
+    rmse, wrmse, forecast, forecast_dates = model.predict(test_eng)
+
     data_length_days = len(forecast) // 96
+    train_min, train_max = normalize_parameters
     print(
         f"{model_choice}: ",
-        "RMSE: {number:.0f}".format(number=rmse),
-        ", WRMSE: {number:.0f}".format(number=wrmse),
+        "RMSE: {number:.0f}".format(
+            number=rmse * (train_max["power"] - train_min["power"]) + train_min["power"]
+        ),
+        ", WRMSE: {number:.0f}".format(
+            number=wrmse * (train_max["power"] - train_min["power"])
+            + train_min["power"]
+        ),
         f"for around {data_length_days} days of predictions",
     )
 
-    visualize_forecast(df_eval, forecast, 10, forecast_dates=forecast_dates)
+    # Reverse engineer the forecast to get the original features back
+    df_forecast = test_eng.copy()
+    df_forecast = df_forecast.iloc[: len(forecast)]
+    df_forecast["power"] = forecast
+    df_forecast["date"] = forecast_dates
+    df_forecast = reverse_feature_engineering(df_forecast, normalize_parameters, bypass_output_validation=True)
+
+    visualize_forecast(
+        test, df_forecast["power"], data_length_days, forecast_dates=df_forecast["date"]
+    )

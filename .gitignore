@@ -1,7 +1,8 @@
 
 **/__pycache__
 data/**/*.csv
-
+time_series_formulation/runs/**
+time_series_formulation/model/**
 
 # Distribution / packaging
 .Python
