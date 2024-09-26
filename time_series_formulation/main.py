@@ -4,8 +4,8 @@ from ffnn import FFNN
 from knn import KNN
 from last_week import LastWeek
 from lstm import LSTM
-from old_ffnn import old_NeuralNet
-from old_knn import OldKNN
+from old_ffnn2 import old_NeuralNet
+from old_knn2 import OldKNN
 from similar_day import SimilarDay
 from slrp_ev_data import read_old_data, train_test_split
 from slrp_ev_data.feature_engineering import (
@@ -24,11 +24,12 @@ TypeModelChoice = Literal[
     "STL with ARIMA",
     "Last Week",
     "Similar Day",
-    "LSTM"
+    "LSTM",
 ]
 model_choice: TypeModelChoice = "LSTM"
 number_of_initial_models = 1
 x_dim = 96
+epochs = 20
 time_mode: Literal["cyclical", "window"] = "cyclical"
 
 if __name__ == "__main__":
@@ -52,25 +53,35 @@ if __name__ == "__main__":
         "Old_Basic_NN": {"model": old_NeuralNet, "model_params": {}, "fit_params": {}},
         "Basic_NN": {
             "model": FFNN,
-            "model_params": {"time_mode": time_mode, "x_dim": x_dim},
+            "model_params": {
+                "time_mode": time_mode,
+                "x_dim": x_dim,
+                "number_of_initial_models": number_of_initial_models,
+                "epochs": epochs,
+            },
             "fit_params": {
                 "val": val_eng,
-                "number_of_initial_models": number_of_initial_models
             },
         },
         "STL with ARIMA": {"model": STLARIMA, "model_params": {}, "fit_params": {}},
         "LSTM": {
             "model": LSTM,
-            "model_params": {"time_mode": time_mode, "x_dim": x_dim},
+            "model_params": {
+                "time_mode": time_mode,
+                "x_dim": x_dim,
+                "epochs": epochs,
+                "number_of_initial_models": number_of_initial_models,
+            },
             "fit_params": {
                 "val": val_eng,
-                "number_of_initial_models": number_of_initial_models
             },
         },
     }
     print("# Starting")
-    print(f"Model choice: {model_choice}, with the following parameters for the initialization: {dict_model[model_choice]["model_params"]} " +
-        f"and these ones for the training: {dict_model[model_choice]["fit_params"]}")
+    print(
+        f"Model choice: {model_choice}, with the following parameters for the initialization: {dict_model[model_choice]['model_params']} "
+    )
+
     model = dict_model[model_choice]["model"](
         **dict_model[model_choice]["model_params"]
     )
@@ -97,7 +108,9 @@ if __name__ == "__main__":
     df_forecast = df_forecast.iloc[: len(forecast)]
     df_forecast["power"] = forecast
     df_forecast["date"] = forecast_dates
-    df_forecast = reverse_feature_engineering(df_forecast, normalize_parameters, bypass_output_validation=True)
+    df_forecast = reverse_feature_engineering(
+        df_forecast, normalize_parameters, bypass_output_validation=True
+    )
 
     visualize_forecast(
         test, df_forecast["power"], data_length_days, forecast_dates=df_forecast["date"]
