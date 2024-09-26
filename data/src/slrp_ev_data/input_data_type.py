@@ -23,7 +23,9 @@ FeaturedEngineeredSchema = pa.DataFrameSchema(
                 max_value=pd.to_datetime("2030-01-01").timestamp(),
             ),
         ),
-        "power": pa.Column(pa.Float, nullable=False),
+        "power": pa.Column(
+            pa.Float, nullable=False
+        ),  # , pa.Check.greater_than_or_equal_to(0)
         "time_window": pa.Column(
             pa.Int32, pa.Check.isin(range(6)), nullable=False, required=False
         ),

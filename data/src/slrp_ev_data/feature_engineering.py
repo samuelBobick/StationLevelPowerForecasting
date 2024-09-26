@@ -17,7 +17,8 @@ def feature_engineering(
         - Add the 4 hour time window (0 if the hour is between 0 and 4, 1 if the hour is between 4 and 8, etc.)
         - Standardize (or normalize) the data
         - Add time of day and time of year as sin and cos features
-        - Remove the data from before March 2021 because it doesn't make sense. March is take arbitrarily
+        - Remove the data from before March 2021 because it doesn't make sense. Plotting the monthly
+            peak distribution shows that 2020 and the first two months of 2021 are outliers with no real usage.
 
     Args:
         data (pd.DataFrame): Data to be transformed and fed into the models (e.g. for the window generator).
