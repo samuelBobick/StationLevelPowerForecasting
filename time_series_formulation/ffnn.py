@@ -1,18 +1,16 @@
 from typing import Literal
 
-import numpy as np
 import pandas as pd
 import tensorboard as tb
 import tensorflow as tf
 import torch
 import torch.nn as nn
-from neural_network_base import AsymmetricRMSELoss, BaseModel
+from neural_network_base import BaseModel
 from slrp_ev_data.feature_engineering import one_hot_encoding
 from slrp_ev_data.window_generator import WindowGenerator
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 
 # PyTorch TensorBoard support
-from tqdm import tqdm
 
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
 
@@ -41,11 +39,14 @@ class FFNN(BaseModel):
         """TODO"""
         # Initialize the BaseModel with relevant parameters
         super().__init__(
-            initial_learning_rate=initial_learning_rate,
-            scheduler_patience=scheduler_patience,
             epochs=epochs,
+            number_of_initial_models=number_of_initial_models,
+            batch_size=batch_size,
             model_str_name="basic_ffnn",
+            alpha=alpha,
+            initial_learning_rate=initial_learning_rate,
             lr_threshold=lr_threshold,
+            scheduler_patience=scheduler_patience,
         )
 
         # FFNN-specific parameters
@@ -57,17 +58,11 @@ class FFNN(BaseModel):
         self.activation = activation
 
         # Other parameters
-        self.batch_size = batch_size
-        self.number_of_initial_models = number_of_initial_models
         self.alpha = alpha
         self.time_mode = time_mode
 
         # Determine input size based on time_mode
         self.input_size = self._determine_input_size()
-
-        # Initialize model, optimizer, and scheduler
-        self.initialize_model()
-        self.initialize_optimizer_scheduler()
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
@@ -88,77 +83,12 @@ class FFNN(BaseModel):
             activation=self.activation,
         )
 
-    def fit(
-        self,
-        train: pd.DataFrame,
-        val: pd.DataFrame,
-    ) -> None:
-        """Train and find the best model from a set of initial models."""
-        X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
-        train_loader = self.get_dataloader(
-            X_train, y_train, batch_size=self.batch_size, shuffle=True
-        )
-
-        X_val, y_val = self.get_X_y(val, overlapping_windows=False)  # type: ignore
-        val_loader = self.get_dataloader(
-            X_val, y_val, batch_size=self.batch_size, shuffle=False
-        )
-
-        self.add_model_to_board(train_loader)
-
-        self.best_vloss = np.inf
-        for i in (pbar := tqdm(range(self.number_of_initial_models))):
-            pbar.set_description_str(
-                f"Training Initial Model {i + 1}/{self.number_of_initial_models}"
-            )
-            self.initialize_model()
-            self.initialize_optimizer_scheduler()
-            self.fit_one_model(
-                train_loader, val_loader, epochs=3, best_vloss=self.best_vloss
-            )
-
-        # Resume training the best model
-        self.load_checkpoint()
-        self.fit_one_model(
-            train_loader, val_loader, epochs=self.epochs, best_vloss=self.best_vloss
-        )
-
-    def predict(self, test: pd.DataFrame):
-        """Predict function to return error metrics and predictions."""
-        X_test, y_test, y_dates = self.get_X_y(  # type: ignore
-            test, return_y_date=True, overlapping_windows=False
-        )
-        X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
-        y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32)
-
-        self.load_checkpoint()  # Load the best model
-        self.model.eval()
-
-        with torch.no_grad():
-            y_pred_test = self.model(X_test_tensor).detach().numpy().squeeze()
-            y_pred_test_tensor = torch.tensor(y_pred_test, dtype=torch.float32)
-
-            # Calculate RMSE and weighted RMSE
-            rmse = np.sqrt(self.criterion(y_test_tensor, y_pred_test_tensor).item())
-            weighted_criterion = AsymmetricRMSELoss(alpha=self.alpha)
-            wrmse = np.sqrt(
-                weighted_criterion(y_test_tensor, y_pred_test_tensor).item()
-            )
-
-        # Flatten the lists to 1D
-        y_pred_test_flat = y_pred_test.flatten()
-        forecast_dates = y_dates.to_numpy().flatten()
-        return rmse, wrmse, y_pred_test_flat, forecast_dates
-
-    def get_X_y(
+    def get_dataset(
         self,
         df: pd.DataFrame,
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> (
-        tuple[pd.DataFrame, pd.DataFrame]
-        | tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
-    ):
+    ) -> Dataset | tuple[Dataset, pd.DataFrame]:
         W = WindowGenerator(
             input_width=self.x_dim,
             label_width=self.lookahead,
@@ -181,38 +111,16 @@ class FFNN(BaseModel):
         )
         if self.time_mode == "window":
             flat_inputs = one_hot_encoding(flat_inputs, ["time_window"])
-        print(f"Input shape: {flat_inputs.shape}, label shape: {flat_labels.shape}")
+
+        dataset = TensorDataset(flat_inputs, flat_labels)
 
         if return_y_date:
             x_dates, y_dates = W.flatten_dataset(
                 W.train, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
             )
-            return flat_inputs, flat_labels, y_dates
+            return dataset, y_dates
         else:
-            return flat_inputs, flat_labels
-
-    def get_dataloader(
-        self,
-        flat_x: pd.DataFrame,
-        flat_y: pd.DataFrame,
-        batch_size: int,
-        shuffle: bool = True,
-    ) -> DataLoader:
-        """Given the output from self.get_X_y, returns a DataLoader object, which makes it easier to train
-        data in batches
-
-        Args:
-            flat_x (pd.DataFrame): x output from self.get_X_y
-            flat_y (pd.DataFrame): y output from self.get_X_y
-            batch_size (int): _description_
-            shuffle (bool, optional): shuffling is advisable for the training data, but not for the test/val data.
-                Defaults to True.
-
-        Returns:
-            DataLoader: _description_
-        """
-        dataset = TensorDataset(flat_x, flat_y)
-        return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle)
+            return dataset
 
 
 class FFNN_model(nn.Module):
@@ -247,3 +155,12 @@ class TensorDataset(Dataset):
 
     def __len__(self):
         return self.n_samples
+
+    def get_full_data(self):
+        """
+        Returns:
+        - self.x: Full dataset input as a PyTorch tensor
+        - self.y: Full dataset labels as a PyTorch tensor
+        """
+        # Convert lists of arrays to PyTorch tensors
+        return self.x, self.y
