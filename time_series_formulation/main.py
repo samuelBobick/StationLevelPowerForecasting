@@ -28,8 +28,9 @@ TypeModelChoice = Literal[
 ]
 model_choice: TypeModelChoice = "LSTM"
 number_of_initial_models = 1
-x_dim = 96
-epochs = 20
+x_dim = 16
+lookahead = 96
+epochs = 5
 time_mode: Literal["cyclical", "window"] = "cyclical"
 
 if __name__ == "__main__":
@@ -58,6 +59,7 @@ if __name__ == "__main__":
                 "x_dim": x_dim,
                 "number_of_initial_models": number_of_initial_models,
                 "epochs": epochs,
+                "lookahead": lookahead,
             },
             "fit_params": {
                 "val": val_eng,
@@ -71,6 +73,7 @@ if __name__ == "__main__":
                 "x_dim": x_dim,
                 "epochs": epochs,
                 "number_of_initial_models": number_of_initial_models,
+                "lookahead": lookahead,
             },
             "fit_params": {
                 "val": val_eng,

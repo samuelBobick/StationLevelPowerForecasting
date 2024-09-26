@@ -516,7 +516,7 @@ class TFToTorchDataset(Dataset):
     def get_full_data(self):
         """
         Returns:
-        - input_tensor: Full dataset input as a PyTorch tensor (or NumPy array if preferred)
+        - input_tensor: Full dataset input as a PyTorch tensor
         - label_tensor: Full dataset labels as a PyTorch tensor
         """
         # Convert lists of arrays to PyTorch tensors

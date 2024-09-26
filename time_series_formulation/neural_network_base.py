@@ -3,12 +3,12 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 from torch.optim.adamw import AdamW
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
@@ -18,7 +18,10 @@ class BaseModel:
     def __init__(
         self,
         epochs: int,
+        number_of_initial_models: int,
+        batch_size: int,
         model_str_name: str,
+        alpha: int,
         initial_learning_rate: float,
         lr_threshold: float,
         scheduler_patience: int,
@@ -26,26 +29,34 @@ class BaseModel:
     ):
 
         self.epochs = epochs
-        self.scheduler_patience = scheduler_patience
-        self.initial_learning_rate = initial_learning_rate
-        self.lr_threshold = lr_threshold
+        self.epochs_initial_models = 3
+        assert (
+            self.epochs >= self.epochs_initial_models
+        ), f"Epochs must be greater than {self.epochs_initial_models}, the number of epochs for initial models."
+        self.number_of_initial_models = number_of_initial_models
+        self.batch_size = batch_size
 
+        # Weighted loss parameters
+        self.alpha = alpha
         self.criterion = nn.MSELoss()
-        self.best_vloss = np.inf
 
+        # Path parameters
         self.model_str_name = model_str_name
         self.model_path = Path(__file__).parent / "model" / f"b{model_str_name}.pt"
         self.model_path.parent.mkdir(exist_ok=True, parents=True)
         self.tensorboard_path = Path(__file__).parent / "runs"
 
-        # warmup lr parameters
+        # Lr scheduler parameters
+        # self.scheduler_patience = scheduler_patience
+        self.initial_learning_rate = initial_learning_rate
+        self.lr_threshold = lr_threshold
+
+        # Warmup lr parameters
         self.warmup_base_learning_rate = warmup_base_learning_rate
         self.warmup_steps = 1000
 
         # These will be implemented in child classes
         self.model: Optional[nn.Module] = None
-        self.optimizer: Optional[optim.Optimizer] = None
-        self.scheduler: Optional[ReduceLROnPlateau] = None
 
     def initialize_optimizer_scheduler(self):
         """Initialize the optimizer and learning rate scheduler.
@@ -81,12 +92,14 @@ class BaseModel:
         # we divide self.epochs by 1.1 because with the warmup, the
         # scheduler will be called slightly less than the number of epochs
         self.scheduler = lr_scheduler.CosineAnnealingLR(
-            self.optimizer, T_max=int(self.epochs // 1.1), eta_min=1e-7
+            self.optimizer,
+            T_max=int((self.epochs // 1.1) * self.number_of_steps_per_epoch),
+            eta_min=1e-7,
         )
 
     def save_checkpoint(self, epoch: int, best_vloss: float) -> None:
         """Saves the model, optimizer, and scheduler to a checkpoint."""
-        if self.model is None or self.optimizer is None or self.scheduler is None:
+        if self.model is None:
             raise NotImplementedError(
                 "Model, optimizer, and scheduler must be implemented before saving the checkpoint."
             )
@@ -104,7 +117,7 @@ class BaseModel:
 
     def load_checkpoint(self) -> int:
         """Loads the model, optimizer, and scheduler from a checkpoint."""
-        if self.model is None or self.optimizer is None or self.scheduler is None:
+        if self.model is None:
             raise NotImplementedError(
                 "Model, optimizer, and scheduler must be implemented before loading the checkpoint."
             )
@@ -115,6 +128,50 @@ class BaseModel:
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.best_vloss = checkpoint["best_vloss"]
         return checkpoint["epoch"]
+
+    def fit(
+        self,
+        train: pd.DataFrame,
+        val: pd.DataFrame,
+    ) -> None:
+        """Find best model (out of number_of_initial_models) and train it on the entire dataset."""
+        train_loader = self.get_dataloader(
+            train, shuffle=True, overlapping_windows=True
+        )
+        self.number_of_steps_per_epoch = len(train_loader)
+        val_loader = self.get_dataloader(val, shuffle=False, overlapping_windows=False)
+
+        self.initialize_model()
+        self.add_model_to_board(train_loader)
+
+        self.best_vloss = np.inf
+        # Train number_of_initial_models models and save the best one
+        for i in (pbar := tqdm(range(self.number_of_initial_models))):
+            pbar.set_description(
+                f"Training Initial Model {i + 1}/{self.number_of_initial_models}"
+            )
+
+            # Re-initialize the model for each initial model training
+            self.initialize_model()
+            self.initialize_optimizer_scheduler()
+
+            self.fit_one_model(
+                train_loader,
+                val_loader,
+                epochs=self.epochs_initial_models,
+                best_vloss=self.best_vloss,
+            )
+
+        # At this point, we have started training number_of_initial_models and we saved the best one
+        # We can load the checkpoint of the best one and resume training
+        current_model_epoch = self.load_checkpoint()
+        self.fit_one_model(
+            train_loader,
+            val_loader,
+            start_epoch=current_model_epoch + 1,
+            writer=self.best_model_writer,
+            best_vloss=self.best_vloss,
+        )
 
     def fit_one_model(
         self,
@@ -135,12 +192,10 @@ class BaseModel:
         if epochs is None:
             epochs = self.epochs
 
-        if self.model is None or self.optimizer is None or self.scheduler is None:
+        if self.model is None:
             raise NotImplementedError(
                 "Model, optimizer, and scheduler must be implemented before fitting."
             )
-
-        number_of_steps_per_epoch = len(train_loader)
 
         for epoch in tqdm(range(start_epoch, epochs), desc="Training Epochs"):
             avg_loss, avg_vloss = self._train_epoch(
@@ -160,21 +215,14 @@ class BaseModel:
                 self.save_checkpoint(epoch, best_vloss)
                 self.best_model_writer = writer
 
-            # Apply scheduler if we are after the warmup phase
-            if epoch > self.warmup_steps / number_of_steps_per_epoch:
-                self.scheduler.step()  # CosineAnnealingLR adjusts per epoch
-                # self.scheduler.step(avg_vloss) for Plateau LR
-                next_lr = self.scheduler.get_last_lr()[0]
+            # early stopping criteria
+            # next_lr = self.scheduler.get_last_lr()[0]
 
-                if next_lr < 1e-5:
-                    tqdm.write(
-                        f"Epoch [{epoch + 1}/{epochs}], Learning rate is too small, stopping training"
-                    )
-                    break
-                if next_lr != current_lr:
-                    tqdm.write(
-                        f"Epoch [{epoch + 1}/{epochs}], Learning rate changed from {current_lr} to {next_lr}"
-                    )
+            # if next_lr < 1e-5:
+            #     tqdm.write(
+            #         f"Epoch [{epoch + 1}/{epochs}], Learning rate is too small, stopping training"
+            #     )
+            #     break
 
         print(f"Training complete! Lowest validation loss is: {best_vloss}")
 
@@ -211,27 +259,31 @@ class BaseModel:
             self.optimizer.step()
             running_loss += loss.item()
 
-            if step_number < self.warmup_steps:
-                self.warmup_scheduler.step(step_number)
-
             if (batch_number + 1) % 50 == 0 or (
                 batch_number == 0
             ):  # Log every 50 batches
                 avg_vloss = self._get_val_loss(val_loader)
 
-                # Log the current learning rate
-                current_lr = self._get_current_lr()
-
-                writer.flush()
                 writer.add_scalars(
                     "Training vs. Validation Loss",
                     {
                         "Training": loss.item(),
                         "Validation": avg_vloss,
-                        "LR": current_lr,
                     },
                     step_number,
                 )
+
+                # Log the current learning rate
+                current_lr = self._get_current_lr()
+                writer.add_scalar("Learning Rate", current_lr, step_number)
+
+            if step_number < self.warmup_steps:
+                self.warmup_scheduler.step()  # Linear warmup
+            else:
+                # Apply normal scheduler if we are after the warmup phase
+                self.scheduler.step()  # CosineAnnealingLR adjusts per epoch
+                # if avg_vloss:
+                #     self.scheduler.step(avg_vloss) # for Plateau LR
 
         return running_loss / len(train_loader), avg_vloss
 
@@ -257,6 +309,36 @@ class BaseModel:
         # all layers have the same lr so we can just return the lr of the first layer
         return self.optimizer.param_groups[0]["lr"]  # type: ignore
 
+    def predict(
+        self, test: pd.DataFrame
+    ) -> tuple[float, float, np.ndarray, np.ndarray]:
+        """Given a pandas DataFrame test, returns error metrics and list of predictions."""
+        dataset, y_dates = self.get_dataset(
+            test, return_y_date=True, overlapping_windows=False
+        )
+        X_test_tensor, y_test_tensor = dataset.get_full_data()  # type: ignore
+        y_test_tensor = y_test_tensor.squeeze()
+
+        # Load model from the checkpoint
+        self.load_checkpoint()
+        print(f"Best validation loss of model retrieved: {self.best_vloss}")
+
+        self.model.eval()
+        y_pred_test = self.model(X_test_tensor).detach().numpy().squeeze()
+        y_pred_test_tensor = torch.tensor(y_pred_test, dtype=torch.float32)
+
+        rmse = torch.sqrt(self.criterion(y_test_tensor, y_pred_test_tensor)).item()
+
+        # Compute weighted RMSE using a custom asymmetric loss function
+        weighted_criterion = AsymmetricRMSELoss(alpha=self.alpha)
+        wrmse = torch.sqrt(weighted_criterion(y_test_tensor, y_pred_test_tensor)).item()
+
+        # Flatten the lists to 1D
+        y_pred_test_flat = y_pred_test.flatten()
+        forecast_dates = y_dates.to_numpy().flatten()
+
+        return rmse, wrmse, y_pred_test_flat, forecast_dates
+
     def add_model_to_board(self, train_loader: DataLoader) -> None:
         if self.model is None:
             raise NotImplementedError(
@@ -265,7 +347,9 @@ class BaseModel:
 
         writer = SummaryWriter(self.tensorboard_path / f"{self.model_str_name}_schema")
         dataiter = iter(train_loader)
-        inputs, _ = next(dataiter)
+        inputs, labels = next(dataiter)
+
+        print(f"Train input shape: {inputs.shape}, train label shape: {labels.shape}")
 
         writer.add_graph(self.model, inputs)
         total_params = sum(
@@ -275,6 +359,29 @@ class BaseModel:
         writer.add_scalar("Model/Total_Parameters", total_params)
         writer.flush()
         writer.close()
+
+    def get_dataloader(
+        self,
+        df: pd.DataFrame,
+        shuffle: bool = False,
+        overlapping_windows: bool = False,
+    ) -> DataLoader:
+        """Given the dataset, returns a DataLoader object."""
+        dataset: Dataset = self.get_dataset(
+            df, overlapping_windows=overlapping_windows
+        )  # type: ignore
+        return DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=shuffle)
+
+    def get_dataset(
+        self,
+        df: pd.DataFrame,
+        return_y_date: bool = False,
+        overlapping_windows: bool = False,
+    ) -> Dataset | tuple[Dataset, pd.DataFrame]:
+        raise NotImplementedError("This method must be implemented in the child class.")
+
+    def initialize_model(self) -> None:
+        raise NotImplementedError("This method must be implemented in the child class.")
 
 
 class AsymmetricRMSELoss(nn.Module):
