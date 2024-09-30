@@ -51,7 +51,7 @@ class SimilarDay:
 
         rmse = root_mean_squared_error(forecast, real)
 
-        weights = self.alpha ** (1 + np.sign(forecast - real))
+        weights = self.alpha ** ((1 - np.sign(forecast - real)))
         wrmse = root_mean_squared_error(forecast, real, sample_weight=weights)
 
         return rmse, wrmse, forecast, forecast_dates

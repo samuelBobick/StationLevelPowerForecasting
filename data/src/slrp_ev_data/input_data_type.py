@@ -30,5 +30,11 @@ FeaturedEngineeredSchema = pa.DataFrameSchema(
             pa.Int32, pa.Check.isin(range(6)), nullable=False, required=False
         ),
         "workday": pa.Column(nullable=False),
+        "Day sin": pa.Column(pa.Float, pa.Check.in_range(min_value=-1, max_value=1)),
+        "Day cos": pa.Column(pa.Float, pa.Check.in_range(min_value=-1, max_value=1)),
+        "Week sin": pa.Column(pa.Float, pa.Check.in_range(min_value=-1, max_value=1)),
+        "Week cos": pa.Column(pa.Float, pa.Check.in_range(min_value=-1, max_value=1)),
+        "Year sin": pa.Column(pa.Float, pa.Check.in_range(min_value=-1, max_value=1)),
+        "Year cos": pa.Column(pa.Float, pa.Check.in_range(min_value=-1, max_value=1)),
     }
 )

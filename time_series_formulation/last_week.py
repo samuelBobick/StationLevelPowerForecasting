@@ -31,7 +31,7 @@ class LastWeek:
 
         rmse = root_mean_squared_error(forecast, real)
 
-        weights = self.alpha ** (1 + np.sign(forecast - real))
+        weights = self.alpha ** ((1 - np.sign(forecast - real)))
         rwmse = root_mean_squared_error(forecast, real, sample_weight=weights)
 
         return rmse, rwmse, forecast, forecast_dates

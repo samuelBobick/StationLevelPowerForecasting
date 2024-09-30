@@ -61,9 +61,12 @@ def feature_engineering(
     data["date"] = data["date"].astype("int64") // 10**9
 
     s_in_day = 24 * 60 * 60
+    s_in_week = 7 * s_in_day
     s_in_year = (365.2425) * s_in_day
     data["Day sin"] = np.sin(data["date"] * (2 * np.pi / s_in_day))
     data["Day cos"] = np.cos(data["date"] * (2 * np.pi / s_in_day))
+    data["Week sin"] = np.sin(data["date"] * (2 * np.pi / s_in_week))
+    data["Week cos"] = np.cos(data["date"] * (2 * np.pi / s_in_week))
     data["Year sin"] = np.sin(data["date"] * (2 * np.pi / s_in_year))
     data["Year cos"] = np.cos(data["date"] * (2 * np.pi / s_in_year))
 

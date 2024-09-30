@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 
 # Parent class for common functionality
-class BaseModel:
+class TorchBaseModel:
     def __init__(
         self,
         epochs: int,
@@ -29,16 +29,19 @@ class BaseModel:
     ):
 
         self.epochs = epochs
-        self.epochs_initial_models = 3
-        assert (
-            self.epochs >= self.epochs_initial_models
-        ), f"Epochs must be greater than {self.epochs_initial_models}, the number of epochs for initial models."
         self.number_of_initial_models = number_of_initial_models
+        if number_of_initial_models == 1:
+            self.epochs_initial_models = epochs
+        else:
+            self.epochs_initial_models = 3
+            assert (
+                self.epochs >= self.epochs_initial_models
+            ), f"Epochs must be greater than {self.epochs_initial_models}, the number of epochs for initial models."
         self.batch_size = batch_size
 
         # Weighted loss parameters
         self.alpha = alpha
-        self.criterion = nn.MSELoss()
+        self.criterion = AsymmetricRMSELoss(alpha)  # nn.MSELoss()
 
         # Path parameters
         self.model_str_name = model_str_name
@@ -162,16 +165,17 @@ class BaseModel:
                 best_vloss=self.best_vloss,
             )
 
-        # At this point, we have started training number_of_initial_models and we saved the best one
-        # We can load the checkpoint of the best one and resume training
-        current_model_epoch = self.load_checkpoint()
-        self.fit_one_model(
-            train_loader,
-            val_loader,
-            start_epoch=current_model_epoch + 1,
-            writer=self.best_model_writer,
-            best_vloss=self.best_vloss,
-        )
+        if self.number_of_initial_models > 1:
+            # At this point, we have started training number_of_initial_models and we saved the best one
+            # We can load the checkpoint of the best one and resume training
+            current_model_epoch = self.load_checkpoint()
+            self.fit_one_model(
+                train_loader,
+                val_loader,
+                start_epoch=current_model_epoch + 1,
+                writer=self.best_model_writer,
+                best_vloss=self.best_vloss,
+            )
 
     def fit_one_model(
         self,
@@ -327,11 +331,13 @@ class BaseModel:
         y_pred_test = self.model(X_test_tensor).detach().numpy().squeeze()
         y_pred_test_tensor = torch.tensor(y_pred_test, dtype=torch.float32)
 
-        rmse = torch.sqrt(self.criterion(y_test_tensor, y_pred_test_tensor)).item()
+        rmse = torch.sqrt(
+            nn.functional.mse_loss(y_pred_test_tensor, y_test_tensor)
+        ).item()
 
         # Compute weighted RMSE using a custom asymmetric loss function
         weighted_criterion = AsymmetricRMSELoss(alpha=self.alpha)
-        wrmse = torch.sqrt(weighted_criterion(y_test_tensor, y_pred_test_tensor)).item()
+        wrmse = weighted_criterion(y_pred_test_tensor, y_test_tensor).item()
 
         # Flatten the lists to 1D
         y_pred_test_flat = y_pred_test.flatten()
@@ -349,7 +355,14 @@ class BaseModel:
         dataiter = iter(train_loader)
         inputs, labels = next(dataiter)
 
-        print(f"Train input shape: {inputs.shape}, train label shape: {labels.shape}")
+        print(
+            "Model size",
+            f"    Size of train set: {len(train_loader)} batches of size {self.batch_size}",
+            f"    therefore, we have {len(train_loader)} steps at each of the {self.epochs} epochs."
+            f"    Train input shape: {inputs.shape}",
+            f"    Train label shape: {labels.shape}",
+            sep="\n",
+        )
 
         writer.add_graph(self.model, inputs)
         total_params = sum(
@@ -387,13 +400,13 @@ class BaseModel:
 class AsymmetricRMSELoss(nn.Module):
     def __init__(self, alpha):
         super(AsymmetricRMSELoss, self).__init__()
-        self.multiplier = alpha**2
+        self.multiplier = alpha
 
     def forward(self, input, target):
         mse_loss = nn.functional.mse_loss(input, target, reduction="none")
-        residual = input - target
-        mask = residual <= 0  # mask for underpredictions
         loss = torch.sqrt(
-            torch.mean((1 + (self.multiplier - 1) * mask.float()) * mse_loss)
+            torch.mean(
+                torch.pow(self.multiplier, 1 - torch.sign(input - target)) * mse_loss
+            )
         )
         return loss

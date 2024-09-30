@@ -136,7 +136,7 @@ class KNN:
 
         rmse = root_mean_squared_error(forecast, real)
 
-        weights = self.alpha ** (1 + np.sign(forecast - real))
+        weights = self.alpha ** ((1 - np.sign(forecast - real)))
         rwmse = root_mean_squared_error(forecast, real, sample_weight=weights)
 
         rmses.append(rmse)
@@ -176,11 +176,18 @@ class KNN:
             overlapping_windows=overlapping_windows,
         )
 
-        cols_keep_last_value = ["workday"]
+        cols_keep_last_value = []
         if self.time_mode == "cyclical":
-            cols_keep_last_value += ["Day sin", "Day cos", "Year sin", "Year cos"]
+            cols_keep_last_value += [
+                "Day sin",
+                "Day cos",
+                "Week sin",
+                "Week cos",
+                "Year sin",
+                "Year cos",
+            ]
         elif self.time_mode == "window":
-            cols_keep_last_value += ["time_window"]
+            cols_keep_last_value += ["time_window", "workday"]
 
         flat_inputs, flat_labels = W.flatten_dataset(
             W.train,

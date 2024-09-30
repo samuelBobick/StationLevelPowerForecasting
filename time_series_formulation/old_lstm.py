@@ -302,8 +302,8 @@ class OldLSTM:
         weighted_criterion = AsymmetricRMSELoss(alpha=2)
         wrmse = np.sqrt(
             weighted_criterion.forward(
-                y_test_tensor,
                 y_pred_test_tensor,
+                y_test_tensor,
             ).item()
         )
 
@@ -450,13 +450,13 @@ class LSTM_model(nn.Module):
 class AsymmetricRMSELoss(nn.Module):
     def __init__(self, alpha):
         super(AsymmetricRMSELoss, self).__init__()
-        self.multiplier = alpha**2
+        self.multiplier = alpha
 
     def forward(self, input, target):
         mse_loss = nn.functional.mse_loss(input, target, reduction="none")
-        residual = input - target
-        mask = residual <= 0  # mask for underpredictions
         loss = torch.sqrt(
-            torch.mean((1 + (self.multiplier - 1) * mask.float()) * mse_loss)
+            torch.mean(
+                torch.pow(self.multiplier, 1 - torch.sign(input - target)) * mse_loss
+            )
         )
         return loss

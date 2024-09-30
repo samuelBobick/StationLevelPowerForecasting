@@ -5,10 +5,10 @@ import tensorboard as tb
 import tensorflow as tf
 import torch
 import torch.nn as nn
-from neural_network_base import BaseModel
 from slrp_ev_data.feature_engineering import one_hot_encoding
 from slrp_ev_data.window_generator import WindowGenerator
 from torch.utils.data import Dataset
+from torch_base import TorchBaseModel
 
 # PyTorch TensorBoard support
 
@@ -19,7 +19,7 @@ tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
 # warnings.filterwarnings("ignore")
 
 
-class FFNN(BaseModel):
+class FFNN(TorchBaseModel):
     def __init__(
         self,
         x_dim: int = 16,
@@ -34,7 +34,7 @@ class FFNN(BaseModel):
         epochs: int = 100,
         number_of_initial_models: int = 5,
         time_mode: Literal["window", "cyclical"] = "cyclical",
-        batch_size: int = 64,
+        batch_size: int = 32,
     ):
         """TODO"""
         # Initialize the BaseModel with relevant parameters
@@ -69,7 +69,7 @@ class FFNN(BaseModel):
         if self.time_mode == "window":
             return self.x_dim + 6 + 1  # 6 for time one-hot encoding, 1 for workday
         elif self.time_mode == "cyclical":
-            return self.x_dim + 1 + 4  # 1 for workday, 4 for sin/cos encoding
+            return self.x_dim + 6  #  6 for sin/cos encoding (day, week, year)
         else:
             raise ValueError(f"Invalid time_mode: {self.time_mode}")
 
@@ -97,11 +97,18 @@ class FFNN(BaseModel):
             label_columns=["power", "date"],
             overlapping_windows=overlapping_windows,
         )
-        cols_keep_last_value = ["workday"]
+        cols_keep_last_value = []
         if self.time_mode == "cyclical":
-            cols_keep_last_value += ["Day sin", "Day cos", "Year sin", "Year cos"]
+            cols_keep_last_value += [
+                "Day sin",
+                "Day cos",
+                "Week sin",
+                "Week cos",
+                "Year sin",
+                "Year cos",
+            ]
         elif self.time_mode == "window":
-            cols_keep_last_value += ["time_window"]
+            cols_keep_last_value += ["time_window", "workday"]
 
         flat_inputs, flat_labels = W.flatten_dataset(
             W.train,
