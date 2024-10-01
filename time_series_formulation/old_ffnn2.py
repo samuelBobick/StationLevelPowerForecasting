@@ -1,3 +1,4 @@
+import default_parameters
 import numpy as np
 import pandas as pd
 import torch
@@ -13,16 +14,16 @@ class old_NeuralNet:
 
     def __init__(
         self,
-        x_dim: int = 16,
-        lookahead: int = 16,
-        alpha: int = 2,
+        x_dim: int = default_parameters.X_DIM,
+        lookahead: int = default_parameters.LOOKAHEAD,
+        alpha: int = default_parameters.ALPHA,
         input_size: int = 23,
         hidden_size: int = 64,
         output_size: int = 16,
         num_hidden_layers: int = 2,
         activation=nn.ReLU(),
         learning_rate: float = 0.01,
-        epochs: int = 2000,
+        epochs: int = default_parameters.EPOCHS,
     ):
         """
         Args:

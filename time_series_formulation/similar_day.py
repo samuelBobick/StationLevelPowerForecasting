@@ -1,11 +1,12 @@
+import default_parameters
 import numpy as np
 import pandas as pd
-from sklearn.metrics import root_mean_squared_error
+from sklearn.metrics import root_mean_squared_error  # type: ignore
 
 
 class SimilarDay:
 
-    def __init__(self, alpha=2, num_days=5, readings_per_day=96):
+    def __init__(self, alpha=default_parameters.ALPHA, num_days=5, readings_per_day=96):
         """
         Args:
             alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions. Defaults to 2.

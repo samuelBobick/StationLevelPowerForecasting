@@ -1,12 +1,20 @@
+import default_parameters
 import numpy as np
 import pandas as pd
-from sklearn.metrics import root_mean_squared_error
+from sklearn.metrics import root_mean_squared_error  # type: ignore
 from sklearn.neighbors import KNeighborsRegressor
 
 
 class OldKNN:
 
-    def __init__(self, x_dim=16, lookahead=16, n_neighbors=10, percentile=90, alpha=2):
+    def __init__(
+        self,
+        x_dim=default_parameters.X_DIM,
+        lookahead=default_parameters.LOOKAHEAD,
+        n_neighbors=10,
+        percentile=90,
+        alpha=default_parameters.ALPHA,
+    ):
         """_summary_
 
         Args:
