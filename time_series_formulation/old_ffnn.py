@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+import default_parameters
 import numpy as np
 import pandas as pd
 import tensorboard as tb
@@ -25,17 +26,17 @@ class OldFFNN:
 
     def __init__(
         self,
-        x_dim: int = 16,
-        lookahead: int = 16,
-        alpha: int = 2,
+        x_dim: int = default_parameters.X_DIM,
+        lookahead: int = default_parameters.LOOKAHEAD,
+        alpha: int = default_parameters.ALPHA,
         hidden_size: int = 64,
         output_size: int = 16,
         num_hidden_layers: int = 2,
         activation=nn.ReLU(),
         initial_learning_rate: float = 0.01,
         scheduler_patience: int = 5,
-        epochs: int = 100,
-        time_mode: Literal["window", "cyclical"] = "cyclical",
+        epochs: int = default_parameters.EPOCHS,
+        time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
     ):
         """
         Args:

@@ -1,10 +1,11 @@
+import default_parameters
 import numpy as np
-from sklearn.metrics import root_mean_squared_error
+from sklearn.metrics import root_mean_squared_error  # type: ignore
 
 
 class LastWeek:
 
-    def __init__(self, alpha=2, readings_per_day=96):
+    def __init__(self, alpha=default_parameters.ALPHA, readings_per_day=96):
         """
         Args:
             alpha (float, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.

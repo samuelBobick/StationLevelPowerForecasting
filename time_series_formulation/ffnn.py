@@ -1,5 +1,6 @@
 from typing import Literal
 
+import default_parameters
 import pandas as pd
 import tensorboard as tb
 import tensorflow as tf
@@ -22,19 +23,19 @@ tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
 class FFNN(TorchBaseModel):
     def __init__(
         self,
-        x_dim: int = 16,
-        lookahead: int = 16,
-        alpha: int = 2,
+        x_dim: int = default_parameters.X_DIM,
+        lookahead: int = default_parameters.LOOKAHEAD,
+        alpha: int = default_parameters.ALPHA,
         hidden_size: int = 64,
         num_hidden_layers: int = 2,
         activation=nn.ReLU(),
         initial_learning_rate: float = 0.01,
         lr_threshold: float = 1e-5,
         scheduler_patience: int = 5,
-        epochs: int = 100,
-        number_of_initial_models: int = 5,
-        time_mode: Literal["window", "cyclical"] = "cyclical",
-        batch_size: int = 32,
+        epochs: int = default_parameters.EPOCHS,
+        number_of_initial_models: int = default_parameters.NUMBER_OF_INITIAL_MODELS,
+        time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
+        batch_size: int = default_parameters.BATCH_SIZE,
     ):
         """TODO"""
         # Initialize the BaseModel with relevant parameters

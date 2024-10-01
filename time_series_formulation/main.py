@@ -7,6 +7,8 @@ from lstm import LSTM
 from old_ffnn2 import old_NeuralNet
 from old_knn2 import OldKNN
 from similar_day import SimilarDay
+from sktime.forecasting.exp_smoothing import ExponentialSmoothing
+from sktime_base import SktimeBaseModel
 from slrp_ev_data import read_old_data, train_test_split
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
@@ -25,13 +27,9 @@ TypeModelChoice = Literal[
     "Last Week",
     "Similar Day",
     "LSTM",
+    "ExponentialSmoothing",
 ]
-model_choice: TypeModelChoice = "LSTM"
-number_of_initial_models = 1
-x_dim = 16
-lookahead = 96
-epochs = 5
-time_mode: Literal["cyclical", "window"] = "cyclical"
+model_choice: TypeModelChoice = "ExponentialSmoothing"
 
 if __name__ == "__main__":
     # Read the data
@@ -45,7 +43,7 @@ if __name__ == "__main__":
     dict_model: dict[TypeModelChoice, dict] = {
         "KNN": {
             "model": KNN,
-            "model_params": {"time_mode": time_mode},
+            "model_params": {},
             "fit_params": {},
         },
         "OldKNN": {"model": OldKNN, "model_params": {}, "fit_params": {}},
@@ -54,13 +52,7 @@ if __name__ == "__main__":
         "Old_Basic_NN": {"model": old_NeuralNet, "model_params": {}, "fit_params": {}},
         "Basic_NN": {
             "model": FFNN,
-            "model_params": {
-                "time_mode": time_mode,
-                "x_dim": x_dim,
-                "number_of_initial_models": number_of_initial_models,
-                "epochs": epochs,
-                "lookahead": lookahead,
-            },
+            "model_params": {},
             "fit_params": {
                 "val": val_eng,
             },
@@ -68,12 +60,17 @@ if __name__ == "__main__":
         "STL with ARIMA": {"model": STLARIMA, "model_params": {}, "fit_params": {}},
         "LSTM": {
             "model": LSTM,
+            "model_params": {},
+            "fit_params": {
+                "val": val_eng,
+            },
+        },
+        "ExponentialSmoothing": {
+            "model": SktimeBaseModel,
             "model_params": {
-                "time_mode": time_mode,
-                "x_dim": x_dim,
-                "epochs": epochs,
-                "number_of_initial_models": number_of_initial_models,
-                "lookahead": lookahead,
+                "forecaster": ExponentialSmoothing(
+                    trend="add", seasonal="additive", sp=96
+                ),
             },
             "fit_params": {
                 "val": val_eng,
