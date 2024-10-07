@@ -92,11 +92,10 @@ class TorchBaseModel:
         # )
 
         # Cosine annealing scheduler without restarts
-        # we divide self.epochs by 1.1 because with the warmup, the
-        # scheduler will be called slightly less than the number of epochs
+        # we subtract because this scheduler will only start after the warmup phase
         self.scheduler = lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            T_max=int((self.epochs // 1.1) * self.number_of_steps_per_epoch),
+            T_max=self.epochs * self.number_of_steps_per_epoch - self.warmup_steps,
             eta_min=1e-7,
         )
 
@@ -256,7 +255,12 @@ class TorchBaseModel:
 
             # Forward pass
             y_pred_batch = self.model(x_batch)
-            loss = self.criterion(y_pred_batch.squeeze(), y_batch)
+            loss = self.criterion(
+                y_pred_batch.squeeze()[
+                    :, self.first_prediction_index :
+                ],  # [:, self.first_prediction_index :]
+                y_batch[:, self.first_prediction_index :],  #
+            )
 
             # Backward pass and optimization
             loss.backward()
@@ -268,12 +272,14 @@ class TorchBaseModel:
             ):  # Log every 50 batches
                 avg_vloss = self._get_val_loss(val_loader)
 
-                writer.add_scalars(
-                    "Training vs. Validation Loss",
-                    {
-                        "Training": loss.item(),
-                        "Validation": avg_vloss,
-                    },
+                writer.add_scalar(
+                    "Training Loss",
+                    loss.item(),
+                    step_number,
+                )
+                writer.add_scalar(
+                    "Validation Loss",
+                    avg_vloss,
                     step_number,
                 )
 
@@ -303,7 +309,10 @@ class TorchBaseModel:
                 # reshape y to have same shape as output (remove the 1 dimension at the end)
                 val_y_batch = val_y_batch.squeeze()
                 val_y_pred_batch = self.model(val_x_batch)
-                vloss = self.criterion(val_y_pred_batch.squeeze(), val_y_batch)
+                vloss = self.criterion(
+                    val_y_pred_batch.squeeze()[:, self.first_prediction_index :],
+                    val_y_batch[:, self.first_prediction_index :],
+                )
                 running_vloss += vloss.item()
         self.model.train()
 
@@ -321,7 +330,7 @@ class TorchBaseModel:
             test, return_y_date=True, overlapping_windows=False
         )
         X_test_tensor, y_test_tensor = dataset.get_full_data()  # type: ignore
-        y_test_tensor = y_test_tensor.squeeze()
+        y_test_tensor = y_test_tensor.squeeze()[:, self.first_prediction_index :]
 
         # Load model from the checkpoint
         self.load_checkpoint()
@@ -330,6 +339,7 @@ class TorchBaseModel:
         self.model.eval()
         y_pred_test = self.model(X_test_tensor).detach().numpy().squeeze()
         y_pred_test_tensor = torch.tensor(y_pred_test, dtype=torch.float32)
+        y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
         rmse = torch.sqrt(
             nn.functional.mse_loss(y_pred_test_tensor, y_test_tensor)
@@ -340,8 +350,9 @@ class TorchBaseModel:
         wrmse = weighted_criterion(y_pred_test_tensor, y_test_tensor).item()
 
         # Flatten the lists to 1D
-        y_pred_test_flat = y_pred_test.flatten()
-        forecast_dates = y_dates.to_numpy().flatten()
+        y_pred_test_flat = y_pred_test_tensor.flatten().numpy()
+        y_dates = y_dates.squeeze()[:, self.first_prediction_index :]
+        forecast_dates = y_dates[:, self.first_prediction_index :].flatten().numpy()
 
         return rmse, wrmse, y_pred_test_flat, forecast_dates
 
@@ -358,7 +369,7 @@ class TorchBaseModel:
         print(
             "Model size",
             f"    Size of train set: {len(train_loader)} batches of size {self.batch_size}",
-            f"    therefore, we have {len(train_loader)} steps at each of the {self.epochs} epochs."
+            f"    therefore, we have {len(train_loader)} steps at each of the {self.epochs} epochs.",
             f"    Train input shape: {inputs.shape}",
             f"    Train label shape: {labels.shape}",
             sep="\n",
@@ -395,6 +406,25 @@ class TorchBaseModel:
 
     def initialize_model(self) -> None:
         raise NotImplementedError("This method must be implemented in the child class.")
+
+    @property
+    def first_prediction_index(self) -> int:
+        """This property exists to allow for model outputs that contain some of
+        the input data.
+        For instance:
+            - The input looks like this: [0, 1, 2, 3, 4, 5]
+            - You want to predict the next 3 values: [6, 7, 8]
+            - But the output of the model is of the same length as the input so
+            it looks like [3, 4, 5, 6, 7, 8]
+            - In this case, the first_prediction_index should be 3
+        in the case the model output is of the desired output length (3 in this case)
+        the first_prediction_index should be 0. This is the default value.
+
+        This property can be redefined in the child class in case the model output length
+        is different from the desired output length.
+        """
+        # This property can be redefined in the child class
+        return 0
 
 
 class AsymmetricRMSELoss(nn.Module):
