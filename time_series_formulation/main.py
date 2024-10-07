@@ -7,7 +7,9 @@ from lstm import LSTM
 from old_ffnn2 import old_NeuralNet
 from old_knn2 import OldKNN
 from similar_day import SimilarDay
-from sktime.forecasting.exp_smoothing import ExponentialSmoothing
+from sktime.forecasting.arima import AutoARIMA
+from sktime.forecasting.ets import AutoETS
+from sktime.forecasting.fbprophet import Prophet
 from sktime_base import SktimeBaseModel
 from slrp_ev_data import read_old_data, train_test_split
 from slrp_ev_data.feature_engineering import (
@@ -16,6 +18,7 @@ from slrp_ev_data.feature_engineering import (
     reverse_feature_engineering,
 )
 from STL import STLARIMA
+from tcn import TCN
 from visualization import visualize_forecast
 
 TypeModelChoice = Literal[
@@ -27,12 +30,16 @@ TypeModelChoice = Literal[
     "Last Week",
     "Similar Day",
     "LSTM",
-    "ExponentialSmoothing",
+    "TCN",
+    "AutoETS",
+    "AutoARIMA",
+    "Prophet",
 ]
-model_choice: TypeModelChoice = "ExponentialSmoothing"
+model_choice: TypeModelChoice = "KNN"
 
 if __name__ == "__main__":
     # Read the data
+    print("# Starting...")
     data = read_old_data.read_old_data()
     train, val, test = train_test_split.train_test_split(data, generate_validation=True)  # type: ignore
     normalize_parameters = get_train_min_and_max(train)
@@ -65,19 +72,68 @@ if __name__ == "__main__":
                 "val": val_eng,
             },
         },
-        "ExponentialSmoothing": {
+        "TCN": {
+            "model": TCN,
+            "model_params": {},
+            "fit_params": {
+                "val": val_eng,
+            },
+        },
+        "AutoETS": {
             "model": SktimeBaseModel,
             "model_params": {
-                "forecaster": ExponentialSmoothing(
-                    trend="add", seasonal="additive", sp=96
+                "forecaster": AutoETS(auto=True, sp=24, n_jobs=-1, maxiter=20),
+                "include_exogenous": True,
+                "reduce_data_frequency": True,
+                "refit_model_before_predictions": False,
+            },  # default maxiter = 1000
+            "fit_params": {
+                "val": val_eng,
+            },
+        },
+        "AutoARIMA": {
+            # takes a very long time to run...
+            "model": SktimeBaseModel,
+            "model_params": {
+                "forecaster": AutoARIMA(sp=24, maxiter=5, n_jobs=-1),
+                "include_exogenous": False,
+                "reduce_data_frequency": True,
+                "refit_model_before_predictions": False,
+                "start_data_date": "2023-09",
+            },  # default maxiter = 1000
+            "fit_params": {
+                "val": val_eng,
+            },
+        },
+        "Prophet": {
+            "model": SktimeBaseModel,
+            "model_params": {
+                "forecaster": Prophet(
+                    seasonality_mode="additive",
+                    n_changepoints=40,
+                    # add_country_holidays={"country_name": "US"},
+                    yearly_seasonality=False,
+                    weekly_seasonality=True,
+                    daily_seasonality=True,
+                    # the three growth arguments go together.
+                    # They make the model slightly more precise (by a few percents)
+                    # but also much slower to make predictions
+                    # Don't forget that the data is normalized (btw 0 and 1)
+                    # growth_floor=0,
+                    # growth_cap=1,
+                    # growth="logistic",
                 ),
+                "include_exogenous": False,
+                "reduce_data_frequency": True,
+                "refit_model_before_predictions": False,
+                # "start_data_date": "2023",
             },
             "fit_params": {
                 "val": val_eng,
             },
         },
     }
-    print("# Starting")
+
     print(
         f"Model choice: {model_choice}, with the following parameters for the initialization: {dict_model[model_choice]['model_params']} "
     )
@@ -85,8 +141,11 @@ if __name__ == "__main__":
     model = dict_model[model_choice]["model"](
         **dict_model[model_choice]["model_params"]
     )
+    print("# Fitting...")
     model.fit(train_eng, **dict_model[model_choice]["fit_params"])
 
+    print("# Making prediction(s)...")
+    # rmse, wrmse, forecast, forecast_dates = model.predict(test_eng)
     rmse, wrmse, forecast, forecast_dates = model.predict(test_eng)
 
     data_length_days = len(forecast) // 96

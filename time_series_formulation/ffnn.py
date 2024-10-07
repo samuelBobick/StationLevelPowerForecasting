@@ -123,9 +123,11 @@ class FFNN(TorchBaseModel):
         dataset = TensorDataset(flat_inputs, flat_labels)
 
         if return_y_date:
-            x_dates, y_dates = W.flatten_dataset(
-                W.train, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            )
+            x_dates, y_dates = W.convert_to_torch_dataset(
+                W.train,
+                cols_to_keep_as_features=["date"],
+                cols_to_keep_as_labels=["date"],
+            ).get_full_data()
             return dataset, y_dates
         else:
             return dataset

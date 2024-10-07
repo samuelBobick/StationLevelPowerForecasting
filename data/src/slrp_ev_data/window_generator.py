@@ -10,6 +10,53 @@ from .feature_engineering import reverse_feature_engineering
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
 
 
+class TFToTorchDataset(Dataset):
+    def __init__(
+        self,
+        tf_dataset,
+        keep_last_value_indices: list[int],
+        keep_as_label_indices: list[int],
+    ):
+        self.inputs = []
+        self.labels = []
+
+        # Iterate over TensorFlow batches and flatten to individual samples
+        for batch in tf_dataset.as_numpy_iterator():
+            inputs, labels = batch
+            for i in range(len(inputs)):  # Unpack individual samples from the batch
+                self.inputs.append(inputs[i][:, keep_last_value_indices])
+                self.labels.append(labels[i][:, keep_as_label_indices])
+
+    def __len__(self):
+        """
+        Returns the total number of samples in the dataset.
+        This is required for PyTorch's DataLoader.
+        """
+        return len(self.inputs)
+
+    def __getitem__(self, idx):
+        """
+        Retrieves a single sample by index. This is required for PyTorch's DataLoader.
+        Returns:
+        - input_tensor: Input tensor for the specific sample
+        - label_tensor: Label tensor for the specific sample
+        """
+        input_tensor = torch.tensor(self.inputs[idx], dtype=torch.float32)
+        label_tensor = torch.tensor(self.labels[idx], dtype=torch.float32)
+        return input_tensor, label_tensor
+
+    def get_full_data(self):
+        """
+        Returns:
+        - input_tensor: Full dataset input as a PyTorch tensor
+        - label_tensor: Full dataset labels as a PyTorch tensor
+        """
+        # Convert lists of arrays to PyTorch tensors
+        input_tensor = torch.tensor(self.inputs, dtype=torch.float32)
+        label_tensor = torch.tensor(self.labels, dtype=torch.float32)
+        return input_tensor, label_tensor
+
+
 class WindowGenerator:
     def __init__(
         self,
@@ -28,13 +75,12 @@ class WindowGenerator:
         Args:
             input_width (int): Number of time steps to include in the input window.
             label_width (int): Number of time steps to include in the label window.
-            shift (int): Number of time steps to shift the start of the label window relative to the start of the input window.
-                Usually equal to input_width if you don't want to overlap input and label windows.
+            shift (int): Number of time steps to shift the start of the label window relative to the start of the input window. Usually equal to input_width if you don't want to overlap input and label windows.
             train_df (pd.DataFrame): The training dataset, in the "FeaturedEngineeredSchema" format.
             test_df (pd.DataFrame | None, optional): The test dataset, in the "FeaturedEngineeredSchema" format. Defaults to None.
             val_df (pd.DataFrame | None, optional): The validation dataset, in the "FeaturedEngineeredSchema" format. Defaults to None.
             label_columns (list[str] | None, optional): List of column names to use as labels. Defaults to None.
-            overlapping_windows (bool, optional): Whether to have overlapping windows in the data. Defaults to False.
+            overlapping_windows (bool, optional): Whether to have overlapping label windows in the data. If the shift is greater than the label width, inputs will overlap (which is fine!)Defaults to False.
             batch_size (int, optional): Defaults to 32. For now, set this to 1 if you want to use flatten_dataset.
         """
         # Store the raw data.
@@ -352,7 +398,7 @@ class WindowGenerator:
     def get_sequence_stride(self, overlapping_windows: bool):
         """Get the sequence stride based on the overlapping_windows attribute."""
         if not overlapping_windows:
-            return self.label_width
+            return self.shift
         else:
             return 1
 
@@ -384,7 +430,7 @@ class WindowGenerator:
         dataset: tf.data.Dataset,
         cols_to_keep_as_features: list[str] | None = None,
         cols_to_keep_as_labels: list[str] | None = None,
-    ) -> Dataset:
+    ) -> TFToTorchDataset:
         """Convert a TensorFlow dataset to a PyTorch dataset. The pytorch dataset doesn't have batches.
 
         Args:
@@ -476,50 +522,3 @@ class WindowGenerator:
                 plt.title("Random data from the training set")
 
         plt.xlabel(f"Time [{self.data_freq}]")
-
-
-class TFToTorchDataset(Dataset):
-    def __init__(
-        self,
-        tf_dataset,
-        keep_last_value_indices: list[int],
-        keep_as_label_indices: list[int],
-    ):
-        self.inputs = []
-        self.labels = []
-
-        # Iterate over TensorFlow batches and flatten to individual samples
-        for batch in tf_dataset.as_numpy_iterator():
-            inputs, labels = batch
-            for i in range(len(inputs)):  # Unpack individual samples from the batch
-                self.inputs.append(inputs[i][:, keep_last_value_indices])
-                self.labels.append(labels[i][:, keep_as_label_indices])
-
-    def __len__(self):
-        """
-        Returns the total number of samples in the dataset.
-        This is required for PyTorch's DataLoader.
-        """
-        return len(self.inputs)
-
-    def __getitem__(self, idx):
-        """
-        Retrieves a single sample by index. This is required for PyTorch's DataLoader.
-        Returns:
-        - input_tensor: Input tensor for the specific sample
-        - label_tensor: Label tensor for the specific sample
-        """
-        input_tensor = torch.tensor(self.inputs[idx], dtype=torch.float32)
-        label_tensor = torch.tensor(self.labels[idx], dtype=torch.float32)
-        return input_tensor, label_tensor
-
-    def get_full_data(self):
-        """
-        Returns:
-        - input_tensor: Full dataset input as a PyTorch tensor
-        - label_tensor: Full dataset labels as a PyTorch tensor
-        """
-        # Convert lists of arrays to PyTorch tensors
-        input_tensor = torch.tensor(self.inputs, dtype=torch.float32)
-        label_tensor = torch.tensor(self.labels, dtype=torch.float32)
-        return input_tensor, label_tensor

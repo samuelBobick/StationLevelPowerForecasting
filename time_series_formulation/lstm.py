@@ -14,7 +14,7 @@ class LSTM(TorchBaseModel):
         x_dim: int = default_parameters.X_DIM,
         lookahead: int = default_parameters.LOOKAHEAD,
         alpha: int = default_parameters.ALPHA,
-        hidden_size: int = 64,
+        hidden_size: int = 32,
         num_lstm_layers: int = 1,
         activation=nn.ReLU(),
         initial_learning_rate: float = 0.01,
@@ -126,9 +126,11 @@ class LSTM(TorchBaseModel):
         )
 
         if return_y_date:
-            x_dates, y_dates = W.flatten_dataset(
-                W.train, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            )
+            x_dates, y_dates = W.convert_to_torch_dataset(
+                W.train,
+                cols_to_keep_as_features=["date"],
+                cols_to_keep_as_labels=["date"],
+            ).get_full_data()
             return dataset, y_dates
         else:
             return dataset
