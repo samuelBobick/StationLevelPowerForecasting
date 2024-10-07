@@ -91,16 +91,45 @@ def reverse_feature_engineering(
     # convert table to DataFrame if it is in the tensor format
     if not isinstance(data_input, pd.DataFrame):
         data = pd.DataFrame(data_input)
-        data.rename(columns={0: "date", 1: "power", 2: "workday"}, inplace=True)
+        data.rename(
+            columns={
+                0: "date",
+                1: "power",
+                2: "workday",
+                3: "time_window",
+                4: "Day sin",
+                5: "Day cos",
+                6: "Week sin",
+                7: "Week cos",
+                8: "Year sin",
+                9: "Year cos",
+            },
+            inplace=True,
+        )
 
     else:
         data = data_input.copy()
-    data = data.astype({"date": "int64", "power": "float64", "workday": "int64"})
+    data = data.astype(
+        {
+            "date": "int64",
+            "power": "float64",
+            "workday": "int64",
+            "time_window": "int32",
+            "Day sin": "float64",
+            "Day cos": "float64",
+            "Week sin": "float64",
+            "Week cos": "float64",
+            "Year sin": "float64",
+            "Year cos": "float64",
+        }
+    )
 
     # Check that the data is in the correct format
     FeaturedEngineeredSchema.validate(data)
     data = data.drop(
-        ["Day sin", "Day cos", "Year sin", "Year cos"], axis=1, errors="ignore"
+        ["Day sin", "Day cos", "Week sin", "Week cos", "Year sin", "Year cos"],
+        axis=1,
+        errors="ignore",
     )
 
     # Convert the date back to a Timestamp
