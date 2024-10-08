@@ -3,8 +3,7 @@ from typing import Literal
 import default_parameters
 import numpy as np
 import pandas as pd
-from asymmetric_loss import asymmetric_rmse
-from sklearn.metrics import root_mean_squared_error  # type: ignore
+from compute_losses import compute_losses
 from slrp_ev_data.window_generator import WindowGenerator
 from tqdm import tqdm
 
@@ -99,9 +98,6 @@ class RegressionBaseModel:
         """
         X_test, y_test, y_dates = self.get_X_y(test, return_y_date=True)  # type: ignore
 
-        rmses = []
-        rwmses = []
-
         forecasts = []
 
         for index, row in tqdm(X_test.iterrows(), desc="Predicting", total=len(X_test)):
@@ -120,16 +116,11 @@ class RegressionBaseModel:
         forecast = np.array([f[0] for f in forecasts]).flatten()
         real = y_test.to_numpy().flatten()
 
-        rmse = root_mean_squared_error(forecast, real)
-
-        rwmse = asymmetric_rmse(self.alpha, forecast, real)
-
-        rmses.append(rmse)
-        rwmses.append(rwmse)
+        losses = compute_losses(forecast, real, self.alpha)
 
         forecast_dates = y_dates.to_numpy().flatten()
 
-        return rmse, rwmse, forecast, forecast_dates
+        return losses, forecast, forecast_dates
 
     def predict_model(self, model, X_test: pd.DataFrame):
         raise NotImplementedError(

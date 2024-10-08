@@ -1,13 +1,13 @@
 from typing import Literal
 
+from archive.old_ffnn2 import old_NeuralNet
+from compute_losses import get_real_scale_losses
 from ffnn import FFNN
 from knn import KNN
 from last_week import LastWeek
 from lstm import LSTM
-from old_ffnn2 import old_NeuralNet
-from old_knn2 import OldKNN
 from similar_day import SimilarDay
-from sktime.forecasting.arima import AutoARIMA
+from sktime.forecasting.arima import ARIMA, AutoARIMA
 from sktime.forecasting.ets import AutoETS
 from sktime.forecasting.fbprophet import Prophet
 from sktime_base import SktimeBaseModel
@@ -17,7 +17,6 @@ from slrp_ev_data.feature_engineering import (
     get_train_min_and_max,
     reverse_feature_engineering,
 )
-from STL import STLARIMA
 from tcn import TCN
 from visualization import visualize_forecast
 from xgboost_model import XGBoost
@@ -25,19 +24,18 @@ from xgboost_model import XGBoost
 TypeModelChoice = Literal[
     "KNN",
     "XGBoost",
-    "OldKNN",
     "Basic_NN",
     "Old_Basic_NN",
-    "STL with ARIMA",
     "Last Week",
     "Similar Day",
     "LSTM",
     "TCN",
     "AutoETS",
     "AutoARIMA",
+    "ARIMA",
     "Prophet",
 ]
-model_choice: TypeModelChoice = "Basic_NN"
+model_choice: TypeModelChoice = "Last Week"
 
 if __name__ == "__main__":
     # Read the data
@@ -64,7 +62,6 @@ if __name__ == "__main__":
                 "val": val_eng,
             },
         },
-        "OldKNN": {"model": OldKNN, "model_params": {}, "fit_params": {}},
         "Last Week": {"model": LastWeek, "model_params": {}, "fit_params": {}},
         "Similar Day": {"model": SimilarDay, "model_params": {}, "fit_params": {}},
         "Old_Basic_NN": {"model": old_NeuralNet, "model_params": {}, "fit_params": {}},
@@ -75,7 +72,6 @@ if __name__ == "__main__":
                 "val": val_eng,
             },
         },
-        "STL with ARIMA": {"model": STLARIMA, "model_params": {}, "fit_params": {}},
         "LSTM": {
             "model": LSTM,
             "model_params": {},
@@ -95,7 +91,7 @@ if __name__ == "__main__":
             "model_params": {
                 "forecaster": AutoETS(auto=True, sp=24, n_jobs=-1, maxiter=20),
                 "include_exogenous": True,
-                "reduce_data_frequency": True,
+                "downsample_hours": 1,
                 "refit_model_before_predictions": False,
             },  # default maxiter = 1000
             "fit_params": {
@@ -106,11 +102,36 @@ if __name__ == "__main__":
             # takes a very long time to run...
             "model": SktimeBaseModel,
             "model_params": {
-                "forecaster": AutoARIMA(sp=24, maxiter=5, n_jobs=-1),
-                "include_exogenous": False,
-                "reduce_data_frequency": True,
+                "forecaster": AutoARIMA(
+                    sp=int(96 / (4 * 4)),
+                    out_of_sample_size=int(96 / (4 * 4) * 7),
+                    maxiter=15,
+                    n_jobs=-1,
+                    start_params=[1, 1],
+                    max_order=7,
+                    seasonal=True,
+                    stationary=True,
+                ),
+                "include_exogenous": True,
+                "downsample_hours": 4,
                 "refit_model_before_predictions": False,
-                "start_data_date": "2023-09",
+                "start_data_date": "2023-08",
+            },  # default maxiter = 1000
+            "fit_params": {
+                "val": val_eng,
+            },
+        },
+        "ARIMA": {
+            "model": SktimeBaseModel,
+            "model_params": {
+                "forecaster": ARIMA(
+                    order=(2, 0, 1),
+                    seasonal_order=(2, 1, 2, 96 / (4 * 2)),
+                ),
+                "include_exogenous": False,
+                "downsample_hours": 2,
+                "refit_model_before_predictions": False,
+                "start_data_date": "2023-01",
             },  # default maxiter = 1000
             "fit_params": {
                 "val": val_eng,
@@ -135,7 +156,7 @@ if __name__ == "__main__":
                     # growth="logistic",
                 ),
                 "include_exogenous": False,
-                "reduce_data_frequency": True,
+                "downsample_hours": 2,
                 "refit_model_before_predictions": False,
                 # "start_data_date": "2023",
             },
@@ -156,20 +177,16 @@ if __name__ == "__main__":
     model.fit(train_eng, **dict_model[model_choice]["fit_params"])
 
     print("# Making prediction(s)...")
-    # rmse, wrmse, forecast, forecast_dates = model.predict(test_eng)
-    rmse, wrmse, forecast, forecast_dates = model.predict(test_eng)
+    losses, forecast, forecast_dates = model.predict(test_eng)
 
     data_length_days = len(forecast) // 96
-    train_min, train_max = normalize_parameters
+    losses = get_real_scale_losses(losses, normalize_parameters=normalize_parameters)
     print(
         f"{model_choice}: ",
-        "RMSE: {number:.0f}".format(
-            number=rmse * (train_max["power"] - train_min["power"]) + train_min["power"]
-        ),
-        ", WRMSE: {number:.0f}".format(
-            number=wrmse * (train_max["power"] - train_min["power"])
-            + train_min["power"]
-        ),
+        *[
+            f"{loss_type.upper()}: {loss_value:.0f};"
+            for loss_type, loss_value in losses.items()
+        ],
         f"for around {data_length_days} days of predictions",
     )
 
