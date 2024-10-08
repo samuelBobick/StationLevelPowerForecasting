@@ -1,6 +1,6 @@
 import default_parameters
-import numpy as np
 import pandas as pd
+from asymmetric_loss import asymmetric_rmse
 from sklearn.metrics import root_mean_squared_error  # type: ignore
 
 
@@ -52,10 +52,9 @@ class SimilarDay:
 
         rmse = root_mean_squared_error(forecast, real)
 
-        weights = self.alpha ** ((1 - np.sign(forecast - real)))
-        wrmse = root_mean_squared_error(forecast, real, sample_weight=weights)
+        rwmse = asymmetric_rmse(self.alpha, forecast, real)
 
-        return rmse, wrmse, forecast, forecast_dates
+        return rmse, rwmse, forecast, forecast_dates
 
     def fit(self, train):
         return
