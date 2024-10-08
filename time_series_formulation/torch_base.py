@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
+from compute_losses import Losses, compute_torch_losses
 from torch.optim.adamw import AdamW
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -41,11 +42,10 @@ class TorchBaseModel:
 
         # Weighted loss parameters
         self.alpha = alpha
-        self.criterion = AsymmetricRMSELoss(alpha)  # nn.MSELoss()
-
+        self.criterion = nn.MSELoss()  # AsymmetricRMSELoss(alpha)
         # Path parameters
         self.model_str_name = model_str_name
-        self.model_path = Path(__file__).parent / "model" / f"b{model_str_name}.pt"
+        self.model_path = Path(__file__).parent / "model" / f"{model_str_name}.pt"
         self.model_path.parent.mkdir(exist_ok=True, parents=True)
         self.tensorboard_path = Path(__file__).parent / "runs"
 
@@ -322,9 +322,7 @@ class TorchBaseModel:
         # all layers have the same lr so we can just return the lr of the first layer
         return self.optimizer.param_groups[0]["lr"]  # type: ignore
 
-    def predict(
-        self, test: pd.DataFrame
-    ) -> tuple[float, float, np.ndarray, np.ndarray]:
+    def predict(self, test: pd.DataFrame) -> tuple[Losses, np.ndarray, np.ndarray]:
         """Given a pandas DataFrame test, returns error metrics and list of predictions."""
         dataset, y_dates = self.get_dataset(
             test, return_y_date=True, overlapping_windows=False
@@ -341,20 +339,14 @@ class TorchBaseModel:
         y_pred_test_tensor = torch.tensor(y_pred_test, dtype=torch.float32)
         y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
-        rmse = torch.sqrt(
-            nn.functional.mse_loss(y_pred_test_tensor, y_test_tensor)
-        ).item()
-
-        # Compute weighted RMSE using a custom asymmetric loss function
-        weighted_criterion = AsymmetricRMSELoss(alpha=self.alpha)
-        wrmse = weighted_criterion(y_pred_test_tensor, y_test_tensor).item()
+        losses = compute_torch_losses(y_pred_test_tensor, y_test_tensor, self.alpha)
 
         # Flatten the lists to 1D
         y_pred_test_flat = y_pred_test_tensor.flatten().numpy()
         y_dates = y_dates.squeeze()[:, self.first_prediction_index :]
         forecast_dates = y_dates[:, self.first_prediction_index :].flatten().numpy()
 
-        return rmse, wrmse, y_pred_test_flat, forecast_dates
+        return losses, y_pred_test_flat, forecast_dates
 
     def add_model_to_board(self, train_loader: DataLoader) -> None:
         if self.model is None:
@@ -425,18 +417,3 @@ class TorchBaseModel:
         """
         # This property can be redefined in the child class
         return 0
-
-
-class AsymmetricRMSELoss(nn.Module):
-    def __init__(self, alpha):
-        super(AsymmetricRMSELoss, self).__init__()
-        self.multiplier = alpha
-
-    def forward(self, input, target):
-        mse_loss = nn.functional.mse_loss(input, target, reduction="none")
-        loss = torch.sqrt(
-            torch.mean(
-                torch.pow(self.multiplier, 1 - torch.sign(input - target)) * mse_loss
-            )
-        )
-        return loss

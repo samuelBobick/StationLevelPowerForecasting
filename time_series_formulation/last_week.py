@@ -1,6 +1,5 @@
 import default_parameters
-from asymmetric_loss import asymmetric_rmse
-from sklearn.metrics import root_mean_squared_error  # type: ignore
+from compute_losses import compute_losses
 
 
 class LastWeek:
@@ -30,11 +29,9 @@ class LastWeek:
         real = power[self.readings_per_day * 7 :]
         forecast_dates = test.iloc[self.readings_per_day * 7 :]["date"].to_numpy()
 
-        rmse = root_mean_squared_error(forecast, real)
+        losses = compute_losses(forecast, real, self.alpha)
 
-        rwmse = asymmetric_rmse(self.alpha, forecast, real)
-
-        return rmse, rwmse, forecast, forecast_dates
+        return losses, forecast, forecast_dates
 
     def fit(self, train):
         return
