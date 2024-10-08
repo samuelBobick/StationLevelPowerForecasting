@@ -20,9 +20,11 @@ from slrp_ev_data.feature_engineering import (
 from STL import STLARIMA
 from tcn import TCN
 from visualization import visualize_forecast
+from xgboost_model import XGBoost
 
 TypeModelChoice = Literal[
     "KNN",
+    "XGBoost",
     "OldKNN",
     "Basic_NN",
     "Old_Basic_NN",
@@ -35,7 +37,7 @@ TypeModelChoice = Literal[
     "AutoARIMA",
     "Prophet",
 ]
-model_choice: TypeModelChoice = "KNN"
+model_choice: TypeModelChoice = "Basic_NN"
 
 if __name__ == "__main__":
     # Read the data
@@ -51,7 +53,16 @@ if __name__ == "__main__":
         "KNN": {
             "model": KNN,
             "model_params": {},
-            "fit_params": {},
+            "fit_params": {
+                "val": val_eng,
+            },
+        },
+        "XGBoost": {
+            "model": XGBoost,
+            "model_params": {},
+            "fit_params": {
+                "val": val_eng,
+            },
         },
         "OldKNN": {"model": OldKNN, "model_params": {}, "fit_params": {}},
         "Last Week": {"model": LastWeek, "model_params": {}, "fit_params": {}},

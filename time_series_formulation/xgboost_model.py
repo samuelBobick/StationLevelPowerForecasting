@@ -1,20 +1,17 @@
 from typing import Literal
 
 import default_parameters
-import numpy as np
 import pandas as pd
+import xgboost as xgb
 from regression_base import RegressionBaseModel
-from sklearn.neighbors import KNeighborsRegressor
 
 
-class KNN(RegressionBaseModel):
+class XGBoost(RegressionBaseModel):
 
     def __init__(
         self,
         x_dim=default_parameters.X_DIM,
         lookahead=default_parameters.LOOKAHEAD,
-        n_neighbors=10,
-        percentile=90,
         alpha=default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
     ):
@@ -33,9 +30,6 @@ class KNN(RegressionBaseModel):
         self.alpha = alpha
         self.time_mode = time_mode
 
-        self.n_neighbors = n_neighbors
-        self.percentile = percentile
-
     def fit_model(
         self,
         X_train: pd.DataFrame,
@@ -45,41 +39,40 @@ class KNN(RegressionBaseModel):
         y_val: pd.DataFrame,
         val_mask: pd.Series,
     ):
-        knn_regressor = PercentileKNNRegressor(
-            n_neighbors=self.n_neighbors, percentile=self.percentile
+        dtrain = xgb.DMatrix(
+            X_train[train_mask].drop(
+                self.cols_to_drop_for_model,
+                axis=1,
+            ),
+            label=y_train[train_mask],
         )
-
-        X_input = X_train[train_mask].drop(
-            self.cols_to_drop_for_model,
-            # [col for col in X_train.columns if not col.startswith("power")],
-            axis=1,
+        dval = xgb.DMatrix(
+            X_val[val_mask].drop(
+                self.cols_to_drop_for_model,
+                axis=1,
+            ),
+            label=y_val[val_mask],
         )
-        y_input = y_train[train_mask]
+        evallist = [
+            (dtrain, "train"),
+            (dval, "eval"),
+        ]
 
-        knn_regressor.fit(X_input, y_input)
-        return knn_regressor
+        xgb_params = {
+            "objective": "reg:squarederror",
+            "eval_metric": "rmse",
+            # "max_depth": 6,
+            "eta": 0.1,  # learning rate, default 0.3
+            "subsample": 0.8,  # fraction of training set to randomly sample for =
+            # each tree (has a similar effect as dropout)
+            "colsample_bytree": 0.8,
+        }
+        num_round = 100
+        bst = xgb.train(
+            xgb_params, dtrain, num_round, evals=evallist, early_stopping_rounds=10
+        )
+        return bst
 
     def predict_model(self, model, X_test: pd.DataFrame):
-        return model.predict(X_test)
-
-
-class PercentileKNNRegressor:
-    def __init__(self, n_neighbors=5, percentile=50):
-        self.n_neighbors = n_neighbors
-        self.percentile = percentile
-        self.knn = KNeighborsRegressor(
-            n_neighbors=n_neighbors, weights="uniform", n_jobs=-1
-        )
-
-    def fit(self, X, y):
-        self.knn.fit(X, y)
-
-    def predict(self, X):
-        distances, indices = self.knn.kneighbors(X)
-        nearest_neighbors_values = self.knn._y[indices]
-
-        nth_percentile_values = np.percentile(
-            nearest_neighbors_values, self.percentile, axis=1
-        )
-
-        return nth_percentile_values
+        dtest = xgb.DMatrix(X_test)
+        return model.predict(dtest, iteration_range=(0, model.best_iteration + 1))
