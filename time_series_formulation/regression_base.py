@@ -6,6 +6,7 @@ import pandas as pd
 from asymmetric_loss import asymmetric_rmse
 from sklearn.metrics import root_mean_squared_error  # type: ignore
 from slrp_ev_data.window_generator import WindowGenerator
+from tqdm import tqdm
 
 
 class RegressionBaseModel:
@@ -37,11 +38,11 @@ class RegressionBaseModel:
         elif self.time_mode == "cyclical":
             self.cols_to_drop_for_model = [
                 "workday",
-                "Year sin",
-                "Year cos",
+                # "Year sin",
+                # "Year cos",
             ]
 
-    def fit(self, train: pd.DataFrame):
+    def fit(self, train: pd.DataFrame, val: pd.DataFrame):
         """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
 
         Args:
@@ -51,20 +52,37 @@ class RegressionBaseModel:
             tuple (float, float, list): RMSE, weighted RMSE, array of predictions
         """
         X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
+        X_val, y_val = self.get_X_y(val, overlapping_windows=False)  # type: ignore
 
         self.models = {}
         if self.time_mode == "window":
             for t_w in range(6):
                 for w in [0, 1]:
-                    mask = (X_train["time_window"] == t_w) & (X_train["workday"] == w)
+                    train_mask = (X_train["time_window"] == t_w) & (
+                        X_train["workday"] == w
+                    )
+                    val_mask = (X_val["time_window"] == t_w) & (X_val["workday"] == w)
 
-                    self.models[(t_w, w)] = self.fit_model(X_train, y_train, mask)
+                    self.models[(t_w, w)] = self.fit_model(
+                        X_train, y_train, train_mask, X_val, y_val, val_mask
+                    )
         elif self.time_mode == "cyclical":
             for w in [0, 1]:
-                mask = X_train["workday"] == w
-                self.models[w] = self.fit_model(X_train, y_train, mask)
+                train_mask = X_train["workday"] == w
+                val_mask = X_val["workday"] == w
+                self.models[w] = self.fit_model(
+                    X_train, y_train, train_mask, X_val, y_val, val_mask
+                )
 
-    def fit_model(self, X_train, y_train, data_mask):
+    def fit_model(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.DataFrame,
+        train_mask: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.DataFrame,
+        val_mask: pd.Series,
+    ):
         raise NotImplementedError(
             "This method should be implemented by the child class"
         )
@@ -86,14 +104,18 @@ class RegressionBaseModel:
 
         forecasts = []
 
-        for index, row in X_test.iterrows():
-            input = row.drop(self.cols_to_drop_for_model).to_numpy().reshape(1, -1)
+        for index, row in tqdm(X_test.iterrows(), desc="Predicting", total=len(X_test)):
+            input = pd.DataFrame(
+                [row.drop(self.cols_to_drop_for_model)]
+            )  # .to_numpy().reshape(1, -1)
             if self.time_mode == "window":
                 forecasts.append(
-                    self.models[(row["time_window"], row["workday"])].predict(input)
+                    self.predict_model(
+                        self.models[(row["time_window"], row["workday"])], input
+                    )
                 )
             elif self.time_mode == "cyclical":
-                forecasts.append(self.models[row["workday"]].predict(input))
+                forecasts.append(self.predict_model(self.models[row["workday"]], input))
 
         forecast = np.array([f[0] for f in forecasts]).flatten()
         real = y_test.to_numpy().flatten()
@@ -108,6 +130,11 @@ class RegressionBaseModel:
         forecast_dates = y_dates.to_numpy().flatten()
 
         return rmse, rwmse, forecast, forecast_dates
+
+    def predict_model(self, model, X_test: pd.DataFrame):
+        raise NotImplementedError(
+            "This method should be implemented by the child class"
+        )
 
     def get_X_y(
         self,
