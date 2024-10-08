@@ -1,10 +1,11 @@
 import warnings
-from typing import Literal
+from typing import Literal, Optional
 
 import default_parameters
 import numpy as np
 import pandas as pd
 from asymmetric_loss import asymmetric_rmse
+from compute_losses import Losses, compute_losses
 from sktime.performance_metrics.forecasting import mean_squared_error
 from sktime.split import SlidingWindowSplitter
 
@@ -22,7 +23,7 @@ class SktimeBaseModel:
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         alpha=default_parameters.ALPHA,
         include_exogenous: bool = True,
-        reduce_data_frequency: bool = False,
+        downsample_hours: Optional[bool] = None,
         refit_model_before_predictions: bool = False,
         start_data_date: str = "2020",
     ):
@@ -47,7 +48,7 @@ class SktimeBaseModel:
 
         # The following parameters are meant to make the model faster
         self.include_exogenous = include_exogenous
-        self.reduce_data_frequency = reduce_data_frequency
+        self.downsample_hours = downsample_hours
         self.frequency_reduction_factor = 1  # initialize this to 1 for the case where we don't reduce the data frequency
         self.refit_model_before_predictions = refit_model_before_predictions
         self.start_data_date = start_data_date
@@ -71,30 +72,31 @@ class SktimeBaseModel:
             1, int(self.lookahead / self.frequency_reduction_factor) + 1
         )
 
-        if self.reduce_data_frequency:
-            # TODO: keep this only if reducing size
+        if self.downsample_hours:
             # Drop rows with duplicate indexes
+            # (coming from the concatenation of train and val)
             X = X[~X.index.duplicated(keep="first")]
             y = y[~y.index.duplicated(keep="first")]
             assert (
-                (X == X.asfreq("1h")).all().all()
+                (X == X.asfreq(f"{self.downsample_hours}h")).all().all()
             ), "Data is not evenly spaced or contains missing intervals"
-            X = X.asfreq("1h")
-            y = y.asfreq("1h")
+            X = X.asfreq(f"{self.downsample_hours}h")
+            y = y.asfreq(f"{self.downsample_hours}h")
 
         if self.include_exogenous:
             self.forecaster.fit(y, X=X, fh=self.fh)
         else:
             self.forecaster.fit(y, fh=self.fh)
 
-        # self.forecaster.update(y_val, X=X_val, update_params=True)
-
         print(f"Fitted parameters are: {self.forecaster.get_fitted_params()}")
 
-    def predict(
-        self, test: pd.DataFrame
-    ) -> tuple[float, float, np.ndarray, np.ndarray]:
-        X_test, y_test = self.get_X_y(test)
+    def predict(self, test: pd.DataFrame) -> tuple[Losses, np.ndarray, np.ndarray]:
+        X_test, y_test = self.get_X_y(test, resample_labels=False)
+
+        if self.downsample_hours:
+            y_test_r = y_test.resample(f"{self.downsample_hours}h").max()
+        else:
+            y_test_r = y_test
 
         # Reduce the number of predictions if the algorithm is too slow
         # if self.frequency_reduction_factor:
@@ -110,7 +112,7 @@ class SktimeBaseModel:
 
         if self.include_exogenous:
             y_pred_raw = self.forecaster.update_predict(
-                y_test,
+                y_test_r,
                 cv=cv,
                 X=X_test,
                 update_params=self.refit_model_before_predictions,
@@ -118,7 +120,7 @@ class SktimeBaseModel:
             )
         else:
             y_pred_raw = self.forecaster.update_predict(
-                y_test,
+                y_test_r,
                 cv=cv,
                 update_params=self.refit_model_before_predictions,
                 reset_forecaster=False,
@@ -127,15 +129,20 @@ class SktimeBaseModel:
         y_pred = y_pred_raw.stack().reset_index(level=1, drop=True)
         if len(y_pred.shape) > 1:
             y_pred = y_pred_raw.stack().stack().reset_index(level=[1, 2], drop=True)
-        y_test = y_test.loc[y_pred.index]
+        y_test_r = y_test_r.loc[y_pred.index]
 
-        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-
-        wrmse = asymmetric_rmse(self.alpha, y_pred, y_test)
+        losses_r = compute_losses(y_pred, y_test_r, self.alpha)
+        if self.downsample_hours:
+            print(f"RMSE before resampling: {losses_r['rmse']:.4f}")
+            # resample to original frequency
+            y_pred = y_pred.resample("15min").ffill()
+            y_test = y_test.loc[y_pred.index]
+            losses = compute_losses(y_pred, y_test, self.alpha)
+            print(f"RMSE after resampling: {losses['rmse']:.4f}")
 
         y_test_date = pd.to_datetime(y_pred.index).astype("int64") // 1e9
 
-        return rmse, wrmse, y_pred.to_numpy(), y_test_date.to_numpy()
+        return losses, y_pred.to_numpy(), y_test_date.to_numpy()
 
     def predict_short(
         self, test: pd.DataFrame, number_of_predictions: int = 1
@@ -168,7 +175,7 @@ class SktimeBaseModel:
     def get_X_y(
         self,
         df: pd.DataFrame,
-        overlapping_windows: bool = False,
+        resample_labels: bool = True,
     ) -> tuple[pd.DataFrame, pd.Series]:
         """Generates the dataset and features based on the input DataFrame."""
         data = df.copy()
@@ -183,18 +190,20 @@ class SktimeBaseModel:
         ), "Data is not evenly spaced or contains missing intervals"
 
         data = data.asfreq(data_freq)
+        # reduce sample size for faster testing
+        data = data.loc[data.index >= self.start_data_date]
 
-        if self.reduce_data_frequency:
-            # reduce sample size
-            data = data.loc[data.index >= self.start_data_date]
+        if self.downsample_hours:
             # resample to 1 hour data
-            data = data.resample("1h").mean()
+            data_r = data.resample(f"{self.downsample_hours}h").max()
             if data_freq == "15min":
-                self.frequency_reduction_factor = 4
+                self.frequency_reduction_factor = 4 * self.downsample_hours
             elif data_freq == "5min":
-                self.frequency_reduction_factor = 12
+                self.frequency_reduction_factor = 12 * self.downsample_hours
             else:
                 raise ValueError(f"Data frequency of {data_freq} is not supported yet")
+        else:
+            data_r = data
 
         cols_to_keep_as_features = []
 
@@ -210,7 +219,10 @@ class SktimeBaseModel:
         elif self.time_mode == "window":
             cols_to_keep_as_features += ["time_window", "workday"]
 
-        X = data[cols_to_keep_as_features]
-        y = data["power"]
+        X = data_r[cols_to_keep_as_features]
+        if resample_labels:
+            y = data_r["power"]
+        else:
+            y = data["power"]
 
         return X, y
