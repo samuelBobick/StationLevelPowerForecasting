@@ -351,7 +351,7 @@ class TorchBaseModel:
         print(f"Best validation loss of model retrieved: {self.best_vloss}")
 
         self.model.eval()
-        y_pred_test = self.model(X_test_tensor).detach().numpy().squeeze()
+        y_pred_test = self.model(X_test_tensor).detach().cpu().numpy().squeeze()
         y_pred_test_tensor = torch.tensor(
             y_pred_test, dtype=torch.float32, device=DEVICE
         )
@@ -362,9 +362,11 @@ class TorchBaseModel:
         )
 
         # Flatten the lists to 1D
-        y_pred_test_flat = y_pred_test_tensor.flatten().numpy()
+        y_pred_test_flat = y_pred_test_tensor.flatten().cpu().numpy()
         y_dates = y_dates.squeeze()[:, self.first_prediction_index :]
-        forecast_dates = y_dates[:, self.first_prediction_index :].flatten().numpy()
+        forecast_dates = (
+            y_dates[:, self.first_prediction_index :].flatten().cpu().numpy()
+        )
 
         return losses, y_pred_test_flat, forecast_dates
 

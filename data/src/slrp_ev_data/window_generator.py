@@ -9,17 +9,7 @@ from .feature_engineering import reverse_feature_engineering
 
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
 
-if torch.cuda.is_available():
-    print(f"CUDA version: {torch.version.cuda}")
-    print(f"Number of CUDA devices: {torch.cuda.device_count()}")
-    # Storing ID of current CUDA device
-    cuda_id = torch.cuda.current_device()
-    print(f"ID of current CUDA device: " f"{torch.cuda.current_device()}")
-    print(f"Name of current CUDA device: " f"{torch.cuda.get_device_name(cuda_id)}")
-    DEVICE = "cuda"
-else:
-    print("CUDA is not available. Using CPU.")
-    DEVICE = "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class TFToTorchDataset(Dataset):
