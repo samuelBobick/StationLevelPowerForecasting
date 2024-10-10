@@ -47,4 +47,5 @@ def save_losses(losses: Losses, model_name: str) -> None:
         df_results = pd.DataFrame()
     df_results = pd.concat([df_results, additional_data], ignore_index=True)
 
+    RESULTS_FILENAME.parent.mkdir(exist_ok=True)
     df_results.to_csv(RESULTS_FILENAME, index=False)
