@@ -21,4 +21,5 @@ dependencies = [
   "numpy",
   "tensorflow",
   "matplotlib",
+  "torch"
 ]
