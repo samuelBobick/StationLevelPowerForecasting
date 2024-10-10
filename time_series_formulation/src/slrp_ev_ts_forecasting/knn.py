@@ -1,10 +1,11 @@
 from typing import Literal
 
-import default_parameters
 import numpy as np
 import pandas as pd
-from regression_base import RegressionBaseModel
 from sklearn.neighbors import KNeighborsRegressor
+
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
+from slrp_ev_ts_forecasting.regression_base import RegressionBaseModel
 
 
 class KNN(RegressionBaseModel):

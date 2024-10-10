@@ -1,11 +1,12 @@
 from typing import Literal
 
-import default_parameters
 import pandas as pd
 import torch
 import torch.nn as nn
 from slrp_ev_data.window_generator import TFToTorchDataset, WindowGenerator
-from torch_base import TorchBaseModel
+
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
+from slrp_ev_ts_forecasting.torch_base import TorchBaseModel
 
 
 class LSTM(TorchBaseModel):

@@ -2,7 +2,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-import default_parameters
 import numpy as np
 import pandas as pd
 import tensorboard as tb
@@ -18,6 +17,8 @@ from torch.utils.data import DataLoader, Dataset
 # PyTorch TensorBoard support
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
+
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
 
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 

@@ -1,8 +1,9 @@
-import default_parameters
 import numpy as np
 import pandas as pd
 from sklearn.metrics import root_mean_squared_error  # type: ignore
 from sklearn.neighbors import KNeighborsRegressor
+
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
 
 
 class OldKNN:

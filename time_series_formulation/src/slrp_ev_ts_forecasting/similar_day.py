@@ -1,6 +1,7 @@
-import default_parameters
 import pandas as pd
-from compute_losses import compute_losses
+
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
+from slrp_ev_ts_forecasting.compute_losses import compute_losses
 
 
 class SimilarDay:

@@ -1,10 +1,11 @@
-import default_parameters
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 from torch.optim.adam import Adam
 from tqdm import tqdm
+
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
 
 # Suppress all warnings
 # warnings.filterwarnings("ignore")
