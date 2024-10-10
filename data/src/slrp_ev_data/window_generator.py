@@ -9,6 +9,18 @@ from .feature_engineering import reverse_feature_engineering
 
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
 
+if torch.cuda.is_available():
+    print(f"CUDA version: {torch.version.cuda}")
+    print(f"Number of CUDA devices: {torch.cuda.device_count()}")
+    # Storing ID of current CUDA device
+    cuda_id = torch.cuda.current_device()
+    print(f"ID of current CUDA device: " f"{torch.cuda.current_device()}")
+    print(f"Name of current CUDA device: " f"{torch.cuda.get_device_name(cuda_id)}")
+    DEVICE = "cuda"
+else:
+    print("CUDA is not available. Using CPU.")
+    DEVICE = "cpu"
+
 
 class TFToTorchDataset(Dataset):
     def __init__(
@@ -41,8 +53,12 @@ class TFToTorchDataset(Dataset):
         - input_tensor: Input tensor for the specific sample
         - label_tensor: Label tensor for the specific sample
         """
-        input_tensor = torch.tensor(self.inputs[idx], dtype=torch.float32)
-        label_tensor = torch.tensor(self.labels[idx], dtype=torch.float32)
+        input_tensor = torch.tensor(
+            self.inputs[idx], dtype=torch.float32, device=DEVICE
+        )
+        label_tensor = torch.tensor(
+            self.labels[idx], dtype=torch.float32, device=DEVICE
+        )
         return input_tensor, label_tensor
 
     def get_full_data(self):
@@ -52,8 +68,8 @@ class TFToTorchDataset(Dataset):
         - label_tensor: Full dataset labels as a PyTorch tensor
         """
         # Convert lists of arrays to PyTorch tensors
-        input_tensor = torch.tensor(self.inputs, dtype=torch.float32)
-        label_tensor = torch.tensor(self.labels, dtype=torch.float32)
+        input_tensor = torch.tensor(self.inputs, dtype=torch.float32, device=DEVICE)
+        label_tensor = torch.tensor(self.labels, dtype=torch.float32, device=DEVICE)
         return input_tensor, label_tensor
 
 
