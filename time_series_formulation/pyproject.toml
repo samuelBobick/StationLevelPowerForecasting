@@ -16,17 +16,17 @@ version = "0.1.0"
 # For an analysis of this field vs pip's requirements files see:
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
 dependencies = [
-  "pandas==2.2.2",
+  "pandas<=2.3",
   "numpy",
   "matplotlib",
   "plotly",
-  "tensorboard==2.17.1",
-  "tensorflow==2.17",
-  "torch==2.4",
+  "tensorboard<=2.18",
+  "tensorflow<=2.18",
+  "torch<=2.5",
   "torcheval",
   "scikit-learn",
-  "xgboost==2.1.1",
-  "sktime==0.33.1",
+  "xgboost<=2.2",
+  "sktime<=0.34",
   "pmdarima",
   "tqdm",
 ]
