@@ -64,6 +64,15 @@ class TCN(TorchBaseModel):
         self.dilatation_base = 2
         self.use_decoder = use_decoder
 
+        if num_layers == "auto":
+            self.num_layers = self.get_num_layers()
+        else:
+            self.num_layers = num_layers
+            if self.num_layers < self.get_num_layers():
+                print(
+                    "WARNING: num_layers is less than the minimum number of layers required for full history coverage"
+                )
+
         # Initialize the BaseModel with relevant parameters
         super().__init__(
             epochs=epochs,
@@ -76,15 +85,6 @@ class TCN(TorchBaseModel):
             scheduler_patience=scheduler_patience,
             error_metric=error_metric,
         )
-
-        if num_layers == "auto":
-            self.num_layers = self.get_num_layers()
-        else:
-            self.num_layers = num_layers
-            if self.num_layers < self.get_num_layers():
-                print(
-                    "WARNING: num_layers is less than the minimum number of layers required for full history coverage"
-                )
 
         # Other parameters
         self.alpha = alpha

@@ -36,12 +36,14 @@ def compute_losses(
 def compute_torch_losses(
     y_pred: torch.Tensor, y_true: torch.Tensor, alpha: float
 ) -> Losses:
-    print(f"y_pred device: {y_pred.device}")
-    print(f"y_true device: {y_true.device}")
     rmse = torch.sqrt(nn.functional.mse_loss(y_pred, y_true, reduction="mean")).item()
     wrmse = AsymmetricRMSELoss(alpha)(y_pred, y_true).item()
     mae = torch.mean(torch.abs(y_true - y_pred)).item()
     wprmse = WeightedPeaksRMSELoss()(y_pred, y_true).item()
+    # Both tensors are on the same device but we had a problem with the R2Score
+    # so we can just move them to the cpu
+    # print(f"y_pred device: {y_pred.device}")
+    # print(f"y_true device: {y_true.device}")
     r2 = R2Score().update(y_pred.cpu(), y_true.cpu()).compute().item()
     return Losses(rmse=rmse, wrmse=wrmse, mae=mae, wprmse=wprmse, r2=r2)
 
