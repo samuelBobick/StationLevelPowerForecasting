@@ -84,6 +84,7 @@ class FFNN(TorchBaseModel):
             num_hidden_layers=self.num_hidden_layers,
             activation=self.activation,
         )
+        self.model.to(default_parameters.DEVICE)
 
     def get_dataset(
         self,
@@ -157,8 +158,12 @@ class FFNN_model(nn.Module):
 
 class TensorDataset(Dataset):
     def __init__(self, x: pd.DataFrame, y: pd.DataFrame):
-        self.x = torch.tensor(x.values, dtype=torch.float32)
-        self.y = torch.tensor(y.values, dtype=torch.float32)
+        self.x = torch.tensor(
+            x.values, dtype=torch.float32, device=default_parameters.DEVICE
+        )
+        self.y = torch.tensor(
+            y.values, dtype=torch.float32, device=default_parameters.DEVICE
+        )
         self.n_samples = x.shape[0]
 
     def __getitem__(self, index):

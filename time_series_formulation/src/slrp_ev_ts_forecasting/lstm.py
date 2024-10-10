@@ -87,6 +87,7 @@ class LSTM(TorchBaseModel):
             num_layers=self.num_lstm_layers,
             activation=self.activation,
         )
+        self.model.to(default_parameters.DEVICE)
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""

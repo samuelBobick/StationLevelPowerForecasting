@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Literal
 
+import torch
+
 NUMBER_OF_INITIAL_MODELS = 1
 X_DIM = 96 * 2
 LOOKAHEAD = 96
@@ -31,3 +33,15 @@ TypeModelChoice = Literal[
     "ARIMA",
     "Prophet",
 ]
+
+if torch.cuda.is_available():
+    print(f"CUDA version: {torch.version.cuda}")
+    print(f"Number of CUDA devices: {torch.cuda.device_count()}")
+    # Storing ID of current CUDA device
+    cuda_id = torch.cuda.current_device()
+    print(f"ID of current CUDA device: " f"{torch.cuda.current_device()}")
+    print(f"Name of current CUDA device: " f"{torch.cuda.get_device_name(cuda_id)}")
+    DEVICE = "cuda"
+else:
+    print("CUDA is not available. Using CPU.")
+    DEVICE = "cpu"

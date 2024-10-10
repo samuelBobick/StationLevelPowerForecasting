@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from slrp_ev_ts_forecasting.asymmetric_loss import AsymmetricRMSELoss
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_torch_losses
-from slrp_ev_ts_forecasting.default_parameters import TypeErrorMetric
+from slrp_ev_ts_forecasting.default_parameters import DEVICE, TypeErrorMetric
 
 # PyTorch TensorBoard support
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
@@ -352,7 +352,9 @@ class TorchBaseModel:
 
         self.model.eval()
         y_pred_test = self.model(X_test_tensor).detach().numpy().squeeze()
-        y_pred_test_tensor = torch.tensor(y_pred_test, dtype=torch.float32)
+        y_pred_test_tensor = torch.tensor(
+            y_pred_test, dtype=torch.float32, device=DEVICE
+        )
         y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
         losses = compute_torch_losses(
