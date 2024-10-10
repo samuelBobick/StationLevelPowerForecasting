@@ -10,6 +10,7 @@ from .feature_engineering import reverse_feature_engineering
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Window Generator is using device: {DEVICE}")
 
 
 class TFToTorchDataset(Dataset):
