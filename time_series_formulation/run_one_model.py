@@ -1,5 +1,5 @@
 from compute_losses import get_real_scale_losses
-from default_parameters import TypeModelChoice
+from default_parameters import DATASET, TypeModelChoice
 from ffnn import FFNN
 from knn import KNN
 from last_week import LastWeek
@@ -24,7 +24,13 @@ from xgboost_model import XGBoost
 def run_one_model(model_choice: TypeModelChoice) -> None:
     # Read the data
     print("# Starting...")
-    data = read_old_data.read_old_data()
+    if DATASET == "slrp-ev_old":
+        data = read_old_data.read_old_data()
+    else:
+        raise ValueError(
+            f"Datset of type {DATASET} is not defined. Please refer to "
+            "TypeDataSet for supported datasets."
+        )
     train, val, test = train_test_split.train_test_split(data, generate_validation=True)  # type: ignore
     normalize_parameters = get_train_min_and_max(train)
     train_eng = feature_engineering(train, normalize_parameters)

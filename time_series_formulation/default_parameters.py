@@ -15,6 +15,9 @@ RESULTS_FILENAME = Path(__file__).parent / "results" / "results.csv"
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"
 
+TypeDataSet = Literal["slrp-ev_old"]
+DATASET: TypeDataSet = "slrp-ev_old"
+
 TypeModelChoice = Literal[
     "KNN",
     "XGBoost",
