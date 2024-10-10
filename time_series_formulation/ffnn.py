@@ -36,19 +36,9 @@ class FFNN(TorchBaseModel):
         number_of_initial_models: int = default_parameters.NUMBER_OF_INITIAL_MODELS,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         batch_size: int = default_parameters.BATCH_SIZE,
+        error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
     ):
         """TODO"""
-        # Initialize the BaseModel with relevant parameters
-        super().__init__(
-            epochs=epochs,
-            number_of_initial_models=number_of_initial_models,
-            batch_size=batch_size,
-            model_str_name="basic_ffnn",
-            alpha=alpha,
-            initial_learning_rate=initial_learning_rate,
-            lr_threshold=lr_threshold,
-            scheduler_patience=scheduler_patience,
-        )
 
         # FFNN-specific parameters
         self.x_dim = x_dim
@@ -62,8 +52,25 @@ class FFNN(TorchBaseModel):
         self.alpha = alpha
         self.time_mode = time_mode
 
+        # Initialize the BaseModel with relevant parameters
+        super().__init__(
+            epochs=epochs,
+            number_of_initial_models=number_of_initial_models,
+            batch_size=batch_size,
+            model_str_name=self.model_str_name,
+            alpha=alpha,
+            initial_learning_rate=initial_learning_rate,
+            lr_threshold=lr_threshold,
+            scheduler_patience=scheduler_patience,
+            error_metric=error_metric,
+        )
+
         # Determine input size based on time_mode
         self.input_size = self._determine_input_size()
+
+    @property
+    def model_str_name(self):
+        return f"FFNN_hidSize{self.hidden_size}_layers{self.num_hidden_layers}"
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
@@ -89,7 +96,7 @@ class FFNN(TorchBaseModel):
         df: pd.DataFrame,
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> Dataset | tuple[Dataset, pd.DataFrame]:
+    ) -> Dataset | tuple[Dataset, torch.Tensor]:
         W = WindowGenerator(
             input_width=self.x_dim,
             label_width=self.lookahead,

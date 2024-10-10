@@ -7,7 +7,9 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
+from asymmetric_loss import AsymmetricRMSELoss
 from compute_losses import Losses, compute_torch_losses
+from default_parameters import TypeErrorMetric
 from torch.optim.adamw import AdamW
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -26,6 +28,7 @@ class TorchBaseModel:
         initial_learning_rate: float,
         lr_threshold: float,
         scheduler_patience: int,
+        error_metric: TypeErrorMetric,
         warmup_base_learning_rate: float = 1e-6,
     ):
 
@@ -42,9 +45,15 @@ class TorchBaseModel:
 
         # Weighted loss parameters
         self.alpha = alpha
-        self.criterion = nn.MSELoss()  # AsymmetricRMSELoss(alpha)
+        if error_metric == "mse":
+            self.criterion = nn.MSELoss()
+        elif error_metric == "wmse":
+            AsymmetricRMSELoss(alpha)
+        else:
+            raise ValueError(
+                f"Error metric of type {error_metric} is not defined. Please refer to TypeErrorMetric."
+            )
         # Path parameters
-        self.model_str_name = model_str_name
         self.model_path = Path(__file__).parent / "model" / f"{model_str_name}.pt"
         self.model_path.parent.mkdir(exist_ok=True, parents=True)
         self.tensorboard_path = Path(__file__).parent / "runs"
@@ -339,7 +348,9 @@ class TorchBaseModel:
         y_pred_test_tensor = torch.tensor(y_pred_test, dtype=torch.float32)
         y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
-        losses = compute_torch_losses(y_pred_test_tensor, y_test_tensor, self.alpha)
+        losses = compute_torch_losses(
+            y_pred_test_tensor.flatten(), y_test_tensor.flatten(), self.alpha
+        )
 
         # Flatten the lists to 1D
         y_pred_test_flat = y_pred_test_tensor.flatten().numpy()
@@ -393,10 +404,14 @@ class TorchBaseModel:
         df: pd.DataFrame,
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> Dataset | tuple[Dataset, pd.DataFrame]:
+    ) -> Dataset | tuple[Dataset, torch.Tensor]:
         raise NotImplementedError("This method must be implemented in the child class.")
 
     def initialize_model(self) -> None:
+        raise NotImplementedError("This method must be implemented in the child class.")
+
+    @property
+    def model_str_name(self):
         raise NotImplementedError("This method must be implemented in the child class.")
 
     @property

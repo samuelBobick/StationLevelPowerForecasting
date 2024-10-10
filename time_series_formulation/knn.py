@@ -36,6 +36,10 @@ class KNN(RegressionBaseModel):
         self.n_neighbors = n_neighbors
         self.percentile = percentile
 
+    @property
+    def model_str_name(self):
+        return f"KNN_neighbors{self.n_neighbors}_percentile{self.percentile}"
+
     def fit_model(
         self,
         X_train: pd.DataFrame,
@@ -76,7 +80,7 @@ class PercentileKNNRegressor:
 
     def predict(self, X):
         distances, indices = self.knn.kneighbors(X)
-        nearest_neighbors_values = self.knn._y[indices]
+        nearest_neighbors_values = self.knn._y[indices]  # type: ignore
 
         nth_percentile_values = np.percentile(
             nearest_neighbors_values, self.percentile, axis=1
