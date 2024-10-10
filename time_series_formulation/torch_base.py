@@ -51,7 +51,8 @@ class TorchBaseModel:
             AsymmetricRMSELoss(alpha)
         else:
             raise ValueError(
-                f"Error metric of type {error_metric} is not defined. Please refer to TypeErrorMetric."
+                f"Error metric of type {error_metric} is not defined. Please refer "
+                "to TypeErrorMetric for supported error metrics."
             )
         # Path parameters
         self.model_path = Path(__file__).parent / "model" / f"{model_str_name}.pt"
