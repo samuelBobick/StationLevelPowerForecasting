@@ -19,11 +19,12 @@ class LSTM(TorchBaseModel):
         activation=nn.ReLU(),
         initial_learning_rate: float = 0.01,
         lr_threshold: float = 1e-5,
-        scheduler_patience: int = 3,
+        scheduler_patience: int = 5,
         epochs: int = default_parameters.EPOCHS,
         number_of_initial_models: int = default_parameters.NUMBER_OF_INITIAL_MODELS,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         batch_size: int = default_parameters.BATCH_SIZE,
+        error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
     ):
         """
         Initialize the LSTM model with the given parameters.
@@ -43,16 +44,6 @@ class LSTM(TorchBaseModel):
             time_mode (Literal["window", "cyclical"]): Time mode for the model.
             batch_size (int): Batch size for training.
         """
-        super().__init__(
-            epochs=epochs,
-            number_of_initial_models=number_of_initial_models,
-            batch_size=batch_size,
-            model_str_name="lstm",
-            alpha=alpha,
-            initial_learning_rate=initial_learning_rate,
-            lr_threshold=lr_threshold,
-            scheduler_patience=scheduler_patience,
-        )
 
         # LSTM-specific parameters
         self.x_dim = x_dim
@@ -66,8 +57,25 @@ class LSTM(TorchBaseModel):
         self.alpha = alpha
         self.time_mode = time_mode
 
+        # Initialize the BaseModel with relevant parameters
+        super().__init__(
+            epochs=epochs,
+            number_of_initial_models=number_of_initial_models,
+            batch_size=batch_size,
+            model_str_name=self.model_str_name,
+            alpha=alpha,
+            initial_learning_rate=initial_learning_rate,
+            lr_threshold=lr_threshold,
+            scheduler_patience=scheduler_patience,
+            error_metric=error_metric,
+        )
+
         # Determine input size based on time_mode
         self.input_size = self._determine_input_size()
+
+    @property
+    def model_str_name(self):
+        return f"LSTM_hidSize{self.hidden_size}_lstmLayers{self.num_lstm_layers}"
 
     def initialize_model(self) -> None:
         """Initializes the LSTM model based on the current configuration."""
@@ -97,7 +105,7 @@ class LSTM(TorchBaseModel):
         df: pd.DataFrame,
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> TFToTorchDataset | tuple[TFToTorchDataset, pd.DataFrame]:
+    ) -> TFToTorchDataset | tuple[TFToTorchDataset, torch.Tensor]:
         """Generates the dataset and features based on the input DataFrame."""
         W = WindowGenerator(
             input_width=self.x_dim,

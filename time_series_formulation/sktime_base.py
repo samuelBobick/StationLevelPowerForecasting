@@ -4,9 +4,7 @@ from typing import Literal, Optional
 import default_parameters
 import numpy as np
 import pandas as pd
-from asymmetric_loss import asymmetric_rmse
 from compute_losses import Losses, compute_losses
-from sktime.performance_metrics.forecasting import mean_squared_error
 from sktime.split import SlidingWindowSplitter
 
 warnings.filterwarnings(
@@ -146,7 +144,7 @@ class SktimeBaseModel:
 
     def predict_short(
         self, test: pd.DataFrame, number_of_predictions: int = 1
-    ) -> tuple[float, float, np.ndarray, np.ndarray]:
+    ) -> tuple[Losses, np.ndarray, np.ndarray]:
         X_test, y_test = self.get_X_y(test)
 
         # cv = SlidingWindowSplitter(
@@ -164,13 +162,11 @@ class SktimeBaseModel:
 
         y_test = y_test.loc[y_pred.index]
 
-        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-
-        wrmse = asymmetric_rmse(y_test, y_pred, self.alpha)
+        losses = compute_losses(y_pred, y_test, self.alpha)
 
         y_test_date = pd.to_datetime(y_pred.index).astype("int64") // 1e9
 
-        return rmse, wrmse, y_pred.to_numpy(), y_test_date.to_numpy()
+        return losses, y_pred.to_numpy(), y_test_date.to_numpy()
 
     def get_X_y(
         self,

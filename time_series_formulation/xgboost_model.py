@@ -10,9 +10,9 @@ class XGBoost(RegressionBaseModel):
 
     def __init__(
         self,
-        x_dim=default_parameters.X_DIM,
-        lookahead=default_parameters.LOOKAHEAD,
-        alpha=default_parameters.ALPHA,
+        x_dim: int = default_parameters.X_DIM,
+        lookahead: int = default_parameters.LOOKAHEAD,
+        alpha: int = default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
     ):
         """_summary_

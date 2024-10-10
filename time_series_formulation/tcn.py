@@ -19,7 +19,7 @@ class TCN(TorchBaseModel):
         hidden_size: int = 16,
         num_layers: int | Literal["auto"] = "auto",
         kernel_size: int = 3,
-        dropout: float = 0.2,
+        dropout: float = default_parameters.DROPOUT,
         activation=nn.ReLU(),
         initial_learning_rate: float = 0.01,
         lr_threshold: float = 1e-5,
@@ -29,6 +29,7 @@ class TCN(TorchBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         batch_size: int = default_parameters.BATCH_SIZE,
         use_decoder: bool = True,
+        error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
     ):
         """
         Initialize the TCN model with the given parameters.
@@ -51,17 +52,6 @@ class TCN(TorchBaseModel):
             batch_size (int): Batch size for training.
             use_decoder (bool): Whether to use a decoder in the model. The decoder is an additional layer that allows reshaping the output to the output_length. If no decoder is used, the output length is equal to the input length, so there will be some of the input in what the model is trying to predict. You then have to use self.first_prediction_index to get the index from which the predictions start.
         """
-        super().__init__(
-            epochs=epochs,
-            number_of_initial_models=number_of_initial_models,
-            batch_size=batch_size,
-            model_str_name="tcn",
-            alpha=alpha,
-            initial_learning_rate=initial_learning_rate,
-            lr_threshold=lr_threshold,
-            scheduler_patience=scheduler_patience,
-        )
-
         # TCN-specific parameters
         self.x_dim = x_dim
         self.lookahead = lookahead
@@ -72,6 +62,19 @@ class TCN(TorchBaseModel):
         self.dropout = dropout
         self.dilatation_base = 2
         self.use_decoder = use_decoder
+
+        # Initialize the BaseModel with relevant parameters
+        super().__init__(
+            epochs=epochs,
+            number_of_initial_models=number_of_initial_models,
+            batch_size=batch_size,
+            model_str_name=self.model_str_name,
+            alpha=alpha,
+            initial_learning_rate=initial_learning_rate,
+            lr_threshold=lr_threshold,
+            scheduler_patience=scheduler_patience,
+            error_metric=error_metric,
+        )
 
         if num_layers == "auto":
             self.num_layers = self.get_num_layers()
@@ -88,6 +91,10 @@ class TCN(TorchBaseModel):
 
         # Determine input size based on time_mode
         self.nr_input_channels = self._determine_input_size()
+
+    @property
+    def model_str_name(self):
+        return f"TCN_hidSize{self.hidden_size}_layers{self.num_layers}_kernelSize{self.kernel_size}_dropout{self.dropout}"
 
     def get_num_layers(self) -> int:
         """Computes the minimum number of layers required for full history coverage
@@ -134,7 +141,7 @@ class TCN(TorchBaseModel):
         df: pd.DataFrame,
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> TFToTorchDataset | tuple[TFToTorchDataset, pd.DataFrame]:
+    ) -> TFToTorchDataset | tuple[TFToTorchDataset, torch.Tensor]:
         """Generates the dataset and features based on the input DataFrame."""
         label_width = self.lookahead
         if self.use_decoder:
