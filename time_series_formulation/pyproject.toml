@@ -27,7 +27,8 @@ dependencies = [
   "scikit-learn",
   "xgboost==2.1.1",
   "sktime==0.33.1",
-  "tqdm"
+  "pmdarima",
+  "tqdm",
 ]
 
 [tool.setuptools.packages.find]
