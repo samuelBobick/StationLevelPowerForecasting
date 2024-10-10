@@ -1,0 +1,36 @@
+[build-system]
+# A list of packages that are needed to build your package:
+requires = ["setuptools"]  # REQUIRED if [build-system] table is used
+# The name of the Python object that frontends will use to perform the build:
+build-backend = "setuptools.build_meta"  # If not defined, then legacy behavior can happen.
+
+[project]
+name = "slrp_ev_ts_forecasting"
+description = "Package with different algorithms to do timeseriesforecasting. Requires installing the local package slrp_ev_data in your environment."
+version = "0.1.0"
+
+# This field lists other packages that your project depends on to run.
+# Any package you put here will be installed by pip when your project is
+# installed, so they must be valid existing projects.
+#
+# For an analysis of this field vs pip's requirements files see:
+# https://packaging.python.org/discussions/install-requires-vs-requirements/
+dependencies = [
+  "pandas==2.2.2",
+  "numpy",
+  "matplotlib",
+  "plotly",
+  "tensorboard==2.17.1",
+  "tensorflow==2.17",
+  "torch==2.4",
+  "torcheval",
+  "scikit-learn",
+  "xgboost==2.1.1",
+  "sktime==0.33.1",
+  "tqdm"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]  # list of folders that contain the packages (["."] by default)
+include = ["slrp_ev_ts_forecasting*"]  # package names should match these glob patterns (["*"] by default)
+exclude = ["slrp_ev_ts_forecasting.runs*", "slrp_ev_ts_forecasting.model*", "slrp_ev_ts_forecasting.results*"]  # exclude packages matching these glob patterns (empty by default)
