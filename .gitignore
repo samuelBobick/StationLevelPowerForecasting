@@ -2,8 +2,8 @@
 **/__pycache__
 data/**/*.csv
 data/src/slrp_ev_data/darts_logs/*
-time_series_formulation/runs/**
-time_series_formulation/model/**
+time_series_formulation/src/slrp_ev_ts_forecasting/runs/**
+time_series_formulation/src/slrp_ev_ts_forecasting/model/**
 
 # Distribution / packaging
 .Python
