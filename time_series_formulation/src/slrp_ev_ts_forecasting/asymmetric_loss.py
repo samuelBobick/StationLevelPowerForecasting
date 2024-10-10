@@ -1,8 +1,9 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from default_parameters import BETA
 from sklearn.metrics import root_mean_squared_error  # type: ignore
+
+from slrp_ev_ts_forecasting.default_parameters import BETA
 
 
 def asymmetric_rmse(

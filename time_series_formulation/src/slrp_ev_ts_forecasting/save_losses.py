@@ -1,6 +1,7 @@
 import pandas as pd
-from compute_losses import Losses
-from default_parameters import (
+
+from slrp_ev_ts_forecasting.compute_losses import Losses
+from slrp_ev_ts_forecasting.default_parameters import (
     ALPHA,
     BATCH_SIZE,
     BETA,

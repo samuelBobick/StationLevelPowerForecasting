@@ -1,9 +1,6 @@
 from typing import Literal
 
-import default_parameters
 import pandas as pd
-import tensorboard as tb
-import tensorflow as tf
 import torch
 import torch.nn as nn
 from slrp_ev_data.feature_engineering import one_hot_encoding
@@ -11,10 +8,7 @@ from slrp_ev_data.window_generator import WindowGenerator
 from torch.utils.data import Dataset
 from torch_base import TorchBaseModel
 
-# PyTorch TensorBoard support
-
-tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
-
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
 
 # Suppress all warnings
 # warnings.filterwarnings("ignore")

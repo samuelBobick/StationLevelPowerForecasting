@@ -1,5 +1,5 @@
-import default_parameters
-from compute_losses import compute_losses
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
+from slrp_ev_ts_forecasting.compute_losses import compute_losses
 
 
 class LastWeek:

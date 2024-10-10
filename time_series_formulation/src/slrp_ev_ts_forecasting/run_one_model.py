@@ -1,24 +1,25 @@
-from compute_losses import get_real_scale_losses
-from default_parameters import DATASET, TypeModelChoice
-from ffnn import FFNN
-from knn import KNN
-from last_week import LastWeek
-from lstm import LSTM
-from save_losses import save_losses
-from similar_day import SimilarDay
 from sktime.forecasting.arima import ARIMA, AutoARIMA
 from sktime.forecasting.ets import AutoETS
 from sktime.forecasting.fbprophet import Prophet
-from sktime_base import SktimeBaseModel
 from slrp_ev_data import read_old_data, train_test_split
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
     get_train_min_and_max,
     reverse_feature_engineering,
 )
-from tcn import TCN
-from visualization import visualize_forecast
-from xgboost_model import XGBoost
+
+from slrp_ev_ts_forecasting.compute_losses import get_real_scale_losses
+from slrp_ev_ts_forecasting.default_parameters import DATASET, TypeModelChoice
+from slrp_ev_ts_forecasting.ffnn import FFNN
+from slrp_ev_ts_forecasting.knn import KNN
+from slrp_ev_ts_forecasting.last_week import LastWeek
+from slrp_ev_ts_forecasting.lstm import LSTM
+from slrp_ev_ts_forecasting.save_losses import save_losses
+from slrp_ev_ts_forecasting.similar_day import SimilarDay
+from slrp_ev_ts_forecasting.sktime_base import SktimeBaseModel
+from slrp_ev_ts_forecasting.tcn import TCN
+from slrp_ev_ts_forecasting.visualization import visualize_forecast
+from slrp_ev_ts_forecasting.xgboost_model import XGBoost
 
 
 def run_one_model(model_choice: TypeModelChoice) -> None:

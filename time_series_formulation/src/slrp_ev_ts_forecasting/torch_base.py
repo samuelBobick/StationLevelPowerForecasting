@@ -4,16 +4,22 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import tensorboard as tb
+import tensorflow as tf
 import torch
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
-from asymmetric_loss import AsymmetricRMSELoss
-from compute_losses import Losses, compute_torch_losses
-from default_parameters import TypeErrorMetric
 from torch.optim.adamw import AdamW
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
+
+from slrp_ev_ts_forecasting.asymmetric_loss import AsymmetricRMSELoss
+from slrp_ev_ts_forecasting.compute_losses import Losses, compute_torch_losses
+from slrp_ev_ts_forecasting.default_parameters import TypeErrorMetric
+
+# PyTorch TensorBoard support
+tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
 
 
 # Parent class for common functionality

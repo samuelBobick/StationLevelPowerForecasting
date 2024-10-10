@@ -1,11 +1,12 @@
 from typing import Literal
 
-import default_parameters
 import numpy as np
 import pandas as pd
-from compute_losses import compute_losses
 from slrp_ev_data.window_generator import WindowGenerator
 from tqdm import tqdm
+
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
+from slrp_ev_ts_forecasting.compute_losses import compute_losses
 
 
 class RegressionBaseModel:
