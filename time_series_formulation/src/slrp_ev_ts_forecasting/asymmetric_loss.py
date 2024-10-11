@@ -1,22 +1,26 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import root_mean_squared_error  # type: ignore
+from sklearn.metrics import mean_squared_error  # type: ignore
 
 from slrp_ev_ts_forecasting.default_parameters import BETA
 
 
 def asymmetric_rmse(
-    alpha: float, forecast: np.ndarray | list, real: np.ndarray | list
+    alpha: float, y_pred: np.ndarray | list, y_true: np.ndarray | list
 ) -> float:
-    forecast, real = np.array(forecast), np.array(real)
-    weights = alpha ** (1 - np.sign(forecast - real))
-    rwmse = root_mean_squared_error(forecast, real, sample_weight=weights)
+    """This implementation gives different results than
+    the torch implementation"""
+    y_pred, y_true = np.array(y_pred), np.array(y_true)
+    weights = alpha ** (1 - np.sign(y_pred - y_true))
+    rwmse = np.sqrt(mean_squared_error(y_pred, y_true, sample_weight=weights))
     return rwmse
 
 
-def asymmetric_rmse_detailed(y_true, y_pred, alpha: int) -> float:
-    # Unused
+def asymmetric_rmse_detailed(
+    y_true: np.ndarray | list, y_pred: np.ndarray | list, alpha: float
+) -> float:
+    y_pred, y_true = np.array(y_pred), np.array(y_true)
     mse_loss = (y_true - y_pred) ** 2
     asymmetric_weight = alpha ** (1 - np.sign(y_pred - y_true))
     weighted_mse = asymmetric_weight * mse_loss
@@ -40,17 +44,21 @@ class AsymmetricRMSELoss(nn.Module):
 
 
 def weighted_peaks_rmse(
-    forecast: np.ndarray | list, real: np.ndarray | list, beta: float = BETA
+    y_pred: np.ndarray | list, y_true: np.ndarray | list, beta: float = BETA
 ) -> float:
     """
     Calculate the weighted peaks RMSE. This loss puts more weight on
     the peaks.
     """
-    forecast, real = np.array(forecast), np.array(real)
+    y_pred, y_true = np.array(y_pred), np.array(y_true)
     # rememnder that the values are scaled and should be between 0 and 1
-    weights = 1 + beta * real
-    # we need to add a 1 to avoid the weight being 0 when real is 0
-    wprmse = root_mean_squared_error(forecast, real, sample_weight=weights)
+    weights = 1 + beta * y_true
+    # we need to add a 1 to avoid the weight being 0 when y_true is 0
+
+    # wprmse = np.sqrt(mean_squared_error(y_pred, y_true, sample_weight=weights))
+    mse_loss = (y_true - y_pred) ** 2
+    weighted_mse = weights * mse_loss
+    wprmse = np.sqrt(np.mean(weighted_mse))
     return wprmse
 
 
