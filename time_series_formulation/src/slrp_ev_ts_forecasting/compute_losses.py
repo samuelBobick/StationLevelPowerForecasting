@@ -9,7 +9,7 @@ from torcheval.metrics import R2Score
 from slrp_ev_ts_forecasting.asymmetric_loss import (
     AsymmetricRMSELoss,
     WeightedPeaksRMSELoss,
-    asymmetric_rmse,
+    asymmetric_rmse_detailed,
     weighted_peaks_rmse,
 )
 
@@ -26,7 +26,7 @@ def compute_losses(
     y_pred: np.ndarray | list, y_true: np.ndarray | list, alpha: float
 ) -> Losses:
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    wrmse = asymmetric_rmse(alpha, y_pred, y_true)
+    wrmse = asymmetric_rmse_detailed(y_true, y_pred, alpha)
     mae = mean_absolute_error(y_true, y_pred)
     wprmse = weighted_peaks_rmse(y_pred, y_true)
     r2 = r2_score(y_true, y_pred)
