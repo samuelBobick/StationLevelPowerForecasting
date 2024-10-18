@@ -15,6 +15,7 @@ class XGBoost(RegressionBaseModel):
         lookahead: int = default_parameters.LOOKAHEAD,
         alpha: int = default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
+        optimize_lags: bool = default_parameters.OPTIMIZE_LAGS,
     ):
         """_summary_
 
@@ -26,10 +27,18 @@ class XGBoost(RegressionBaseModel):
             alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
         """
         super().__init__(
-            x_dim=x_dim, lookahead=lookahead, alpha=alpha, time_mode=time_mode
+            x_dim=x_dim,
+            lookahead=lookahead,
+            alpha=alpha,
+            time_mode=time_mode,
+            optimize_lags=optimize_lags,
         )
         self.alpha = alpha
         self.time_mode = time_mode
+
+    @property
+    def model_str_name(self):
+        return "XGBoost" + ("_lagsOpti" if self.optimize_lags else "")
 
     def fit_model(
         self,
@@ -67,6 +76,7 @@ class XGBoost(RegressionBaseModel):
             "subsample": 0.8,  # fraction of training set to randomly sample for =
             # each tree (has a similar effect as dropout)
             "colsample_bytree": 0.8,
+            "device": default_parameters.DEVICE,
         }
         num_round = 100
         bst = xgb.train(

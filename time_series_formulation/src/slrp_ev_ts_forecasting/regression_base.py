@@ -5,18 +5,19 @@ import pandas as pd
 from slrp_ev_data.window_generator import WindowGenerator
 from tqdm import tqdm
 
-import slrp_ev_ts_forecasting.default_parameters as default_parameters
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
+from slrp_ev_ts_forecasting.pacf import get_pacf_values, get_threshold
 
 
 class RegressionBaseModel:
 
     def __init__(
         self,
-        x_dim=default_parameters.X_DIM,
-        lookahead=default_parameters.LOOKAHEAD,
-        alpha=default_parameters.ALPHA,
-        time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
+        x_dim: int,
+        lookahead: int,
+        alpha: float,
+        time_mode: Literal["window", "cyclical"],
+        optimize_lags: bool,
     ):
         """_summary_
 
@@ -27,6 +28,9 @@ class RegressionBaseModel:
         """
         self.lookahead = lookahead
         self.x_dim = x_dim
+
+        self.optimize_lags = optimize_lags
+        self.range_optimal_lags = 20 * 96
 
         self.alpha = alpha
         self.time_mode = time_mode
@@ -51,6 +55,11 @@ class RegressionBaseModel:
         Returns:
             tuple (float, float, list): RMSE, weighted RMSE, array of predictions
         """
+        if self.optimize_lags:
+            self.pacf_top_values = self.get_top_pacf_values(
+                train, nb_of_days_for_pacf=int(self.range_optimal_lags / 96)
+            )
+
         X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
         X_val, y_val = self.get_X_y(val, overlapping_windows=False)  # type: ignore
 
@@ -128,6 +137,27 @@ class RegressionBaseModel:
             "This method should be implemented by the child class"
         )
 
+    def get_top_pacf_values(
+        self, data: pd.DataFrame, nb_of_days_for_pacf: int = 30
+    ) -> pd.Series:
+        """Returns a list-like object with the top x_dim values of the Partial AutoCorrelation Function (PACF)."""
+        pacf_df = get_pacf_values(
+            downsample_hours=1, data=data, nb_of_days_for_pacf=nb_of_days_for_pacf
+        )
+        # remove first value (autocorrelation with itself)
+        pacf_df = pacf_df.iloc[1:]
+
+        pacf_values = pacf_df["PACF"].map(abs)
+        number_of_lags_to_keep = self.x_dim
+        pacf_top_values = pacf_values.sort_values(ascending=False).iloc[
+            :number_of_lags_to_keep
+        ]
+
+        _, self.index_farthest_lag = get_threshold(
+            pacf_df, number_of_lags_to_keep=number_of_lags_to_keep
+        )
+        return pacf_top_values
+
     def get_X_y(
         self,
         df,
@@ -136,8 +166,13 @@ class RegressionBaseModel:
     ):
         df = df.copy()
 
+        if self.optimize_lags:
+            input_width = self.index_farthest_lag
+        else:
+            input_width = self.x_dim
+
         W = WindowGenerator(
-            input_width=self.x_dim,
+            input_width=input_width,
             label_width=self.lookahead,
             shift=self.lookahead,
             train_df=df,
@@ -158,12 +193,26 @@ class RegressionBaseModel:
         elif self.time_mode == "window":
             cols_keep_last_value += ["time_window"]
 
-        flat_inputs, flat_labels = W.flatten_dataset(
-            W.train,
-            cols_to_flatten=["power"],
-            cols_keep_last_value=cols_keep_last_value,
-            label_cols_to_flatten=["power"],
-        )
+        if self.optimize_lags:
+            flat_inputs, flat_labels = W.flatten_dataset(
+                W.train,
+                cols_keep_last_value=cols_keep_last_value,
+                cols_keep_some_values=[
+                    {
+                        "col_name": "power",
+                        "indexes_to_keep": input_width
+                        - self.pacf_top_values.index.to_numpy(),
+                    }
+                ],
+                label_cols_to_flatten=["power"],
+            )
+        else:
+            flat_inputs, flat_labels = W.flatten_dataset(
+                W.train,
+                cols_to_flatten=["power"],
+                cols_keep_last_value=cols_keep_last_value,
+                label_cols_to_flatten=["power"],
+            )
         print(flat_inputs.shape, flat_labels.shape)
 
         if return_y_date:
