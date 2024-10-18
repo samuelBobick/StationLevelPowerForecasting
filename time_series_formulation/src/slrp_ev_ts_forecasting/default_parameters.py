@@ -12,6 +12,7 @@ ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 BATCH_SIZE = 32
 DROPOUT = 0.2
+OPTIMIZE_LAGS = False  # for regression models
 RESULTS_FILENAME = Path(__file__).parent / "results" / "results.csv"
 
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)

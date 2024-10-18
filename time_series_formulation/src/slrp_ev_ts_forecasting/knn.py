@@ -18,6 +18,7 @@ class KNN(RegressionBaseModel):
         percentile=90,
         alpha=default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
+        optimize_lags=default_parameters.OPTIMIZE_LAGS,
     ):
         """_summary_
 
@@ -29,7 +30,11 @@ class KNN(RegressionBaseModel):
             alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
         """
         super().__init__(
-            x_dim=x_dim, lookahead=lookahead, alpha=alpha, time_mode=time_mode
+            x_dim=x_dim,
+            lookahead=lookahead,
+            alpha=alpha,
+            time_mode=time_mode,
+            optimize_lags=optimize_lags,
         )
         self.alpha = alpha
         self.time_mode = time_mode
@@ -39,7 +44,9 @@ class KNN(RegressionBaseModel):
 
     @property
     def model_str_name(self):
-        return f"KNN_neighbors{self.n_neighbors}_percentile{self.percentile}"
+        return f"KNN_neighbors{self.n_neighbors}_percentile{self.percentile}" + (
+            "_lagsOpti" if self.optimize_lags else ""
+        )
 
     def fit_model(
         self,

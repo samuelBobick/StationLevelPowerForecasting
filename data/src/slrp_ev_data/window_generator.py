@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,6 +13,11 @@ from .feature_engineering import reverse_feature_engineering
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Window Generator is using device: {DEVICE}")
+
+
+class TypeKeepSomeValues(TypedDict):
+    col_name: str
+    indexes_to_keep: list[int] | np.ndarray
 
 
 class TFToTorchDataset(Dataset):
@@ -274,8 +281,9 @@ class WindowGenerator:
     def flatten_dataset(
         self,
         data,
-        cols_to_flatten: list[str],
+        cols_to_flatten: list[str] = [],
         cols_keep_last_value: list[str] = [],
+        cols_keep_some_values: list[TypeKeepSomeValues] = [],
         label_cols_to_flatten: list[str] = [],
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """For each example, flattens the 2D input data into a 1D array.
@@ -327,8 +335,21 @@ class WindowGenerator:
         label_flatten_indices = [
             self.label_columns_indices[name] for name in label_cols_to_flatten
         ]
-        keep_last_value_indices = [
-            self.column_indices[name] for name in cols_keep_last_value
+
+        keep_some_values_indices = [
+            {
+                "col_index_to_keep": self.column_indices[
+                    dict_keep_some_values["col_name"]
+                ],
+                "value_indexes_to_keep": dict_keep_some_values["indexes_to_keep"],
+            }
+            for dict_keep_some_values in cols_keep_some_values
+        ] + [
+            {
+                "col_index_to_keep": self.column_indices[col_name],
+                "value_indexes_to_keep": [self.input_width - 1],
+            }
+            for col_name in cols_keep_last_value
         ]
 
         # Process each batch in the dataset
@@ -337,24 +358,34 @@ class WindowGenerator:
 
             ### Flatten Inputs ###
             # inputs shape: (batch_size, inputs_width, num_features)
+            if cols_to_flatten:
+                # Gather and flatten columns across all time steps for each batch example
+                items_to_flatten = tf.gather(
+                    inputs, input_flatten_indices, axis=-1
+                )  # shape: (batch_size, inputs_width, len(cols_to_flatten))
+                items_to_flatten = tf.reshape(
+                    items_to_flatten, [inputs.shape[0], -1]
+                )  # Flatten across time steps per batch item
+                # shape: (batch_size, inputs_width * len(cols_to_flatten))
+            else:
+                items_to_flatten = tf.zeros([inputs.shape[0], 0], dtype=tf.float32)
 
-            # Gather and flatten columns across all time steps for each batch example
-            items_to_flatten = tf.gather(
-                inputs, input_flatten_indices, axis=-1
-            )  # shape: (batch_size, inputs_width, len(cols_to_flatten))
-            items_to_flatten = tf.reshape(
-                items_to_flatten, [inputs.shape[0], -1]
-            )  # Flatten across time steps per batch item
-            # shape: (batch_size, inputs_width * len(cols_to_flatten))
-
-            # Gather last value for the specified columns
-            items_to_keep_last_value = tf.gather(
-                inputs[:, -1, :], keep_last_value_indices, axis=-1
-            )  # shape: (batch_size, len(cols_keep_last_value))
+            # Initialize empty dataframe with good shape
+            items_to_keep_some_values = tf.zeros([inputs.shape[0], 0], dtype=tf.float32)
+            # Gather the values of the columns in which we only keep some values
+            for col_dict in keep_some_values_indices:
+                col_index_to_keep = col_dict["col_index_to_keep"]
+                value_indexes_to_keep = col_dict["value_indexes_to_keep"]
+                items = tf.gather(
+                    inputs[:, :, col_index_to_keep], value_indexes_to_keep, axis=1
+                )  # shape: (batch_size, len(value_indexes_to_keep))
+                items_to_keep_some_values = tf.concat(
+                    [items_to_keep_some_values, items], axis=-1
+                )
 
             # Concatenate flattened columns and the last values per example in the batch
             flat_input = tf.concat(
-                [items_to_flatten, items_to_keep_last_value], axis=-1
+                [items_to_flatten, items_to_keep_some_values], axis=-1
             )  # shape: (batch_size, flattened_features + len(cols_keep_last_value))
             flat_inputs.append(
                 flat_input.numpy()
@@ -383,9 +414,15 @@ class WindowGenerator:
         )  # Combine the flattened labels across all batches
 
         ### Generate Column Names ###
-        input_column_names = [
-            f"{name}_{i}" for name in cols_to_flatten for i in range(inputs.shape[1])
-        ] + cols_keep_last_value
+        input_column_names = (
+            [f"{name}_{i}" for name in cols_to_flatten for i in range(inputs.shape[1])]
+            + [
+                f"{dict_keep_some_values['col_name']}_{i}"
+                for dict_keep_some_values in cols_keep_some_values
+                for i in dict_keep_some_values["indexes_to_keep"]
+            ]
+            + cols_keep_last_value
+        )
         label_column_names = [
             f"{name}_{i}"
             for name in label_cols_to_flatten
