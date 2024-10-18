@@ -61,7 +61,9 @@ class RegressionBaseModel:
             )
 
         X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
+        self.update_model_data(train)
         X_val, y_val = self.get_X_y(val, overlapping_windows=False)  # type: ignore
+        self.update_model_data(val)
 
         self.models = {}
         if self.time_mode == "window":
@@ -171,11 +173,13 @@ class RegressionBaseModel:
         else:
             input_width = self.x_dim
 
+        df_padded = self.pad_with_seen_data(df, input_width)
+
         W = WindowGenerator(
             input_width=input_width,
             label_width=self.lookahead,
             shift=self.lookahead,
-            train_df=df,
+            train_df=df_padded,
             label_columns=["power", "date"],
             overlapping_windows=overlapping_windows,
         )
@@ -222,3 +226,67 @@ class RegressionBaseModel:
             return flat_inputs, flat_labels, y_dates
         else:
             return flat_inputs, flat_labels
+
+    @property
+    def model_data(self):
+        model_data = getattr(self, "_model_data", None)
+        if model_data is None:
+            self._model_data = pd.DataFrame(columns=["date"])
+        return self._model_data
+
+    def update_model_data(self, data: pd.DataFrame) -> None:
+        # Concatenate the DataFrames
+        concatenated_data = pd.concat([self.model_data, data], ignore_index=True)
+
+        # Identify duplicated dates
+        duplicated_dates = concatenated_data[
+            concatenated_data.duplicated(subset="date", keep=False)
+        ]
+        if not duplicated_dates.empty:
+            print(
+                f"Warning: {len(duplicated_dates)} duplicated dates found in the data. Dropping duplicates."
+            )
+            concatenated_data = concatenated_data.drop_duplicates(subset="date")
+
+        # Assign the combined DataFrame to self._model_data
+        self._model_data = concatenated_data
+
+    def pad_with_seen_data(
+        self, data_to_pad: pd.DataFrame, number_of_timesteps_to_pad: int
+    ) -> pd.DataFrame:
+        """Add at the beginning of the "data_to_pad" DataFrame the "number_of_timesteps_to_pad" that precede the given data.
+        If the data is not available or some timesteps are missing, no padding is done.
+        """
+        first_date_of_data_to_pad = pd.to_datetime(
+            data_to_pad.iloc[0]["date"], unit="s"
+        )
+        # Build padding index
+        padding_index = pd.date_range(
+            start=first_date_of_data_to_pad
+            - pd.Timedelta(minutes=15) * number_of_timesteps_to_pad,
+            periods=number_of_timesteps_to_pad,
+            freq="15min",
+        )
+
+        model_data = self.model_data.copy()
+        model_data["date"] = pd.to_datetime(model_data["date"], unit="s")
+        model_data["date"] = model_data["date"].dt.round("5min")
+        model_data = model_data.set_index("date")
+
+        # Check if the padding index is in the model data
+        if not padding_index.isin(model_data.index).all():
+            if not model_data.empty:
+                print(
+                    "Warning: Some padding indexes are missing in the model data. Padding not done."
+                )
+            return data_to_pad
+
+        # Get the padding data
+        padding_data = model_data.loc[padding_index]
+        padding_data = padding_data.reset_index().rename(columns={"index": "date"})
+        padding_data["date"] = padding_data["date"].astype("int64") // 10**9
+
+        # Concatenate the padding data with the data to pad
+        data_to_pad = pd.concat([padding_data, data_to_pad], ignore_index=True)
+
+        return data_to_pad

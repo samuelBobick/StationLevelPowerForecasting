@@ -17,6 +17,7 @@ class XGBoost(RegressionBaseModel):
         alpha: int = default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: bool = default_parameters.OPTIMIZE_LAGS,
+        dropout: float = default_parameters.DROPOUT,
     ):
         """_summary_
 
@@ -36,6 +37,7 @@ class XGBoost(RegressionBaseModel):
         )
         self.alpha = alpha
         self.time_mode = time_mode
+        self.dropout = dropout
 
     @property
     def model_str_name(self):
@@ -74,11 +76,12 @@ class XGBoost(RegressionBaseModel):
             "eval_metric": "rmse",
             # "max_depth": 6,
             "eta": 0.1,  # learning rate, default 0.3
-            "subsample": 0.8,  # fraction of training set to randomly sample for =
+            "subsample": 1
+            - self.dropout,  # fraction of training set to randomly sample for =
             # each tree (has a similar effect as dropout)
             "colsample_bytree": 0.8,
             "device": default_parameters.DEVICE,
-            "seed": int(time.time()),
+            "seed": int(time.time()),  # add random seed, otherwise default is 0
         }
         num_round = 100
         bst = xgb.train(
