@@ -1,3 +1,4 @@
+import time
 from typing import Literal
 
 import pandas as pd
@@ -77,6 +78,7 @@ class XGBoost(RegressionBaseModel):
             # each tree (has a similar effect as dropout)
             "colsample_bytree": 0.8,
             "device": default_parameters.DEVICE,
+            "seed": int(time.time()),
         }
         num_round = 100
         bst = xgb.train(
