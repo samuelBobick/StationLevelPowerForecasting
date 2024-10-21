@@ -5,11 +5,12 @@ import pandas as pd
 from slrp_ev_data.window_generator import WindowGenerator
 from tqdm import tqdm
 
+from slrp_ev_ts_forecasting.base import Base
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
-from slrp_ev_ts_forecasting.pacf import get_pacf_values, get_threshold
+from slrp_ev_ts_forecasting.default_parameters import TypeOptimizeLags
 
 
-class RegressionBaseModel:
+class RegressionBaseModel(Base):
 
     def __init__(
         self,
@@ -17,7 +18,7 @@ class RegressionBaseModel:
         lookahead: int,
         alpha: float,
         time_mode: Literal["window", "cyclical"],
-        optimize_lags: bool,
+        optimize_lags: TypeOptimizeLags,
     ):
         """_summary_
 
@@ -26,11 +27,12 @@ class RegressionBaseModel:
             lookahead (int, optional): How many timesteps ahead we want to predict. Defaults to 16.
             alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
         """
+        super().__init__(x_dim=x_dim, lookahead=lookahead, optimize_lags=optimize_lags)
+
         self.lookahead = lookahead
         self.x_dim = x_dim
 
         self.optimize_lags = optimize_lags
-        self.range_optimal_lags = 20 * 96
 
         self.alpha = alpha
         self.time_mode = time_mode
@@ -56,14 +58,12 @@ class RegressionBaseModel:
             tuple (float, float, list): RMSE, weighted RMSE, array of predictions
         """
         if self.optimize_lags:
-            self.pacf_top_values = self.get_top_pacf_values(
-                train, nb_of_days_for_pacf=int(self.range_optimal_lags / 96)
-            )
+            self.pacf_top_values = self.get_top_pacf_values(train)
 
         X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
-        self.update_model_data(train)
+        self.update_seen_data(train)
         X_val, y_val = self.get_X_y(val, overlapping_windows=False)  # type: ignore
-        self.update_model_data(val)
+        self.update_seen_data(val)
 
         self.models = {}
         if self.time_mode == "window":
@@ -139,27 +139,6 @@ class RegressionBaseModel:
             "This method should be implemented by the child class"
         )
 
-    def get_top_pacf_values(
-        self, data: pd.DataFrame, nb_of_days_for_pacf: int = 30
-    ) -> pd.Series:
-        """Returns a list-like object with the top x_dim values of the Partial AutoCorrelation Function (PACF)."""
-        pacf_df = get_pacf_values(
-            downsample_hours=1, data=data, nb_of_days_for_pacf=nb_of_days_for_pacf
-        )
-        # remove first value (autocorrelation with itself)
-        pacf_df = pacf_df.iloc[1:]
-
-        pacf_values = pacf_df["PACF"].map(abs)
-        number_of_lags_to_keep = self.x_dim
-        pacf_top_values = pacf_values.sort_values(ascending=False).iloc[
-            :number_of_lags_to_keep
-        ]
-
-        _, self.index_farthest_lag = get_threshold(
-            pacf_df, number_of_lags_to_keep=number_of_lags_to_keep
-        )
-        return pacf_top_values
-
     def get_X_y(
         self,
         df,
@@ -228,15 +207,15 @@ class RegressionBaseModel:
             return flat_inputs, flat_labels
 
     @property
-    def model_data(self):
-        model_data = getattr(self, "_model_data", None)
-        if model_data is None:
-            self._model_data = pd.DataFrame(columns=["date"])
-        return self._model_data
+    def seen_data(self):
+        seen_data = getattr(self, "_seen_data", None)
+        if seen_data is None:
+            self._seen_data = pd.DataFrame(columns=["date"])
+        return self._seen_data
 
-    def update_model_data(self, data: pd.DataFrame) -> None:
+    def update_seen_data(self, data: pd.DataFrame) -> None:
         # Concatenate the DataFrames
-        concatenated_data = pd.concat([self.model_data, data], ignore_index=True)
+        concatenated_data = pd.concat([self.seen_data, data], ignore_index=True)
 
         # Identify duplicated dates
         duplicated_dates = concatenated_data[
@@ -248,17 +227,17 @@ class RegressionBaseModel:
             )
             concatenated_data = concatenated_data.drop_duplicates(subset="date")
 
-        # Assign the combined DataFrame to self._model_data
-        self._model_data = concatenated_data
+        # Assign the combined DataFrame to self._seen_data
+        self._seen_data = concatenated_data
 
     def pad_with_seen_data(
-        self, data_to_pad: pd.DataFrame, number_of_timesteps_to_pad: int
+        self, new_data_to_pad: pd.DataFrame, number_of_timesteps_to_pad: int
     ) -> pd.DataFrame:
-        """Add at the beginning of the "data_to_pad" DataFrame the "number_of_timesteps_to_pad" that precede the given data.
+        """Add at the beginning of the "new_data_to_pad" DataFrame the "number_of_timesteps_to_pad" that precede the given data.
         If the data is not available or some timesteps are missing, no padding is done.
         """
         first_date_of_data_to_pad = pd.to_datetime(
-            data_to_pad.iloc[0]["date"], unit="s"
+            new_data_to_pad.iloc[0]["date"], unit="s"
         )
         # Build padding index
         padding_index = pd.date_range(
@@ -268,25 +247,25 @@ class RegressionBaseModel:
             freq="15min",
         )
 
-        model_data = self.model_data.copy()
-        model_data["date"] = pd.to_datetime(model_data["date"], unit="s")
-        model_data["date"] = model_data["date"].dt.round("5min")
-        model_data = model_data.set_index("date")
+        seen_data = self.seen_data.copy()
+        seen_data["date"] = pd.to_datetime(seen_data["date"], unit="s")
+        seen_data["date"] = seen_data["date"].dt.round("5min")
+        seen_data = seen_data.set_index("date")
 
         # Check if the padding index is in the model data
-        if not padding_index.isin(model_data.index).all():
-            if not model_data.empty:
+        if not padding_index.isin(seen_data.index).all():
+            if not seen_data.empty:
                 print(
                     "Warning: Some padding indexes are missing in the model data. Padding not done."
                 )
-            return data_to_pad
+            return new_data_to_pad
 
         # Get the padding data
-        padding_data = model_data.loc[padding_index]
+        padding_data = seen_data.loc[padding_index]
         padding_data = padding_data.reset_index().rename(columns={"index": "date"})
         padding_data["date"] = padding_data["date"].astype("int64") // 10**9
 
         # Concatenate the padding data with the data to pad
-        data_to_pad = pd.concat([padding_data, data_to_pad], ignore_index=True)
+        new_data_to_pad = pd.concat([padding_data, new_data_to_pad], ignore_index=True)
 
-        return data_to_pad
+        return new_data_to_pad

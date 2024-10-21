@@ -15,15 +15,20 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from slrp_ev_ts_forecasting.asymmetric_loss import AsymmetricRMSELoss
+from slrp_ev_ts_forecasting.base import Base
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_torch_losses
-from slrp_ev_ts_forecasting.default_parameters import DEVICE, TypeErrorMetric
+from slrp_ev_ts_forecasting.default_parameters import (
+    DEVICE,
+    TypeErrorMetric,
+    TypeOptimizeLags,
+)
 
 # PyTorch TensorBoard support
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
 
 
 # Parent class for common functionality
-class TorchBaseModel:
+class TorchBaseModel(Base):
     def __init__(
         self,
         epochs: int,
@@ -35,9 +40,13 @@ class TorchBaseModel:
         lr_threshold: float,
         scheduler_patience: int,
         error_metric: TypeErrorMetric,
+        x_dim: int,
+        lookahead: int,
         warmup_base_learning_rate: float = 1e-6,
+        optimize_lags: TypeOptimizeLags = None,
     ):
-
+        super().__init__(x_dim=x_dim, lookahead=lookahead, optimize_lags=optimize_lags)
+        # General NN parameters
         self.epochs = epochs
         self.number_of_initial_models = number_of_initial_models
         if number_of_initial_models == 1:
@@ -76,6 +85,9 @@ class TorchBaseModel:
 
         # These will be implemented in child classes
         self.model: Optional[nn.Module] = None
+
+        # Parameters for optimize lags for regression models (e.g. FFNN)
+        self.optimize_lags = optimize_lags
 
     def initialize_optimizer_scheduler(self):
         """Initialize the optimizer and learning rate scheduler.
@@ -153,11 +165,16 @@ class TorchBaseModel:
         val: pd.DataFrame,
     ) -> None:
         """Find best model (out of number_of_initial_models) and train it on the entire dataset."""
+        if self.optimize_lags:
+            self.pacf_top_values = self.get_top_pacf_values(train)
+
         train_loader = self.get_dataloader(
             train, shuffle=True, overlapping_windows=True
         )
+        self.update_seen_data(train)
         self.number_of_steps_per_epoch = len(train_loader)
         val_loader = self.get_dataloader(val, shuffle=False, overlapping_windows=False)
+        self.update_seen_data(val)
 
         self.initialize_model()
         self.add_model_to_board(train_loader)
@@ -409,6 +426,70 @@ class TorchBaseModel:
             df, overlapping_windows=overlapping_windows
         )  # type: ignore
         return DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=shuffle)
+
+    @property
+    def seen_data(self):
+        seen_data = getattr(self, "_seen_data", None)
+        if seen_data is None:
+            self._seen_data = pd.DataFrame(columns=["date"])
+        return self._seen_data
+
+    def update_seen_data(self, data: pd.DataFrame) -> None:
+        # Concatenate the DataFrames
+        concatenated_data = pd.concat([self.seen_data, data], ignore_index=True)
+
+        # Identify duplicated dates
+        duplicated_dates = concatenated_data[
+            concatenated_data.duplicated(subset="date", keep=False)
+        ]
+        if not duplicated_dates.empty:
+            print(
+                f"Warning: {len(duplicated_dates)} duplicated dates found in the data. Dropping duplicates."
+            )
+            concatenated_data = concatenated_data.drop_duplicates(subset="date")
+
+        # Assign the combined DataFrame to self._seen_data
+        self._seen_data = concatenated_data
+
+    def pad_with_seen_data(
+        self, new_data_to_pad: pd.DataFrame, number_of_timesteps_to_pad: int
+    ) -> pd.DataFrame:
+        """Add at the beginning of the "new_data_to_pad" DataFrame the "number_of_timesteps_to_pad" that precede the given data.
+        If the data is not available or some timesteps are missing, no padding is done.
+        """
+        first_date_of_data_to_pad = pd.to_datetime(
+            new_data_to_pad.iloc[0]["date"], unit="s"
+        )
+        # Build padding index
+        padding_index = pd.date_range(
+            start=first_date_of_data_to_pad
+            - pd.Timedelta(minutes=15) * number_of_timesteps_to_pad,
+            periods=number_of_timesteps_to_pad,
+            freq="15min",
+        )
+
+        seen_data = self.seen_data.copy()
+        seen_data["date"] = pd.to_datetime(seen_data["date"], unit="s")
+        seen_data["date"] = seen_data["date"].dt.round("5min")
+        seen_data = seen_data.set_index("date")
+
+        # Check if the padding index is in the model data
+        if not padding_index.isin(seen_data.index).all():
+            if not seen_data.empty:
+                print(
+                    "Warning: Some padding indexes are missing in the model data. Padding not done."
+                )
+            return new_data_to_pad
+
+        # Get the padding data
+        padding_data = seen_data.loc[padding_index]
+        padding_data = padding_data.reset_index().rename(columns={"index": "date"})
+        padding_data["date"] = padding_data["date"].astype("int64") // 10**9
+
+        # Concatenate the padding data with the data to pad
+        new_data_to_pad = pd.concat([padding_data, new_data_to_pad], ignore_index=True)
+
+        return new_data_to_pad
 
     def get_dataset(
         self,

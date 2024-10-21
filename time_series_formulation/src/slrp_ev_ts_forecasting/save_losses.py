@@ -14,7 +14,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
 )
 
 
-def save_losses(losses: Losses, model_name: str) -> None:
+def save_losses(losses: Losses, model_name: str, model_params: dict = {}) -> None:
     """Saves the losses to the results file.
 
     Args:
@@ -24,12 +24,12 @@ def save_losses(losses: Losses, model_name: str) -> None:
     additional_data = pd.DataFrame(
         {
             "date": pd.Timestamp.now(),
-            "batch_size": BATCH_SIZE,
-            "x_dim": X_DIM,
-            "lookahead": LOOKAHEAD,
-            "time_mode": TIME_MODE,
-            "dataset": DATASET,
-            "error_metric": ERROR_METRIC,
+            "batch_size": model_params.get("batch_size", BATCH_SIZE),
+            "x_dim": model_params.get("x_dim", X_DIM),
+            "lookahead": model_params.get("lookahead", LOOKAHEAD),
+            "time_mode": model_params.get("time_mode", TIME_MODE),
+            "dataset": model_params.get("dataset", DATASET),
+            "error_metric": model_params.get("error_metric", ERROR_METRIC),
             "model_name": model_name,
             "rmse": losses["rmse"],
             f"wrmse (alpha={ALPHA})": losses["wrmse"],

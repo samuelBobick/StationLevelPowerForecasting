@@ -1,18 +1,20 @@
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import torch
 
 NUMBER_OF_INITIAL_MODELS = 1
 X_DIM = 96 * 2
 LOOKAHEAD = 96
-EPOCHS = 2
+EPOCHS = 5
 TIME_MODE: Literal["cyclical", "window"] = "cyclical"
 ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 BATCH_SIZE = 32
 DROPOUT = 0.2
-OPTIMIZE_LAGS = True  # for regression models
+
+TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
+OPTIMIZE_LAGS: TypeOptimizeLags = "long_opt"  # for regression models
 RESULTS_FILENAME = Path(__file__).parent / "results" / "results.csv"
 
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
