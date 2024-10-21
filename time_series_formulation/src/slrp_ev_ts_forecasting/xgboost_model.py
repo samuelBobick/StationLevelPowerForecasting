@@ -16,7 +16,7 @@ class XGBoost(RegressionBaseModel):
         lookahead: int = default_parameters.LOOKAHEAD,
         alpha: int = default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
-        optimize_lags: bool = default_parameters.OPTIMIZE_LAGS,
+        optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         dropout: float = default_parameters.DROPOUT,
     ):
         """_summary_
@@ -41,7 +41,12 @@ class XGBoost(RegressionBaseModel):
 
     @property
     def model_str_name(self):
-        return "XGBoost" + ("_lagsOpti" if self.optimize_lags else "")
+        return (
+            "XGBoost"
+            + ("_lagsOpti" if self.optimize_lags else "")
+            + ("Short" if self.optimize_lags == "short_opt" else "")
+            + ("Long" if self.optimize_lags == "long_opt" else "")
+        )
 
     def fit_model(
         self,

@@ -22,7 +22,7 @@ from slrp_ev_ts_forecasting.visualization import visualize_forecast
 from slrp_ev_ts_forecasting.xgboost_model import XGBoost
 
 
-def run_one_model(model_choice: TypeModelChoice) -> None:
+def run_one_model(model_choice: TypeModelChoice, model_parameters={}) -> None:
     # Read the data
     print("# Starting...")
     if DATASET == "slrp-ev_old":
@@ -134,9 +134,9 @@ def run_one_model(model_choice: TypeModelChoice) -> None:
                     seasonality_mode="additive",
                     n_changepoints=40,
                     # add_country_holidays={"country_name": "US"},
-                    yearly_seasonality=False,
-                    weekly_seasonality=True,
-                    daily_seasonality=True,
+                    yearly_seasonality=False,  # type: ignore
+                    weekly_seasonality=True,  # type: ignore
+                    daily_seasonality=True,  # type: ignore
                     # the three growth arguments go together.
                     # They make the model slightly more precise (by a few percents)
                     # but also much slower to make predictions
@@ -155,14 +155,12 @@ def run_one_model(model_choice: TypeModelChoice) -> None:
             },
         },
     }
-
+    model_parameters = model_parameters | dict_model[model_choice]["model_params"]
     print(
-        f"Model choice: {model_choice}, with the following parameters for the initialization: {dict_model[model_choice]['model_params']} "
+        f"Model choice: {model_choice}, with the following parameters for the initialization: {model_parameters } "
     )
 
-    model = dict_model[model_choice]["model"](
-        **dict_model[model_choice]["model_params"]
-    )
+    model = dict_model[model_choice]["model"](**model_parameters)
     model_name = getattr(model, "model_str_name", model_choice)
     print("# Fitting...")
     model.fit(train_eng, **dict_model[model_choice]["fit_params"])
@@ -194,4 +192,4 @@ def run_one_model(model_choice: TypeModelChoice) -> None:
         test, df_forecast["power"], data_length_days, forecast_dates=df_forecast["date"]
     )
 
-    save_losses(losses, model_name)
+    save_losses(losses, model_name, model_parameters)

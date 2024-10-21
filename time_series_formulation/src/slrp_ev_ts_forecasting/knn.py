@@ -18,7 +18,7 @@ class KNN(RegressionBaseModel):
         percentile=90,
         alpha=default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
-        optimize_lags=default_parameters.OPTIMIZE_LAGS,
+        optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
     ):
         """_summary_
 
@@ -44,8 +44,11 @@ class KNN(RegressionBaseModel):
 
     @property
     def model_str_name(self):
-        return f"KNN_neighbors{self.n_neighbors}_percentile{self.percentile}" + (
-            "_lagsOpti" if self.optimize_lags else ""
+        return (
+            f"KNN_neighbors{self.n_neighbors}_percentile{self.percentile}"
+            + ("_lagsOpti" if self.optimize_lags else "")
+            + ("Short" if self.optimize_lags == "short_opt" else "")
+            + ("Long" if self.optimize_lags == "long_opt" else "")
         )
 
     def fit_model(

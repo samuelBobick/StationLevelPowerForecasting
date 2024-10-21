@@ -84,6 +84,8 @@ class TCN(TorchBaseModel):
             lr_threshold=lr_threshold,
             scheduler_patience=scheduler_patience,
             error_metric=error_metric,
+            x_dim=x_dim,
+            lookahead=lookahead,
         )
 
         # Other parameters
@@ -146,9 +148,11 @@ class TCN(TorchBaseModel):
     ) -> TFToTorchDataset | tuple[TFToTorchDataset, torch.Tensor]:
         """Generates the dataset and features based on the input DataFrame."""
         label_width = self.lookahead
-        if self.use_decoder:
+        if not self.use_decoder:
             # To have an output of the same length as the input
             label_width = self.x_dim
+
+        df = self.pad_with_seen_data(df, number_of_timesteps_to_pad=self.x_dim)
 
         W = WindowGenerator(
             input_width=self.x_dim,

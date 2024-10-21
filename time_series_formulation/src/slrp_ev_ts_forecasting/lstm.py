@@ -69,6 +69,8 @@ class LSTM(TorchBaseModel):
             lr_threshold=lr_threshold,
             scheduler_patience=scheduler_patience,
             error_metric=error_metric,
+            x_dim=x_dim,
+            lookahead=lookahead,
         )
 
         # Determine input size based on time_mode
@@ -109,6 +111,8 @@ class LSTM(TorchBaseModel):
         overlapping_windows: bool = False,
     ) -> TFToTorchDataset | tuple[TFToTorchDataset, torch.Tensor]:
         """Generates the dataset and features based on the input DataFrame."""
+        df = self.pad_with_seen_data(df, number_of_timesteps_to_pad=self.x_dim)
+
         W = WindowGenerator(
             input_width=self.x_dim,
             label_width=self.lookahead,

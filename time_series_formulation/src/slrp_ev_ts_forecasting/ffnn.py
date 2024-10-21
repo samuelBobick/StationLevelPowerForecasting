@@ -31,6 +31,7 @@ class FFNN(TorchBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         batch_size: int = default_parameters.BATCH_SIZE,
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
+        optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
     ):
         """TODO"""
 
@@ -41,6 +42,9 @@ class FFNN(TorchBaseModel):
         self.output_size = lookahead
         self.num_hidden_layers = num_hidden_layers
         self.activation = activation
+
+        # Regression specific parameters
+        self.optimize_lags = optimize_lags
 
         # Other parameters
         self.alpha = alpha
@@ -57,6 +61,8 @@ class FFNN(TorchBaseModel):
             lr_threshold=lr_threshold,
             scheduler_patience=scheduler_patience,
             error_metric=error_metric,
+            x_dim=x_dim,
+            lookahead=lookahead,
         )
 
         # Determine input size based on time_mode
@@ -64,7 +70,12 @@ class FFNN(TorchBaseModel):
 
     @property
     def model_str_name(self):
-        return f"FFNN_hidSize{self.hidden_size}_layers{self.num_hidden_layers}"
+        return (
+            f"FFNN_hidSize{self.hidden_size}_layers{self.num_hidden_layers}"
+            + ("_lagsOpti" if self.optimize_lags else "")
+            + ("Short" if self.optimize_lags == "short_opt" else "")
+            + ("Long" if self.optimize_lags == "long_opt" else "")
+        )
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
@@ -92,8 +103,17 @@ class FFNN(TorchBaseModel):
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ) -> Dataset | tuple[Dataset, torch.Tensor]:
+        df = df.copy()
+
+        if self.optimize_lags:
+            input_width = self.index_farthest_lag
+        else:
+            input_width = self.x_dim
+
+        df = self.pad_with_seen_data(df, number_of_timesteps_to_pad=input_width)
+
         W = WindowGenerator(
-            input_width=self.x_dim,
+            input_width=input_width,
             label_width=self.lookahead,
             shift=self.lookahead,
             train_df=df,
@@ -113,12 +133,27 @@ class FFNN(TorchBaseModel):
         elif self.time_mode == "window":
             cols_keep_last_value += ["time_window", "workday"]
 
-        flat_inputs, flat_labels = W.flatten_dataset(
-            W.train,
-            cols_to_flatten=["power"],
-            cols_keep_last_value=cols_keep_last_value,
-            label_cols_to_flatten=["power"],
-        )
+        if self.optimize_lags:
+            flat_inputs, flat_labels = W.flatten_dataset(
+                W.train,
+                cols_keep_last_value=cols_keep_last_value,
+                cols_keep_some_values=[
+                    {
+                        "col_name": "power",
+                        "indexes_to_keep": input_width
+                        - self.pacf_top_values.index.to_numpy(),
+                    }
+                ],
+                label_cols_to_flatten=["power"],
+            )
+        else:
+            flat_inputs, flat_labels = W.flatten_dataset(
+                W.train,
+                cols_to_flatten=["power"],
+                cols_keep_last_value=cols_keep_last_value,
+                label_cols_to_flatten=["power"],
+            )
+
         if self.time_mode == "window":
             flat_inputs = one_hot_encoding(flat_inputs, ["time_window"])
 
