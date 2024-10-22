@@ -97,7 +97,12 @@ class TCN(TorchBaseModel):
 
     @property
     def model_str_name(self):
-        return f"TCN_hidSize{self.hidden_size}_layers{self.num_layers}_kernelSize{self.kernel_size}_dropout{self.dropout}"
+        return (
+            f"TCN_hidSize{self.hidden_size}"
+            + f"_layers{self.num_layers}"
+            + f"_kernelSize{self.kernel_size}"
+            + f"_dropout{self.dropout}"
+        )
 
     def get_num_layers(self) -> int:
         """Computes the minimum number of layers required for full history coverage
