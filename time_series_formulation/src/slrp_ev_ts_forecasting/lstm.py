@@ -18,6 +18,8 @@ class LSTM(TorchBaseModel):
         hidden_size: int = 32,
         num_lstm_layers: int = 1,
         activation=nn.ReLU(),
+        dropout: float = default_parameters.DROPOUT,
+        batch_norm: bool = default_parameters.BATCH_NORM,
         initial_learning_rate: float = 0.01,
         lr_threshold: float = 1e-5,
         scheduler_patience: int = 5,
@@ -53,6 +55,8 @@ class LSTM(TorchBaseModel):
         self.output_size = lookahead
         self.num_lstm_layers = num_lstm_layers
         self.activation = activation
+        self.dropout = dropout
+        self.batch_norm = batch_norm
 
         # Other parameters
         self.alpha = alpha
@@ -78,7 +82,12 @@ class LSTM(TorchBaseModel):
 
     @property
     def model_str_name(self):
-        return f"LSTM_hidSize{self.hidden_size}_lstmLayers{self.num_lstm_layers}"
+        return (
+            f"LSTM_hidSize{self.hidden_size}"
+            + f"_lstmLayers{self.num_lstm_layers}"
+            + f"_dropout{self.dropout}"
+            + ("_withBatchNorm" if self.batch_norm else "")
+        )
 
     def initialize_model(self) -> None:
         """Initializes the LSTM model based on the current configuration."""
@@ -88,6 +97,8 @@ class LSTM(TorchBaseModel):
             hidden_size=self.hidden_size,
             num_layers=self.num_lstm_layers,
             activation=self.activation,
+            dropout=self.dropout,
+            batch_norm=self.batch_norm,
         )
         self.model.to(default_parameters.DEVICE)
 
@@ -151,7 +162,16 @@ class LSTM(TorchBaseModel):
 
 
 class LSTM_model(nn.Module):
-    def __init__(self, output_size, input_size, hidden_size, num_layers, activation):
+    def __init__(
+        self,
+        output_size,
+        input_size,
+        hidden_size,
+        num_layers,
+        activation,
+        dropout,
+        batch_norm,
+    ):
         super(LSTM_model, self).__init__()
         self.num_layers = num_layers
         self.hidden_size = hidden_size
@@ -162,7 +182,11 @@ class LSTM_model(nn.Module):
             hidden_size=hidden_size,
             num_layers=num_layers,
             batch_first=True,
+            dropout=dropout,
         )
+        if batch_norm:
+            self.batch_norm = nn.BatchNorm1d(hidden_size)
+        self.dropout = nn.Dropout(dropout)
         self.fc_1 = nn.Linear(hidden_size, 128)  # fully connected layer
         self.fc = nn.Linear(128, output_size)  # output layer
 
@@ -189,6 +213,9 @@ class LSTM_model(nn.Module):
 
         # hn is of size [num_layers, batch_size, hidden_size]
         hn = hn[-1]  # use the last layer's output
+        if hasattr(self, "batch_norm"):
+            hn = self.batch_norm(hn)
+        hn = self.dropout(hn)
         out = self.activation(hn)
         out = self.fc_1(out)
         out = self.activation(out)
