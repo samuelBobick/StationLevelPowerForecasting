@@ -63,7 +63,7 @@ class TorchBaseModel(Base):
         if error_metric == "mse":
             self.criterion = nn.MSELoss()
         elif error_metric == "wmse":
-            AsymmetricRMSELoss(alpha)
+            self.criterion = AsymmetricRMSELoss(alpha)
         else:
             raise ValueError(
                 f"Error metric of type {error_metric} is not defined. Please refer "
