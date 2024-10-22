@@ -12,9 +12,12 @@ ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 BATCH_SIZE = 32
 DROPOUT = 0.2
+BATCH_NORM: bool = True
 
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = "long_opt"  # for regression models
+NUMBER_OF_DAYS_FOR_PACF = 70
+
 RESULTS_FILENAME = Path(__file__).parent / "results" / "results.csv"
 
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)

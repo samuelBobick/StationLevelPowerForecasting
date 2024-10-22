@@ -23,6 +23,8 @@ class FFNN(TorchBaseModel):
         hidden_size: int = 64,
         num_hidden_layers: int = 2,
         activation=nn.ReLU(),
+        dropout: float = default_parameters.DROPOUT,
+        batch_norm: bool = default_parameters.BATCH_NORM,
         initial_learning_rate: float = 0.01,
         lr_threshold: float = 1e-5,
         scheduler_patience: int = 5,
@@ -42,6 +44,8 @@ class FFNN(TorchBaseModel):
         self.output_size = lookahead
         self.num_hidden_layers = num_hidden_layers
         self.activation = activation
+        self.dropout = dropout
+        self.batch_norm = batch_norm
 
         # Regression specific parameters
         self.optimize_lags = optimize_lags
@@ -63,6 +67,7 @@ class FFNN(TorchBaseModel):
             error_metric=error_metric,
             x_dim=x_dim,
             lookahead=lookahead,
+            optimize_lags=optimize_lags,
         )
 
         # Determine input size based on time_mode
@@ -75,6 +80,8 @@ class FFNN(TorchBaseModel):
             + ("_lagsOpti" if self.optimize_lags else "")
             + ("Short" if self.optimize_lags == "short_opt" else "")
             + ("Long" if self.optimize_lags == "long_opt" else "")
+            + f"_dropout{self.dropout}"
+            + ("_withBatchNorm" if self.batch_norm else "")
         )
 
     def _determine_input_size(self) -> int:
@@ -94,6 +101,8 @@ class FFNN(TorchBaseModel):
             output_size=self.output_size,
             num_hidden_layers=self.num_hidden_layers,
             activation=self.activation,
+            dropout=self.dropout,
+            batch_norm=self.batch_norm,
         )
         self.model.to(default_parameters.DEVICE)
 
@@ -172,7 +181,14 @@ class FFNN(TorchBaseModel):
 
 class FFNN_model(nn.Module):
     def __init__(
-        self, input_size, hidden_size, output_size, num_hidden_layers, activation
+        self,
+        input_size,
+        hidden_size,
+        output_size,
+        num_hidden_layers,
+        activation,
+        dropout,
+        batch_norm,
     ):
         super(FFNN_model, self).__init__()
         self.hidden_layers = nn.ModuleList([nn.Linear(input_size, hidden_size)])
@@ -180,11 +196,18 @@ class FFNN_model(nn.Module):
             [nn.Linear(hidden_size, hidden_size) for _ in range(num_hidden_layers - 1)]
         )
         self.activation = activation
+        if batch_norm:
+            self.batch_norm = nn.BatchNorm1d(hidden_size)
+        self.dropout = nn.Dropout(dropout)
         self.fc_out = nn.Linear(hidden_size, output_size)
 
     def forward(self, x) -> torch.Tensor:
         for layer in self.hidden_layers:
             x = self.activation(layer(x))
+            if hasattr(self, "batch_norm"):
+                x = self.batch_norm(x)
+            x = self.dropout(x)
+
         x = self.fc_out(x)
         # Add a continuous activation function to unsure results are positive
         x = nn.functional.softplus(x)
