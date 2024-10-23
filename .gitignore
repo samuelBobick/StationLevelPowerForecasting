@@ -1,6 +1,5 @@
 
 **/__pycache__
-data/**/*.csv
 data/src/slrp_ev_data/darts_logs/*
 time_series_formulation/src/slrp_ev_ts_forecasting/runs/**
 time_series_formulation/src/slrp_ev_ts_forecasting/model/**
@@ -73,4 +72,3 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
-data/src/slrp_ev_data/darts_logs/2024-10-03_10_40_07_torch_model_run_29472/logs/events.out.tfevents.1727977208.US-L3YRGGW3.29472.0
