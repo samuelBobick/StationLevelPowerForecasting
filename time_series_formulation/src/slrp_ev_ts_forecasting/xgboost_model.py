@@ -43,6 +43,7 @@ class XGBoost(RegressionBaseModel):
     def model_str_name(self):
         return (
             "XGBoost"
+            + f"_dropout{self.dropout}"
             + ("_lagsOpti" if self.optimize_lags else "")
             + ("Short" if self.optimize_lags == "short_opt" else "")
             + ("Long" if self.optimize_lags == "long_opt" else "")
@@ -84,7 +85,7 @@ class XGBoost(RegressionBaseModel):
             "subsample": 1
             - self.dropout,  # fraction of training set to randomly sample for =
             # each tree (has a similar effect as dropout)
-            "colsample_bytree": 0.8,
+            "colsample_bytree": 1,  # - self.dropout,  # fraction of features to consider
             "device": default_parameters.DEVICE,
             "seed": int(time.time()),  # add random seed, otherwise default is 0
         }
