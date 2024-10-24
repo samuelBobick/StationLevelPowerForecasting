@@ -28,6 +28,7 @@ dependencies = [
   "xgboost<=2.2",
   "sktime<=0.34",
   "pmdarima",
+  "prophet",
   "tqdm",
 ]
 
