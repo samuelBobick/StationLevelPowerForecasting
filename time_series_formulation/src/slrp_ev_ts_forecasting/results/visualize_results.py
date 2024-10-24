@@ -5,7 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from slrp_ev_ts_forecasting.default_parameters import RESULTS_FILENAME
+from slrp_ev_ts_forecasting.default_parameters import (
+    DEFAULT_RESULTS_FILENAME,
+    RESULTS_PATH,
+)
 
 TypeMetrics = Literal["rmse", "wrmse (alpha=2)", "mae", "wprmse (beta=3)", "r2"]
 GROUPBY_COLUMNS = [
@@ -20,8 +23,11 @@ GROUPBY_COLUMNS = [
 
 def visualize_results(
     metric_to_show: TypeMetrics,
-    results_file_path: Path = RESULTS_FILENAME,
+    results_file_path: Path = RESULTS_PATH,
+    filename: str = DEFAULT_RESULTS_FILENAME,
 ) -> None:
+    results_file_path = results_file_path / f"{filename}.csv"
+
     df_results = pd.read_csv(results_file_path, index_col=False)
 
     df_results_grouped = df_results.groupby(GROUPBY_COLUMNS)
@@ -52,7 +58,8 @@ def plot_loss_against_one_parameter(
     metric_to_show: TypeMetrics,
     parameter_to_show: str,
     or_filter_model_name: Optional[list[str]] = None,
-    results_file_path: Path = RESULTS_FILENAME,
+    results_file_path: Path = RESULTS_PATH,
+    filename: str = DEFAULT_RESULTS_FILENAME,
     include_scatter: bool = False,
 ) -> None:
     """Scatter plot of the metric to show against one parameter. One line per model.
@@ -64,6 +71,8 @@ def plot_loss_against_one_parameter(
         results_file_path (optional): File path of the results file. Defaults to RESULTS_FILENAME.
         include_scatter (optional): Whether to include the scatter points. Defaults to False.
     """
+    results_file_path = results_file_path / f"{filename}.csv"
+
     df_results = pd.read_csv(results_file_path, index_col=False)
     if parameter_to_show not in df_results.columns:
         raise ValueError(f"Parameter {parameter_to_show} is not in the results file.")

@@ -9,7 +9,11 @@ from slrp_ev_data.feature_engineering import (
 )
 
 from slrp_ev_ts_forecasting.compute_losses import get_real_scale_losses
-from slrp_ev_ts_forecasting.default_parameters import DATASET, TypeModelChoice
+from slrp_ev_ts_forecasting.default_parameters import (
+    DATASET,
+    DEFAULT_RESULTS_FILENAME,
+    TypeModelChoice,
+)
 from slrp_ev_ts_forecasting.ffnn import FFNN
 from slrp_ev_ts_forecasting.knn import KNN
 from slrp_ev_ts_forecasting.last_week import LastWeek
@@ -22,7 +26,12 @@ from slrp_ev_ts_forecasting.visualization import visualize_forecast
 from slrp_ev_ts_forecasting.xgboost_model import XGBoost
 
 
-def run_one_model(model_choice: TypeModelChoice, model_parameters={}) -> None:
+def run_one_model(
+    model_choice: TypeModelChoice,
+    model_parameters={},
+    verbose: bool = True,
+    save_results_filename: str = DEFAULT_RESULTS_FILENAME,
+) -> None:
     # Read the data
     print("# Starting...")
     if DATASET == "slrp-ev_old":
@@ -188,8 +197,12 @@ def run_one_model(model_choice: TypeModelChoice, model_parameters={}) -> None:
         df_forecast, normalize_parameters, bypass_output_validation=True
     )
 
-    visualize_forecast(
-        test, df_forecast["power"], data_length_days, forecast_dates=df_forecast["date"]
-    )
+    if verbose:
+        visualize_forecast(
+            test,
+            df_forecast["power"],
+            data_length_days,
+            forecast_dates=df_forecast["date"],
+        )
 
-    save_losses(losses, model_name, model_parameters)
+    save_losses(losses, model_name, model_parameters, filename=save_results_filename)
