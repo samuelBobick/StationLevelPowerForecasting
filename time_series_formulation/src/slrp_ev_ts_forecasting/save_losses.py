@@ -6,15 +6,21 @@ from slrp_ev_ts_forecasting.default_parameters import (
     BATCH_SIZE,
     BETA,
     DATASET,
+    DEFAULT_RESULTS_FILENAME,
     ERROR_METRIC,
     LOOKAHEAD,
-    RESULTS_FILENAME,
+    RESULTS_PATH,
     TIME_MODE,
     X_DIM,
 )
 
 
-def save_losses(losses: Losses, model_name: str, model_params: dict = {}) -> None:
+def save_losses(
+    losses: Losses,
+    model_name: str,
+    model_params: dict = {},
+    filename: str = DEFAULT_RESULTS_FILENAME,
+) -> None:
     """Saves the losses to the results file.
 
     Args:
@@ -40,12 +46,14 @@ def save_losses(losses: Losses, model_name: str, model_params: dict = {}) -> Non
         index=[0],
     )
 
+    results_file_path = RESULTS_PATH / f"{filename}.csv"
+
     # read the file if it exists
     try:
-        df_results = pd.read_csv(RESULTS_FILENAME, index_col=False)
+        df_results = pd.read_csv(results_file_path, index_col=False)
     except FileNotFoundError:
         df_results = pd.DataFrame()
     df_results = pd.concat([df_results, additional_data], ignore_index=True)
 
-    RESULTS_FILENAME.parent.mkdir(exist_ok=True)
-    df_results.to_csv(RESULTS_FILENAME, index=False)
+    results_file_path.parent.mkdir(exist_ok=True)
+    df_results.to_csv(results_file_path, index=False)

@@ -18,7 +18,8 @@ TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = "long_opt"  # for regression models
 NUMBER_OF_DAYS_FOR_PACF = 70
 
-RESULTS_FILENAME = Path(__file__).parent / "results" / "results.csv"
+RESULTS_PATH = Path(__file__).parent / "results"
+DEFAULT_RESULTS_FILENAME = "results"
 
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"
