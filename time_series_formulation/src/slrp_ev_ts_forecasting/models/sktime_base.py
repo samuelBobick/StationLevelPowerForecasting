@@ -3,9 +3,8 @@ from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
-from sktime.split import SlidingWindowSplitter
-
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
+from sktime.split import SlidingWindowSplitter
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_losses
 
 warnings.filterwarnings(

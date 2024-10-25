@@ -2,10 +2,9 @@ import time
 from typing import Literal
 
 import pandas as pd
-import xgboost as xgb
-
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
-from slrp_ev_ts_forecasting.regression_base import RegressionBaseModel
+import xgboost as xgb
+from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 
 
 class XGBoost(RegressionBaseModel):
