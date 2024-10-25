@@ -9,19 +9,18 @@ import tensorflow as tf
 import torch
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
-from torch.optim.adamw import AdamW
-from torch.utils.data import DataLoader, Dataset
-from torch.utils.tensorboard.writer import SummaryWriter
-from tqdm import tqdm
-
 from slrp_ev_ts_forecasting.asymmetric_loss import AsymmetricRMSELoss
-from slrp_ev_ts_forecasting.base import Base
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_torch_losses
 from slrp_ev_ts_forecasting.default_parameters import (
     DEVICE,
     TypeErrorMetric,
     TypeOptimizeLags,
 )
+from slrp_ev_ts_forecasting.models.base import Base
+from torch.optim.adamw import AdamW
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard.writer import SummaryWriter
+from tqdm import tqdm
 
 # PyTorch TensorBoard support
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # type: ignore
@@ -70,7 +69,9 @@ class TorchBaseModel(Base):
                 "to TypeErrorMetric for supported error metrics."
             )
         # Path parameters
-        self.model_path = Path(__file__).parent / "model" / f"{model_str_name}.pt"
+        self.model_path = (
+            Path(__file__).parent / "pytorch_saved_models" / f"{model_str_name}.pt"
+        )
         self.model_path.parent.mkdir(exist_ok=True, parents=True)
         self.tensorboard_path = Path(__file__).parent / "runs"
 

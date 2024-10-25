@@ -2,13 +2,12 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
 from slrp_ev_data.window_generator import TFToTorchDataset, WindowGenerator
+from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 from torch.nn.utils.parametrizations import weight_norm
-
-import slrp_ev_ts_forecasting.default_parameters as default_parameters
-from slrp_ev_ts_forecasting.torch_base import TorchBaseModel
 
 
 class TCN(TorchBaseModel):
@@ -51,7 +50,13 @@ class TCN(TorchBaseModel):
             number_of_initial_models (int): Number of initial models to train.
             time_mode (Literal["window", "cyclical"]): Time mode for the model.
             batch_size (int): Batch size for training.
-            use_decoder (bool): Whether to use a decoder in the model. The decoder is an additional layer that allows reshaping the output to the output_length. If no decoder is used, the output length is equal to the input length, so there will be some of the input in what the model is trying to predict. You then have to use self.first_prediction_index to get the index from which the predictions start.
+            use_decoder (bool): Whether to use a decoder in the model. \
+                The decoder is an additional layer that allows reshaping \
+                the output to the output_length. If no decoder is used, \
+                the output length is equal to the input length, \
+                so there will be some of the input in what the model \
+                is trying to predict. You then have to use self.first_prediction_index \
+                to get the index from which the predictions start.
         """
         # TCN-specific parameters
         self.x_dim = x_dim

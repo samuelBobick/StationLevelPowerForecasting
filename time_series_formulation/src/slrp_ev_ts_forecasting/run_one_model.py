@@ -14,16 +14,16 @@ from slrp_ev_ts_forecasting.default_parameters import (
     DEFAULT_RESULTS_FILENAME,
     TypeModelChoice,
 )
-from slrp_ev_ts_forecasting.ffnn import FFNN
-from slrp_ev_ts_forecasting.knn import KNN
-from slrp_ev_ts_forecasting.last_week import LastWeek
-from slrp_ev_ts_forecasting.lstm import LSTM
+from slrp_ev_ts_forecasting.models.ffnn import FFNN
+from slrp_ev_ts_forecasting.models.knn import KNN
+from slrp_ev_ts_forecasting.models.last_week import LastWeek
+from slrp_ev_ts_forecasting.models.lstm import LSTM
+from slrp_ev_ts_forecasting.models.similar_day import SimilarDay
+from slrp_ev_ts_forecasting.models.sktime_base import SktimeBaseModel
+from slrp_ev_ts_forecasting.models.tcn import TCN
+from slrp_ev_ts_forecasting.models.xgboost_model import XGBoost
 from slrp_ev_ts_forecasting.save_losses import save_losses
-from slrp_ev_ts_forecasting.similar_day import SimilarDay
-from slrp_ev_ts_forecasting.sktime_base import SktimeBaseModel
-from slrp_ev_ts_forecasting.tcn import TCN
 from slrp_ev_ts_forecasting.visualization import visualize_forecast
-from slrp_ev_ts_forecasting.xgboost_model import XGBoost
 
 
 def run_one_model(
@@ -124,8 +124,8 @@ def run_one_model(
             "model": SktimeBaseModel,
             "model_params": {
                 "forecaster": ARIMA(
-                    order=(2, 0, 1),
-                    seasonal_order=(2, 1, 2, 96 / (4 * 2)),
+                    order=(1, 0, 1),
+                    seasonal_order=(1, 1, 1, 96 * 7 / (4 * 2)),
                 ),
                 "include_exogenous": False,
                 "downsample_hours": 2,

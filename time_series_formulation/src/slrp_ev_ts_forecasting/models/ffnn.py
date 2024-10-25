@@ -1,14 +1,13 @@
 from typing import Literal
 
 import pandas as pd
+import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
 from slrp_ev_data.feature_engineering import one_hot_encoding
 from slrp_ev_data.window_generator import WindowGenerator
+from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 from torch.utils.data import Dataset
-
-import slrp_ev_ts_forecasting.default_parameters as default_parameters
-from slrp_ev_ts_forecasting.torch_base import TorchBaseModel
 
 # Suppress all warnings
 # warnings.filterwarnings("ignore")
@@ -119,13 +118,13 @@ class FFNN(TorchBaseModel):
         else:
             input_width = self.x_dim
 
-        df = self.pad_with_seen_data(df, number_of_timesteps_to_pad=input_width)
+        df_padded = self.pad_with_seen_data(df, number_of_timesteps_to_pad=input_width)
 
         W = WindowGenerator(
             input_width=input_width,
             label_width=self.lookahead,
             shift=self.lookahead,
-            train_df=df,
+            train_df=df_padded,
             label_columns=["power", "date"],
             overlapping_windows=overlapping_windows,
         )

@@ -3,11 +3,10 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from slrp_ev_data.window_generator import WindowGenerator
-from tqdm import tqdm
-
-from slrp_ev_ts_forecasting.base import Base
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import TypeOptimizeLags
+from slrp_ev_ts_forecasting.models.base import Base
+from tqdm import tqdm
 
 
 class RegressionBaseModel(Base):
