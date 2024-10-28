@@ -11,7 +11,7 @@ TIME_MODE: Literal["cyclical", "window"] = "cyclical"
 ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 BATCH_SIZE = 32
-DROPOUT = 0.2
+DROPOUT = 0.4
 BATCH_NORM: bool = True
 
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
