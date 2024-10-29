@@ -183,6 +183,7 @@ class LSTM_model(nn.Module):
             batch_first=True,
             dropout=dropout,
         )
+        self.batch_norm = None
         if batch_norm:
             self.batch_norm = nn.BatchNorm1d(hidden_size)
         self.dropout = nn.Dropout(dropout)
@@ -212,7 +213,8 @@ class LSTM_model(nn.Module):
 
         # hn is of size [num_layers, batch_size, hidden_size]
         hn = hn[-1]  # use the last layer's output
-        if hasattr(self, "batch_norm"):
+        # hn is now of size [batch_size, hidden_size]
+        if self.batch_norm and hn.size(0) > 1:
             hn = self.batch_norm(hn)
         hn = self.dropout(hn)
         out = self.activation(hn)

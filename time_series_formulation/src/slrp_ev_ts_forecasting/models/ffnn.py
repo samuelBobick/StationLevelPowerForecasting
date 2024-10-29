@@ -195,6 +195,7 @@ class FFNN_model(nn.Module):
             [nn.Linear(hidden_size, hidden_size) for _ in range(num_hidden_layers - 1)]
         )
         self.activation = activation
+        self.batch_norm = None
         if batch_norm:
             self.batch_norm = nn.BatchNorm1d(hidden_size)
         self.dropout = nn.Dropout(dropout)
@@ -203,7 +204,9 @@ class FFNN_model(nn.Module):
     def forward(self, x) -> torch.Tensor:
         for layer in self.hidden_layers:
             x = self.activation(layer(x))
-            if hasattr(self, "batch_norm"):
+            if self.batch_norm and x.size(0) > 1:
+                # We don't want to apply batch norm if the batch size
+                # is 1. This can happen with the last batch of the dataset
                 x = self.batch_norm(x)
             x = self.dropout(x)
 

@@ -283,14 +283,14 @@ class TorchBaseModel(Base):
             step_number = epoch * len(train_loader) + (batch_number + 1)
 
             # reshape y to have same shape as output (remove the 1 dimension at the end)
-            y_batch = y_batch.squeeze()
+            y_batch = y_batch.squeeze(-1)
 
             self.optimizer.zero_grad()
 
             # Forward pass
             y_pred_batch = self.model(x_batch)
             loss = self.criterion(
-                y_pred_batch.squeeze()[
+                y_pred_batch.squeeze(-1)[
                     :, self.first_prediction_index :
                 ],  # [:, self.first_prediction_index :]
                 y_batch[:, self.first_prediction_index :],  #
@@ -341,10 +341,10 @@ class TorchBaseModel(Base):
             for val_batch_number, val_batch in enumerate(val_loader):
                 val_x_batch, val_y_batch = val_batch
                 # reshape y to have same shape as output (remove the 1 dimension at the end)
-                val_y_batch = val_y_batch.squeeze()
+                val_y_batch = val_y_batch.squeeze(-1)
                 val_y_pred_batch = self.model(val_x_batch)
                 vloss = self.criterion(
-                    val_y_pred_batch.squeeze()[:, self.first_prediction_index :],
+                    val_y_pred_batch.squeeze(-1)[:, self.first_prediction_index :],
                     val_y_batch[:, self.first_prediction_index :],
                 )
                 running_vloss += vloss.item()
@@ -362,14 +362,14 @@ class TorchBaseModel(Base):
             test, return_y_date=True, overlapping_windows=False
         )
         X_test_tensor, y_test_tensor = dataset.get_full_data()  # type: ignore
-        y_test_tensor = y_test_tensor.squeeze()[:, self.first_prediction_index :]
+        y_test_tensor = y_test_tensor.squeeze(-1)[:, self.first_prediction_index :]
 
         # Load model from the checkpoint
         self.load_checkpoint()
         print(f"Best validation loss of model retrieved: {self.best_vloss}")
 
         self.model.eval()
-        y_pred_test = self.model(X_test_tensor).detach().cpu().numpy().squeeze()
+        y_pred_test = self.model(X_test_tensor).detach().cpu().squeeze(-1).numpy()
         y_pred_test_tensor = torch.tensor(
             y_pred_test, dtype=torch.float32, device=DEVICE
         )
@@ -381,7 +381,7 @@ class TorchBaseModel(Base):
 
         # Flatten the lists to 1D
         y_pred_test_flat = y_pred_test_tensor.flatten().cpu().numpy()
-        y_dates = y_dates.squeeze()[:, self.first_prediction_index :]
+        y_dates = y_dates.squeeze(-1)[:, self.first_prediction_index :]
         forecast_dates = (
             y_dates[:, self.first_prediction_index :].flatten().cpu().numpy()
         )
