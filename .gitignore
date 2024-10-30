@@ -4,6 +4,7 @@ data/src/slrp_ev_data/darts_logs/*
 time_series_formulation/src/slrp_ev_ts_forecasting/runs/**
 time_series_formulation/src/slrp_ev_ts_forecasting/models/**/*.pt
 time_series_formulation/src/slrp_ev_ts_forecasting/models/runs/**
+time_series_formulation/src/slrp_ev_ts_forecasting/results/archive/**
 
 # Distribution / packaging
 .Python
