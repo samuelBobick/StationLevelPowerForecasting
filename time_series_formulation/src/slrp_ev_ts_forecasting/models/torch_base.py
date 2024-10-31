@@ -400,7 +400,8 @@ class TorchBaseModel(Base):
 
         print(
             "Model size",
-            f"    Size of train set: {len(train_loader)} batches of size {self.batch_size}",
+            f"    Size of train set: {len(train_loader)} batches of size {self.batch_size}"
+            f" (there are {(len(train_loader) * self.batch_size):,} training samples)",
             f"    therefore, we have {len(train_loader)} steps at each of the {self.epochs} epochs.",
             f"    Train input shape: {inputs.shape}",
             f"    Train label shape: {labels.shape}",
