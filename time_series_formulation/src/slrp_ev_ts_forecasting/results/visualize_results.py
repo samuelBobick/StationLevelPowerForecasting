@@ -61,6 +61,7 @@ def plot_loss_against_one_parameter(
     results_file_path: Path = RESULTS_PATH,
     filename: str = DEFAULT_RESULTS_FILENAME,
     include_scatter: bool = False,
+    y_limits: Optional[list[int]] = None,
 ) -> None:
     """Scatter plot of the metric to show against one parameter. One line per model.
 
@@ -111,6 +112,14 @@ def plot_loss_against_one_parameter(
     ax.legend()
     ax.set_xlabel(parameter_to_show)
     ax.set_ylabel(metric_to_show)
+    if y_limits:
+        if len(y_limits) != 2:
+            raise ValueError(
+                "The y_limits list should be of length 2. The first "
+                "element is the maximum, the second is the minimum "
+                "(e.g. [6000, 7000])"
+            )
+        ax.set_ylim(y_limits)
     ax.set_title(f"{metric_to_show.upper()} against {parameter_to_show}")
     plt.show()
 
@@ -134,5 +143,12 @@ def apply_filter(
 
 
 if __name__ == "__main__":
-    plot_loss_against_one_parameter("rmse", "x_dim", ["XGBoost"], include_scatter=True)
-    # visualize_results("r2")
+    # plot_loss_against_one_parameter(
+    #     "rmse",
+    #     "x_dim",
+    #     ["TCN"],
+    #     include_scatter=True,
+    #     filename="results_regularization_TCN",
+    #     y_limits=[5800, 6800],
+    # )
+    visualize_results("wprmse (beta=3)", filename="results_all_models")
