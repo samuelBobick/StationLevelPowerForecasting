@@ -141,16 +141,66 @@ class WindowGenerator:
             ]
         )
 
-    def _get_data_frequency(self, df):
+    def _get_data_frequency(self, df) -> str:
         """Get the data frequency from the DataFrame."""
+        _data_size_for_freq_lookup = getattr(
+            self, "_data_size_for_freq_lookup", df.shape[0]
+        )
         if isinstance(df["date"].iloc[0], pd.Timestamp):
-            return pd.infer_freq(df["date"])
+            data_freq = pd.infer_freq(df["date"].iloc[-_data_size_for_freq_lookup:])
         else:
-            return pd.infer_freq(pd.to_datetime(df["date"], unit="s"))
+            data_freq = pd.infer_freq(
+                pd.to_datetime(df["date"].iloc[-_data_size_for_freq_lookup:], unit="s")
+            )
+
+        # if the data frequency is not found, it might be because we have gaps.
+        # Then, we recursively call the function with a smaller
+        # data size lookup
+        if not data_freq:
+            if _data_size_for_freq_lookup < 100:
+                raise ValueError("The data frequency could not be inferred.")
+            else:
+                self._data_size_for_freq_lookup = int(_data_size_for_freq_lookup / 2)
+                return self._get_data_frequency(df)
+        return data_freq
+
+    @property
+    def data_freq_minutes(self) -> int:
+        try:
+            return int(self.data_freq.split("min")[0])  #
+        except ValueError:
+            raise ValueError(
+                "The data frequency is not in minutes. "
+                "Please edit this function to handle other frequencies."
+            )
 
     def split_window(self, features):
-        inputs = features[:, self.input_slice, :]
-        labels = features[:, self.labels_slice, :]
+        # shape of features is (batch_size, total_window_size, num_features)
+        # Here, we filter out the windows that have a gap in the data
+        dates = features[:, :, self.column_indices["date"]]
+        date_diffs = dates[:, 1:] - dates[:, :-1]
+        # A gap is defined as a difference of more than 2 times the
+        # data frequency (indeed, if there is no gap,
+        # the difference should be the data frequency)
+        # Note that due to rounding, the difference is not
+        # always strictly equal to the data frequency
+        # for instance, if the data frequency is 15 minutes, some differences
+        # can be 14 minutes or others 17 minutes
+        threshold_for_gap = self.data_freq_minutes * 60 * 2 * 0.9
+        # The reduce all operation is to check if all the differences in a
+        # window are less than the threshold. If not, the results for this window
+        # is "False"
+        continuous_mask = tf.reduce_all(
+            tf.math.less(date_diffs, threshold_for_gap), axis=1
+        )
+        # We count the number of gaps in the window
+        continuous_features = tf.boolean_mask(features, continuous_mask)
+
+        # TO TEST ONLY
+        # continuous_features = features
+
+        inputs = continuous_features[:, self.input_slice, :]
+        labels = continuous_features[:, self.labels_slice, :]
         if self.label_columns is not None:
             labels = tf.stack(
                 [
@@ -167,8 +217,20 @@ class WindowGenerator:
 
         return inputs, labels
 
+    def _is_continuous(self, window):
+        dates = window[:, 0]  # Assuming the first column contains the dates
+        return tf.reduce_all(tf.equal(dates[1:] - dates[:-1], 1))
+
     def make_dataset(self, data):
         data = np.array(data, dtype=np.float32)
+        max_number_of_samples = np.floor(
+            (data.shape[0] - self.total_window_size + self.sequence_stride)
+            / self.sequence_stride
+        )
+        print(
+            f"data length: {data.shape[0]}. "
+            f"We should have {max_number_of_samples} samples"
+        )
 
         ds = tf.keras.utils.timeseries_dataset_from_array(  # type: ignore
             data=data,
@@ -180,103 +242,19 @@ class WindowGenerator:
         )
 
         ds = ds.map(self.split_window)
+        # Count number of samples
+        number_of_samples = 0
+        for input, label in ds:
+            number_of_samples += input.shape[0]
+        gaps = (
+            max_number_of_samples - number_of_samples
+        )  # counter for the number of gaps in the data
+        print(
+            f"Number of gaps (=number of windows dropped) found when making windows: {gaps}"
+        )
+        # ds = ds.filter(lambda x: x is not None)
 
         return ds
-
-    def flatten_dataset_old(
-        self,
-        data,
-        cols_to_flatten: list[str],
-        cols_keep_last_value: list[str] = [],
-        label_cols_to_flatten: list[str] = [],
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """DEPRECIATED - Use new function that is much faster
-        For each example, flattens the 2D input data into a 1D array.
-
-
-        Args:
-            data (output of WindowGenerator.make_dataset): dataset to flatten
-            cols_to_flatten (list[str]): List of column names to flatten. This will put the values
-                of all the time steps as features.
-            cols_keep_last_value (list[str], optional): List of column names that won't be flattened, but for which
-                only the last value will be kept. Defaults to [].
-            label_cols_to_flatten (list[str], optional): List of label column names to flatten.
-                Defaults to [].
-
-        Returns:
-            tuple[pd.DataFrame, pd.DataFrame]: Flattened inputs and labels
-
-        Examples:
-        >>> flat_inputs, flat_labels = w1.flatten_dataset(
-        ...    w1.train, ["power"], ["date", "workday", "time_window"]
-        ... )
-        In this case, you will have 1*inputs_width + 3 features for the inputs and
-        len(label_columns) * label_width
-        """
-        flat_inputs = []
-        flat_labels = []
-
-        # Add a warning if not all of the columns are selected
-        columns_not_selected = [
-            col
-            for col in self.column_indices.keys()
-            if col not in (cols_to_flatten + cols_keep_last_value)
-        ]
-        if columns_not_selected:
-            print(
-                f"WARNING: The following columns will be dropped when flattening: {columns_not_selected}"
-            )
-
-        if self.batch_size != 1:
-            # TODO: make it work for batch size > 1. Need to return batches instead of just one item
-            raise ValueError("flatten_dataset only works with batch size of 1")
-
-        for batch in data:
-            inputs, labels = batch
-
-            ### Inputs
-            # TODO: works only for batchsize = 1
-            input_batch_item = inputs[0]
-
-            items_to_flatten = np.concatenate(
-                [
-                    input_batch_item[:, self.column_indices[name]]
-                    for name in cols_to_flatten
-                ],
-                axis=-1,
-            )
-            items_to_keep_last_value = [
-                input_batch_item[-1, self.column_indices[name]]
-                for name in cols_keep_last_value
-            ]
-
-            flat_inputs.append(
-                np.concatenate([items_to_flatten, items_to_keep_last_value])
-            )
-
-            ### Outputs
-            # TODO: works only for batchsize = 1
-            labels_batch_item = labels[0]
-            if not label_cols_to_flatten:
-                label_cols_to_flatten = self.label_columns
-                print(
-                    f"WARNING: No label columns to flatten. Using all label columns ({label_cols_to_flatten})"
-                )
-            label_items_to_flatten = [
-                labels_batch_item[:, self.label_columns_indices[name]]
-                for name in label_cols_to_flatten
-            ]
-            flat_labels.append(np.concatenate([*label_items_to_flatten]))
-
-        input_column_names = [
-            f"{name}_{i}" for name in cols_to_flatten for i in self.input_indices
-        ] + cols_keep_last_value
-        label_column_names = [
-            f"{name}_{i}" for name in label_cols_to_flatten for i in self.label_indices
-        ]
-        flat_inputs = pd.DataFrame(flat_inputs, columns=input_column_names)
-        flat_labels = pd.DataFrame(flat_labels, columns=label_column_names)
-        return flat_inputs, flat_labels
 
     def flatten_dataset(
         self,
