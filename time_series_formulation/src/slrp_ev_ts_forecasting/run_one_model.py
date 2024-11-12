@@ -1,7 +1,7 @@
 from sktime.forecasting.arima import ARIMA, AutoARIMA
 from sktime.forecasting.ets import AutoETS
 from sktime.forecasting.fbprophet import Prophet
-from slrp_ev_data import read_old_data, train_test_split
+from slrp_ev_data import read_old_data, read_ucsd_data, train_test_split
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
     get_train_min_and_max,
@@ -36,6 +36,8 @@ def run_one_model(
     print("# Starting...")
     if DATASET == "slrp-ev_old":
         data = read_old_data.read_old_data()
+    elif DATASET == "ucsd-all_garages":
+        data = read_ucsd_data.read_ucsd_data()
     else:
         raise ValueError(
             f"Datset of type {DATASET} is not defined. Please refer to "

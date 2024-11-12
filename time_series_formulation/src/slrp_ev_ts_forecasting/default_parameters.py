@@ -15,7 +15,9 @@ DROPOUT = 0.4
 BATCH_NORM: bool = True
 
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
-OPTIMIZE_LAGS: TypeOptimizeLags = "long_opt"  # for regression models
+OPTIMIZE_LAGS: TypeOptimizeLags = (
+    None  # for regression models, such as Basic_NN or XGBoost
+)
 NUMBER_OF_DAYS_FOR_PACF = 70
 
 RESULTS_PATH = Path(__file__).parent / "results"
@@ -24,8 +26,8 @@ DEFAULT_RESULTS_FILENAME = "results"
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"
 
-TypeDataSet = Literal["slrp-ev_old"]
-DATASET: TypeDataSet = "slrp-ev_old"
+TypeDataSet = Literal["slrp-ev_old", "ucsd-all_garages"]
+DATASET: TypeDataSet = "ucsd-all_garages"
 
 TypeModelChoice = Literal[
     "KNN",
