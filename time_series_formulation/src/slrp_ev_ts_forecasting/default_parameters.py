@@ -28,6 +28,7 @@ ERROR_METRIC: TypeErrorMetric = "mse"
 
 TypeDataSet = Literal["slrp-ev_old", "ucsd-all_garages"]
 DATASET: TypeDataSet = "ucsd-all_garages"
+GET_VAL_DATA_FROM_SHUFFLED_TRAIN = False
 
 TypeModelChoice = Literal[
     "KNN",

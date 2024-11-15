@@ -8,6 +8,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
     DATASET,
     DEFAULT_RESULTS_FILENAME,
     ERROR_METRIC,
+    GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     LOOKAHEAD,
     RESULTS_PATH,
     TIME_MODE,
@@ -35,6 +36,9 @@ def save_losses(
             "lookahead": model_params.get("lookahead", LOOKAHEAD),
             "time_mode": model_params.get("time_mode", TIME_MODE),
             "dataset": model_params.get("dataset", DATASET),
+            "get_val_data_from_shuffled_train": model_params.get(
+                "get_val_data_from_shuffled_train", GET_VAL_DATA_FROM_SHUFFLED_TRAIN
+            ),
             "error_metric": model_params.get("error_metric", ERROR_METRIC),
             "model_name": model_name,
             "rmse": losses["rmse"],

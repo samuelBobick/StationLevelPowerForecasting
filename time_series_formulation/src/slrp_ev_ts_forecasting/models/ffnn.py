@@ -5,7 +5,6 @@ import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
 from slrp_ev_data.feature_engineering import one_hot_encoding
-from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 from torch.utils.data import Dataset
 
@@ -33,6 +32,7 @@ class FFNN(TorchBaseModel):
         batch_size: int = default_parameters.BATCH_SIZE,
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
+        get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     ):
         """TODO"""
 
@@ -66,6 +66,7 @@ class FFNN(TorchBaseModel):
             error_metric=error_metric,
             x_dim=x_dim,
             lookahead=lookahead,
+            get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
             optimize_lags=optimize_lags,
         )
 
@@ -107,27 +108,27 @@ class FFNN(TorchBaseModel):
 
     def get_dataset(
         self,
-        df: pd.DataFrame,
+        df: pd.DataFrame | None,
+        data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ) -> Dataset | tuple[Dataset, torch.Tensor]:
-        df = df.copy()
 
         if self.optimize_lags:
             input_width = self.index_farthest_lag
         else:
             input_width = self.x_dim
 
-        df_padded = self.pad_with_seen_data(df, number_of_timesteps_to_pad=input_width)
+        if df is not None:
+            df = df.copy()
+            df_padded = self.pad_with_seen_data(df, input_width)
+        else:
+            df_padded = None
 
-        W = WindowGenerator(
-            input_width=input_width,
-            label_width=self.lookahead,
-            shift=self.lookahead,
-            train_df=df_padded,
-            label_columns=["power", "date"],
-            overlapping_windows=overlapping_windows,
+        W, window_data = self.get_window_data(
+            df_padded, input_width, self.lookahead, overlapping_windows, data_type
         )
+
         cols_keep_last_value = []
         if self.time_mode == "cyclical":
             cols_keep_last_value += [
@@ -143,7 +144,7 @@ class FFNN(TorchBaseModel):
 
         if self.optimize_lags:
             flat_inputs, flat_labels = W.flatten_dataset(
-                W.train,
+                window_data,
                 cols_keep_last_value=cols_keep_last_value,
                 cols_keep_some_values=[
                     {
@@ -156,7 +157,7 @@ class FFNN(TorchBaseModel):
             )
         else:
             flat_inputs, flat_labels = W.flatten_dataset(
-                W.train,
+                window_data,
                 cols_to_flatten=["power"],
                 cols_keep_last_value=cols_keep_last_value,
                 label_cols_to_flatten=["power"],
@@ -169,7 +170,7 @@ class FFNN(TorchBaseModel):
 
         if return_y_date:
             x_dates, y_dates = W.convert_to_torch_dataset(
-                W.train,
+                window_data,
                 cols_to_keep_as_features=["date"],
                 cols_to_keep_as_labels=["date"],
             ).get_full_data()

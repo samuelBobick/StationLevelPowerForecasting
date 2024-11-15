@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -41,10 +41,16 @@ class TorchBaseModel(Base):
         error_metric: TypeErrorMetric,
         x_dim: int,
         lookahead: int,
+        get_val_data_from_shuffled_train: bool,
         warmup_base_learning_rate: float = 1e-6,
         optimize_lags: TypeOptimizeLags = None,
     ):
-        super().__init__(x_dim=x_dim, lookahead=lookahead, optimize_lags=optimize_lags)
+        super().__init__(
+            x_dim=x_dim,
+            lookahead=lookahead,
+            optimize_lags=optimize_lags,
+            get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+        )
         # General NN parameters
         self.epochs = epochs
         self.number_of_initial_models = number_of_initial_models
@@ -170,11 +176,14 @@ class TorchBaseModel(Base):
             self.pacf_top_values = self.get_top_pacf_values(train)
 
         train_loader = self.get_dataloader(
-            train, shuffle=True, overlapping_windows=True
+            train, data_type="train", shuffle=True, overlapping_windows=True
         )
         self.update_seen_data(train)
         self.number_of_steps_per_epoch = len(train_loader)
-        val_loader = self.get_dataloader(val, shuffle=False, overlapping_windows=False)
+
+        val_loader = self.get_dataloader(
+            val, data_type="val", shuffle=False, overlapping_windows=False
+        )
         self.update_seen_data(val)
 
         self.initialize_model()
@@ -359,7 +368,7 @@ class TorchBaseModel(Base):
     def predict(self, test: pd.DataFrame) -> tuple[Losses, np.ndarray, np.ndarray]:
         """Given a pandas DataFrame test, returns error metrics and list of predictions."""
         dataset, y_dates = self.get_dataset(
-            test, return_y_date=True, overlapping_windows=False
+            test, data_type="test", return_y_date=True, overlapping_windows=False
         )
         X_test_tensor, y_test_tensor = dataset.get_full_data()  # type: ignore
         y_test_tensor = y_test_tensor.squeeze(-1)[:, self.first_prediction_index :]
@@ -367,6 +376,9 @@ class TorchBaseModel(Base):
         # Load model from the checkpoint
         self.load_checkpoint()
         print(f"Best validation loss of model retrieved: {self.best_vloss}")
+
+        if self.model is None:
+            raise NotImplementedError("Model must be implemented before predicting.")
 
         self.model.eval()
         y_pred_test = self.model(X_test_tensor).detach().cpu().squeeze(-1).numpy()
@@ -419,19 +431,19 @@ class TorchBaseModel(Base):
 
     def get_dataloader(
         self,
-        df: pd.DataFrame,
+        df: pd.DataFrame | None,
+        data_type: Literal["train", "val", "test"],
         shuffle: bool = False,
         overlapping_windows: bool = False,
     ) -> DataLoader:
         """Given the dataset, returns a DataLoader object."""
-        dataset: Dataset = self.get_dataset(
-            df, overlapping_windows=overlapping_windows
-        )  # type: ignore
+        dataset: Dataset = self.get_dataset(df, data_type=data_type, overlapping_windows=overlapping_windows)  # type: ignore
         return DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=shuffle)
 
     def get_dataset(
         self,
-        df: pd.DataFrame,
+        df: pd.DataFrame | None,
+        data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ) -> Dataset | tuple[Dataset, torch.Tensor]:

@@ -17,6 +17,7 @@ class XGBoost(RegressionBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         dropout: float = default_parameters.DROPOUT,
+        get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     ):
         """_summary_
 
@@ -33,6 +34,7 @@ class XGBoost(RegressionBaseModel):
             alpha=alpha,
             time_mode=time_mode,
             optimize_lags=optimize_lags,
+            get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
         )
         self.alpha = alpha
         self.time_mode = time_mode

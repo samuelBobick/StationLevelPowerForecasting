@@ -18,6 +18,7 @@ GROUPBY_COLUMNS = [
     "time_mode",
     "dataset",
     "error_metric",
+    "get_val_data_from_shuffled_train",
 ]
 
 
@@ -25,33 +26,56 @@ def visualize_results(
     metric_to_show: TypeMetrics,
     results_file_path: Path = RESULTS_PATH,
     filename: str = DEFAULT_RESULTS_FILENAME,
+    or_filter_model_name: Optional[list[str]] = None,
 ) -> None:
     results_file_path = results_file_path / f"{filename}.csv"
 
     df_results = pd.read_csv(results_file_path, index_col=False)
 
+    # Filter the model names
+    df_results = apply_filter(df_results, or_filter_model_name)
+
+    plt.figure(figsize=(10, 5))
     df_results_grouped = df_results.groupby(GROUPBY_COLUMNS)
+    df_group_names = pd.DataFrame(
+        list(df_results_grouped.indices.keys()), columns=GROUPBY_COLUMNS
+    ).T
+    df_group_names["No Change"] = df_group_names.apply(
+        lambda x: x.nunique() == 1, axis=1
+    )
+    groupby_column_that_change = df_group_names[
+        df_group_names["No Change"] == False
+    ].index
+
     for group, df_group in df_results_grouped:
-        plt.figure(figsize=(10, 5))
+        x_axis_title = "Model name"
+        for column_that_change in groupby_column_that_change:
+            df_group["model_name"] += "_" + df_group[column_that_change].astype(str)
+            x_axis_title += f" + {column_that_change}"
+
         ax = sns.boxplot(data=df_group, x="model_name", y=metric_to_show)
 
-        # Create a pretty string for the group info
-        pretty_group = [
-            f"{group_name}={group_value}"
-            for group_name, group_value in zip(GROUPBY_COLUMNS, group)
-        ]
-        # concat all elements of the list info a single string
-        pretty_group = ", ".join(pretty_group)
+    ax.set_xlabel(x_axis_title)
+    # Create a pretty string for the group info
+    df_group_index_that_doesnt_change = df_group_names[df_group_names["No Change"]].loc[
+        :, 0
+    ]
+    pretty_group = [
+        f"{index_name}={df_group_index_that_doesnt_change[index_name]}"
+        for index_name in df_group_index_that_doesnt_change.index
+    ]
+    # concat all elements of the list info a single string
+    pretty_group = ", ".join(pretty_group)
 
-        plt.title(f"{metric_to_show.upper()} for {pretty_group}")
+    plt.title(f"{metric_to_show.upper()} for {pretty_group}")
 
-        # Modify x-axis labels to be on multiple lines
-        labels = [label.get_text().replace("_", "\n") for label in ax.get_xticklabels()]
-        ax.set_xticklabels(labels)
+    # Modify x-axis labels to be on multiple lines
+    labels = [label.get_text().replace("_", "\n") for label in ax.get_xticklabels()]
+    ax.set_xticklabels(labels)
 
-        # the model on the x axis are a bit long, so we can add margin to the bottom
-        plt.subplots_adjust(bottom=0.3)
-        plt.show()
+    # the model on the x axis are a bit long, so we can add margin to the bottom
+    plt.subplots_adjust(bottom=0.3)
+    plt.show()
 
 
 def plot_loss_against_one_parameter(
@@ -145,10 +169,12 @@ def apply_filter(
 if __name__ == "__main__":
     # plot_loss_against_one_parameter(
     #     "rmse",
-    #     "x_dim",
-    #     ["TCN"],
+    #     "get_val_data_from_shuffled_train",
+    #     ["FFN"],
     #     include_scatter=True,
-    #     filename="results_regularization_TCN",
-    #     y_limits=[5800, 6800],
+    #     filename="results_ucsd_val_shuffle",
+    #     # y_limits=[5400, 6000],
     # )
-    visualize_results("wprmse (beta=3)", filename="results_all_models")
+    visualize_results(
+        "rmse", filename="results_ucsd_val_shuffle", or_filter_model_name=["FFNN"]
+    )
