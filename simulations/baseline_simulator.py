@@ -32,10 +32,10 @@ class BaselineSimulator:
         self.TOU = kwargs.get('tou', np.concatenate([tou, tou, tou]))  # wrap around for multi-day sessions
 
         # Default price grid for optimization
-        prices = kwargs.get('prices', np.arange(20, 1000, 100))
+        prices = kwargs.get('prices', np.arange(20, 45, 5))
         self.tariff_grid = kwargs.get(
             'tariff_grid',
-            [(z_sch, z_reg) for z_reg in prices for z_sch in prices if z_reg >= z_sch]
+            [(z_sch, z_reg) for z_reg in prices for z_sch in prices if z_reg > z_sch]
         )
 
         # Default discrete choice model parameters
@@ -88,13 +88,13 @@ class BaselineSimulator:
                 num_sch_user += 1
                 power_profile = u[adj_constant: (adj_constant + N_remain)]
                 power_profile = cp.reshape(power_profile, (power_profile.shape[0],)).T
-                existing_sch_obj += power_profile @ (self.TOU[TOU_current_idx : TOU_end_idx] - price).reshape(-1)
+                existing_sch_obj += self.delta_t * power_profile @ (self.TOU[TOU_current_idx : TOU_end_idx] - price).reshape(-1)
             else: # Assumes we know exactly how long they will stay
                 price = prices[row['dcosId']][1]
                 if len(power_profiles[row['dcosId']]) > 0 and TOU_end_idx - TOU_current_idx > 0:
-                    existing_reg_obj += power_profiles[row['dcosId']][-(TOU_end_idx - TOU_current_idx):] @ (self.TOU[TOU_current_idx : TOU_end_idx] - price)
+                    existing_reg_obj += self.delta_t * power_profiles[row['dcosId']][-(TOU_end_idx - TOU_current_idx):] @ (self.TOU[TOU_current_idx : TOU_end_idx] - price)
                 else:
-                    existing_reg_obj += np.array([self.power_rate] * N_remain) @ (self.TOU[TOU_current_idx : TOU_end_idx] - price)
+                    existing_reg_obj += self.delta_t * np.array([self.power_rate] * N_remain) @ (self.TOU[TOU_current_idx : TOU_end_idx] - price)
                 num_reg_user += 1
 
         sch_power_sum_profile = cp.reshape(u, (self.var_dim_constant, num_sch_user + 1)).T
@@ -108,13 +108,14 @@ class BaselineSimulator:
         current_peak_sch = self.power_rate * num_reg_user + cp.max(sch_power_sum_profile)
         current_peak_reg =  self.power_rate * (num_reg_user + 1) + cp.max(cp.sum(cp.reshape(u[self.var_dim_constant:], (self.var_dim_constant, num_sch_user)).T, axis=0))
 
-        # J0 = ((new_sch_obj + existing_sch_obj + existing_reg_obj) + COST_DC * (p_dc_sch - running_peak)) * v[0]
-        # J1 = ((new_reg_obj + existing_sch_obj + existing_reg_obj + COST_DC * (p_dc_reg - running_peak))) * v[1]
-        # J2 = (new_leave_obj + existing_sch_obj + existing_reg_obj) * v[2]
+        COST_DC = 500
+        J0 = ((new_sch_obj + existing_sch_obj + existing_reg_obj) + cp.Constant(COST_DC) * (p_dc_sch - running_peak)) * cp.Constant(v[0])
+        J1 = ((new_reg_obj + existing_sch_obj + existing_reg_obj + cp.Constant(COST_DC) * (p_dc_reg - running_peak))) * cp.Constant(v[1])
+        J2 = (new_leave_obj + existing_sch_obj + existing_reg_obj) * cp.Constant(v[2])
 
-        J0 = (new_sch_obj + existing_sch_obj + existing_reg_obj) * v[0]
-        J1 = (new_reg_obj + existing_sch_obj + existing_reg_obj) * v[1]
-        J2 = (new_leave_obj + existing_sch_obj + existing_reg_obj) * v[2]
+        # J0 = (new_sch_obj + existing_sch_obj + existing_reg_obj) * v[0]
+        # J1 = (new_reg_obj + existing_sch_obj + existing_reg_obj) * v[1]
+        # J2 = (new_leave_obj + existing_sch_obj + existing_reg_obj) * v[2]
         
         J = J0 + J1 + J2
 
@@ -173,7 +174,7 @@ class BaselineSimulator:
             u_start = int(i * self.var_dim_constant)
             u_end = int(i * self.var_dim_constant + N_remain)
 
-            constraints += [cp.sum(u[u_start: u_end]) >= e_need]
+            constraints += [cp.sum(u[u_start: u_end]) == e_need]
             constraints += [u[u_end : u_start + self.var_dim_constant] == 0]
 
         # print(e_need_lst, N_remain_lst)
@@ -289,9 +290,15 @@ class BaselineSimulator:
         
             if self.verbose:
                 print("---------------------------------------------------------------------")
+                TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(last_row, pd.to_datetime(last_row['startChargeTime']), self.delta_t)
+                e_need =  round(sum(u[:self.var_dim_constant])[0] / 4, 2)
+                N_reg = e_need / self.power_rate # how many time steps would it take the user to charge if they chose regular?
                 print('Done with optimization at', startChargeTime)
-                print("Optimal prices:", min_key)
+                print("Optimal prices (per kW):", min_key)
+                print(N_remain, N_reg)
+                print("Optimal prices (per hour):", min_key[0] * e_need / (N_remain / 4), min_key[1] * e_need / (N_reg))
                 print('Probabilities', vk)
+                print('Utilities', self.theta @ zk)
                 print('Optimized delivery of', round(sum(u[:self.var_dim_constant])[0] / 4, 2), f'kW to session #{last_row["dcosId"]}')
                 print('Number of active sessions:', len(sub_df))
                 print('Current peak options', np.round(current_peak_sch, 2), np.round(current_peak_reg, 2))
@@ -304,6 +311,8 @@ class BaselineSimulator:
                 print('existing_sch_obj', min_J_arr[5] if isinstance(min_J_arr[5], int) else min_J_arr[5].value)
                 print('existing_reg_obj', min_J_arr[6])
                 print('Profit', min_J)
-
+                # print('power_profile', u[:N_remain])
+                # print('TOU slice', self.TOU[TOU_start_idx : TOU_end_idx])
+                # print('')
 
         return power_profiles, prices

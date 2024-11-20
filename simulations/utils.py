@@ -31,7 +31,7 @@ def get_new_sch_obj(row, z, u, delta_t, TOU):
     TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(row, pd.to_datetime(row['startChargeTime']), delta_t)
     power_profile = u[: N_remain]
     power_profile = cp.reshape(power_profile, (power_profile.shape[0],)).T
-    return power_profile @ (TOU[TOU_start_idx : TOU_end_idx] - z[0]).reshape(-1)
+    return delta_t * power_profile @ (TOU[TOU_start_idx : TOU_end_idx] - z[0]).reshape(-1)
 
 def get_new_reg_obj(row, z, delta_t, TOU, power_rate, flexibility_constant):
     """
@@ -55,7 +55,7 @@ def get_new_reg_obj(row, z, delta_t, TOU, power_rate, flexibility_constant):
         e_need = row['cumEnergy_Wh'] / 1000 / delta_t
 
     N_reg = int(e_need // power_rate) # how many time steps would it take the user to charge if they chose regular?
-    return np.sum(power_rate * (TOU[TOU_start_idx : TOU_start_idx + N_reg] - z[1]))
+    return delta_t * np.sum(power_rate * (TOU[TOU_start_idx : TOU_start_idx + N_reg] - z[1]))
 
 
 
@@ -99,6 +99,7 @@ def get_e_need(row, current_time, power_profiles, delta_t, power_rate, flexibili
         if e_need < 0: # handle numerical imprecision and set completed charging sessions to exactly zero
             e_need = 0
     if e_need  > N_remain * power_rate: # if user requests an infeasible amount of power
+        print('infeasible')
         e_need = N_remain * power_rate
         
     return e_need
