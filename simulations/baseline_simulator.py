@@ -20,7 +20,7 @@ class BaselineSimulator:
 
         # Default simulation constants
         self.var_dim_constant = kwargs.get('var_dim_constant', 96)  # 24-hour lookahead
-        self.cost_dc = kwargs.get('cost_dc', 500)  # cents/kW
+        self.cost_dc = kwargs.get('cost_dc', 2000)  # cents/kW
         self.delta_t = kwargs.get('delta_t', 0.25)  # time step in hours
         self.power_rate = kwargs.get('power_rate', 6.6)  # max power in kW
         self.flexibility_constant = kwargs.get('flexibility_constant', 0.5)  # proportion of flexibility
@@ -239,6 +239,7 @@ class BaselineSimulator:
         """
         power_profiles = {c : [] for c in self.test_df['dcosId']}
         prices = {c : None for c in self.test_df['dcosId']}
+        hourly_prices = {c : None for c in self.test_df['dcosId']}
         running_peak = 0
         
         for startChargeTime in pd.to_datetime(self.test_df['startChargeTime']):
@@ -265,6 +266,12 @@ class BaselineSimulator:
             last_row = sub_df.iloc[-1]
             prices[last_row['dcosId']] = min_key
 
+            TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(last_row, pd.to_datetime(last_row['startChargeTime']), self.delta_t)
+            e_need =  round(sum(u[:self.var_dim_constant])[0] / 4, 2)
+            N_reg = e_need / self.power_rate # how many time steps would it take the user to charge if they chose regular?
+            hourly_min_key = (min_key[0] * e_need / (N_remain * self.delta_t), min_key[1] * e_need / (N_reg))
+            hourly_prices[last_row['dcosId']] = hourly_min_key
+
             zk = [min_key[0], min_key[1], 1, 1]
             vk = softmax(self.theta @ zk).flatten()#.reshape(3,1)
             if self.monte_carlo:
@@ -287,16 +294,14 @@ class BaselineSimulator:
                 N_reg = int(N_reg // 1)            
                 power_profiles[last_row['dcosId']] = np.zeros(self.var_dim_constant)
                 power_profiles[last_row['dcosId']][:N_reg] = np.array([self.power_rate] * N_reg)
+
         
             if self.verbose:
                 print("---------------------------------------------------------------------")
-                TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(last_row, pd.to_datetime(last_row['startChargeTime']), self.delta_t)
-                e_need =  round(sum(u[:self.var_dim_constant])[0] / 4, 2)
-                N_reg = e_need / self.power_rate # how many time steps would it take the user to charge if they chose regular?
+
                 print('Done with optimization at', startChargeTime)
                 print("Optimal prices (per kW):", min_key)
-                print(N_remain, N_reg)
-                print("Optimal prices (per hour):", min_key[0] * e_need / (N_remain / 4), min_key[1] * e_need / (N_reg))
+                print("Optimal prices (per hour):", hourly_min_key)
                 print('Probabilities', vk)
                 print('Utilities', self.theta @ zk)
                 print('Optimized delivery of', round(sum(u[:self.var_dim_constant])[0] / 4, 2), f'kW to session #{last_row["dcosId"]}')
@@ -305,7 +310,6 @@ class BaselineSimulator:
                 print('Running DC options', round(dc_sch[0], 2), round(dc_reg[0], 2))
                 print('Peak thus far', round(running_peak[0], 2))
                 print('Profit options', min_J_arr[0].value, (min_J_arr[1] if isinstance(min_J_arr[1], np.ndarray) else min_J_arr[1].value), (min_J_arr[2] if isinstance(min_J_arr[2], np.ndarray) else min_J_arr[2].value))
-                # print('demand charge obj', min_J_arr[6].value)
                 print('new_sch_obj', min_J_arr[3].value)
                 print('new_reg_obj', min_J_arr[4])
                 print('existing_sch_obj', min_J_arr[5] if isinstance(min_J_arr[5], int) else min_J_arr[5].value)
@@ -315,4 +319,4 @@ class BaselineSimulator:
                 # print('TOU slice', self.TOU[TOU_start_idx : TOU_end_idx])
                 # print('')
 
-        return power_profiles, prices
+        return power_profiles, prices, hourly_prices

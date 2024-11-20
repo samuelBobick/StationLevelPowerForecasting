@@ -99,7 +99,6 @@ def get_e_need(row, current_time, power_profiles, delta_t, power_rate, flexibili
         if e_need < 0: # handle numerical imprecision and set completed charging sessions to exactly zero
             e_need = 0
     if e_need  > N_remain * power_rate: # if user requests an infeasible amount of power
-        print('infeasible')
         e_need = N_remain * power_rate
         
     return e_need
@@ -116,7 +115,7 @@ def aggregate_power_profiles(test_df, power_profiles, delta_t):
     """
     
     filtered_power_profiles = {k: v for k, v in power_profiles.items() if len(v) > 0}
-    agg_power_profile = np.zeros(32 * 24 / delta_t)
+    agg_power_profile = np.zeros(int(32 * 24 / delta_t))
     
     for key, power_profile in filtered_power_profiles.items():
         matching_row = test_df.loc[test_df['dcosId'] == key]
@@ -129,7 +128,7 @@ def aggregate_power_profiles(test_df, power_profiles, delta_t):
     return agg_power_profile
 
 
-def get_profit(test_df, power_profiles, prices, TOU):
+def get_profit(test_df, power_profiles, prices, delta_t, TOU):
     """
     Aggregate the profit from a simulation
 
@@ -137,13 +136,14 @@ def get_profit(test_df, power_profiles, prices, TOU):
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power_profiles
         prices: dictionary mapping dcodIds to (sch_price, reg_price) tuples
+        delta_t: timestep size, in hours
         TOU: electricity price time series, with TOU[0] representing the price at midnight, in units of cents/kWh
     """
     
     profit = 0
     for index, row in test_df.iterrows():
         current_time = pd.to_datetime(row['startChargeTime'])
-        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(row, current_time)
+        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(row, current_time, delta_t)
         power_profile = power_profiles[row['dcosId']]
         if row['choice'] == 'SCHEDULED':
             profit += np.sum(power_profile[:N_remain] * (prices[row['dcosId']][0] - TOU[TOU_start_idx : TOU_end_idx]))
