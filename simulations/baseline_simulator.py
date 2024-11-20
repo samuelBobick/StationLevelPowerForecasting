@@ -3,10 +3,12 @@ import numpy as np
 import cvxpy as cp
 from scipy.special import softmax
 from utils import *
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 class BaselineSimulator:
     """
-    A class to simulate baseline performance for a given system or dataset.
+    A class to replay the optimization of SLRP-EV sessions.
     """
 
     def __init__(self, test_df, **kwargs):
@@ -35,7 +37,7 @@ class BaselineSimulator:
         prices = kwargs.get('prices', np.arange(20, 45, 5))
         self.tariff_grid = kwargs.get(
             'tariff_grid',
-            [(z_sch, z_reg) for z_reg in prices for z_sch in prices if z_reg > z_sch]
+            [(z_sch, z_reg) for z_reg in prices for z_sch in prices if z_sch < z_reg]
         )
 
         # Default discrete choice model parameters
@@ -315,6 +317,27 @@ class BaselineSimulator:
                 print('existing_sch_obj', min_J_arr[5] if isinstance(min_J_arr[5], int) else min_J_arr[5].value)
                 print('existing_reg_obj', min_J_arr[6])
                 print('Profit', min_J)
+
+                # Collect the data
+                data = []
+                for z_sch, z_reg in grid_search_results.keys():
+                    J = grid_search_results[(z_sch, z_reg)]['J']
+                    data.append([z_sch, z_reg, J])
+
+                # Create a DataFrame with the correct column names
+                df = pd.DataFrame(data, columns=['z_sch', 'z_reg', 'Profit'])
+
+                # Pivot the data correctly
+                pivot_table = df.pivot(index='z_sch', columns='z_reg', values='Profit')
+
+                # Plotting the heatmap
+                plt.figure(figsize=(5, 4))
+                sns.heatmap(pivot_table, annot=True, fmt=".2f", cmap="YlGnBu", cbar_kws={'label': 'Profit'})
+                plt.title("Profit Heatmap")
+                plt.xlabel("z_reg")
+                plt.ylabel("z_sch")
+                plt.show()
+                # print('Profit grid', grid_search_results[])
                 # print('power_profile', u[:N_remain])
                 # print('TOU slice', self.TOU[TOU_start_idx : TOU_end_idx])
                 # print('')
