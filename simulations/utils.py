@@ -153,6 +153,7 @@ def aggregate_power_profiles(test_df, power_profiles, delta_t):
     return agg_power_profile
 
 
+
 def get_profit(test_df, power_profiles, prices, delta_t, TOU):
     """
     Aggregate the profit from a simulation
@@ -165,7 +166,8 @@ def get_profit(test_df, power_profiles, prices, delta_t, TOU):
         TOU: electricity price time series, with TOU[0] representing the price at midnight, in units of cents/kWh
     """
 
-    profit = 0
+    charging_revenue = 0
+    TOU_costs = 0
     for index, row in test_df.iterrows():
         current_time = pd.to_datetime(row["startChargeTime"])
         TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
@@ -173,14 +175,77 @@ def get_profit(test_df, power_profiles, prices, delta_t, TOU):
         )
         power_profile = power_profiles[row["dcosId"]]
         if row["choice"] == "SCHEDULED":
-            profit += np.sum(
-                power_profile[:N_remain]
-                * (prices[row["dcosId"]][0] - TOU[TOU_start_idx:TOU_end_idx])
-            )
+            charging_revenue += sum(power_profile[:N_remain] * prices[row["dcosId"]][0])
         else:
-            profit += np.sum(
-                power_profile[:N_remain]
-                * (prices[row["dcosId"]][1] - TOU[TOU_start_idx:TOU_end_idx])
-            )
+            charging_revenue += sum(power_profile[:N_remain] * prices[row["dcosId"]][1])
 
-    return profit
+        TOU_costs += sum(power_profile[:N_remain] * TOU[TOU_start_idx:TOU_end_idx])
+
+    return charging_revenue, TOU_costs
+
+
+
+def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
+    """
+    Aggregate the power profiles from a month-long simulation
+
+        Inputs:
+        test_df: the pandas DataFrame used in the simulation
+        power_profiles: dictionary mapping dcosIds to power profiles
+        prices: 
+        TOU: 
+        delta_t: timestep size, in hours
+    """
+
+    filtered_power_profiles = {k: v for k, v in power_profiles.items() if len(v) > 0}
+    agg_power_profile = np.zeros(int(32 * 24 / delta_t))
+
+    rows = []
+    for dcosId, power_profile in filtered_power_profiles.items():
+        matching_row = test_df.loc[test_df["dcosId"] == dcosId]
+        row = matching_row.squeeze()
+        start_time = pd.to_datetime(row["startChargeTime"])
+        start_of_month = start_time.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        i = int(np.ceil((start_time - start_of_month).total_seconds() / (15 * 60)))
+        agg_power_profile[i : i + len(power_profile)] += power_profile
+
+        z_sch = prices[dcosId][0]
+        z_reg = prices[dcosId][1]
+
+        start_time = pd.to_datetime(row["startChargeTime"])
+        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+            row, start_time, delta_t
+        )
+
+        power_profile = power_profiles[row["dcosId"]]
+        if row["choice"] == "SCHEDULED":
+            charging_revenue = sum(power_profile[:N_remain] * z_sch)
+        else:
+            charging_revenue = sum(power_profile[:N_remain] * z_reg)
+
+        TOU_cost = sum(power_profile[:N_remain] * TOU[TOU_start_idx:TOU_end_idx])
+        energy_delivered = sum(power_profile) * delta_t
+
+        row = [dcosId, z_sch, z_reg, start_time, charging_revenue, TOU_cost, energy_delivered, power_profile]
+        rows.append(row)
+
+        # Column names
+        columns = [
+            "dcosId", 
+            "z_sch", 
+            "z_reg", 
+            "start_time", 
+            "charging_revenue", 
+            "TOU_cost", 
+            "energy_delivered", 
+            "power_profile"
+        ]
+
+        # Create DataFrame
+        df = pd.DataFrame(rows, columns=columns)
+
+    return df
+
+
