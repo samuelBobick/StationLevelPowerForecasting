@@ -22,23 +22,39 @@ class BaselineSimulator:
 
         # Default simulation constants
         self.var_dim_constant = kwargs.get('var_dim_constant', 96)  # 24-hour lookahead
-        self.cost_dc = kwargs.get('cost_dc', 2000)  # cents/kW
         self.delta_t = kwargs.get('delta_t', 0.25)  # time step in hours
         self.power_rate = kwargs.get('power_rate', 6.6)  # max power in kW
         self.flexibility_constant = kwargs.get('flexibility_constant', 0.5)  # proportion of flexibility
 
-        # Default time-of-use tariff
-        tou = np.ones((96,)) * 17.5  # off-peak cents/kWh
-        tou[64:84] = 36.7  # 4 pm - 9 pm peak
-        tou[36:56] = 14.9  # 9 am - 2 pm super off-peak
+        # TOU A-10 Primary Tariff June 2023
+        # self.cost_dc = kwargs.get('cost_dc', 1942)  # cents/kW
+        # tou = np.ones((96,)) * 24.7  # off-peak cents/kWh
+        # tou[:34] = 22.2  # off-peak
+        # tou[86:] = 22.2  # 9:30pm super off-peak
+        # self.TOU = kwargs.get('tou', np.concatenate([tou, tou, tou]))  # wrap around for multi-day sessions
+
+        # Original Slrp-EV Tariffs
+        # self.cost_dc = kwargs.get('cost_dc', 500)  # cents/kW
+        # tou = np.ones((96,)) * 17.5  # off-peak cents/kWh
+        # tou[64:84] = 36.7  # 4 pm - 9 pm peak
+        # tou[36:56] = 14.9  # 9 am - 2 pm super off-peak
+        # self.TOU = kwargs.get('tou', np.concatenate([tou, tou, tou]))  # wrap around for multi-day sessions
+
+        # PGE BEV2S Secondary June 2023
+        self.cost_dc = kwargs.get('cost_dc', 191)  # cents/kW
+        self.cost_dc = kwargs.get('cost_dc', 500)  # our modification to make DC more relevant
+        tou = np.ones((96,)) * 18.6  # off-peak cents/kWh
+        tou[64:84] = 39.9  # 4 pm - 9 pm peak
+        tou[36:56] = 16.3  # 9 am - 2 pm super off-peak
         self.TOU = kwargs.get('tou', np.concatenate([tou, tou, tou]))  # wrap around for multi-day sessions
 
         # Default price grid for optimization
-        prices = kwargs.get('prices', np.arange(20, 45, 5))
-        self.tariff_grid = kwargs.get(
-            'tariff_grid',
-            [(z_sch, z_reg) for z_reg in prices for z_sch in prices if z_sch < z_reg]
-        )
+        # prices = kwargs.get('prices', np.arange(20, 40, 5))
+        # self.tariff_grid = kwargs.get(
+        #     'tariff_grid',
+        #     [(z_sch, z_reg) for z_reg in prices for z_sch in prices if z_sch < z_reg]
+        # )
+        self.tariff_grid = [(i, 30) for i in np.arange(10, 30, 2.5)]
 
         # Default discrete choice model parameters
         dcm_charging_sch_params = np.array(
@@ -48,7 +64,7 @@ class BaselineSimulator:
             [[self.power_rate * 0.0184 / 2], [-self.power_rate * 0.0184 / 2], [0], [0.341]]
         )
         dcm_leaving_params = np.array(
-            [[self.power_rate * 0.005 / 2], [self.power_rate * 0.005 / 2], [0], [-1]]
+            [[self.power_rate * 0.005], [0], [0], [-1]]
         )
         self.theta = kwargs.get(
             'theta',
