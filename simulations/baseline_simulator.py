@@ -26,7 +26,7 @@ class BaselineSimulator:
         self.delta_t = kwargs.get("delta_t", 0.25)  # time step in hours
         self.power_rate = kwargs.get("power_rate", 6.6)  # max power in kW
         self.flexibility_constant = kwargs.get(
-            "flexibility_constant", 0.5
+            "flexibility_constant", 0.57
         )  # proportion of flexibility
 
         # TOU A-10 Primary Tariff June 2023
@@ -374,9 +374,7 @@ class BaselineSimulator:
         ).dt.floor("15min")
         sub_df = sub_df[end_charge_times >= current_time]
 
-        # if after filtering there is no updating to be done, return null result
-        if len(sub_df) == 0:
-            return None, sub_df
+        assert len(sub_df) > 0, 'sub_df is empty, nothing to grid search over!'
 
         grid_search_results = {}
         for z_sch_k, z_reg_k in self.tariff_grid:
