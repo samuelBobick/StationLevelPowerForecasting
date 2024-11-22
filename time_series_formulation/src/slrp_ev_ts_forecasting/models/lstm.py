@@ -4,7 +4,7 @@ import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
-from slrp_ev_data.window_generator import TFToTorchDataset, WindowGenerator
+from slrp_ev_data.window_generator import TFToTorchDataset
 from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 
 
@@ -27,6 +27,7 @@ class LSTM(TorchBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         batch_size: int = default_parameters.BATCH_SIZE,
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
+        get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     ):
         """
         Initialize the LSTM model with the given parameters.
@@ -45,6 +46,13 @@ class LSTM(TorchBaseModel):
             number_of_initial_models (int): Number of initial models to train.
             time_mode (Literal["window", "cyclical"]): Time mode for the model.
             batch_size (int): Batch size for training.
+            error_metric (default_parameters.TypeErrorMetric): Error metric to \
+                use for training.
+            get_val_data_from_shuffled_train (bool): Whether to get the \
+                validation data from the shuffled train data. This can help \
+                improving the algorithm's performance since there will more \
+                recent data in the training set (otherwise, the most recent data \
+                is in the val and test sets)
         """
 
         # LSTM-specific parameters
@@ -74,6 +82,7 @@ class LSTM(TorchBaseModel):
             error_metric=error_metric,
             x_dim=x_dim,
             lookahead=lookahead,
+            get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
         )
 
         # Determine input size based on time_mode
@@ -116,20 +125,22 @@ class LSTM(TorchBaseModel):
 
     def get_dataset(
         self,
-        df: pd.DataFrame,
+        df: pd.DataFrame | None,
+        data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ) -> TFToTorchDataset | tuple[TFToTorchDataset, torch.Tensor]:
         """Generates the dataset and features based on the input DataFrame."""
-        df = self.pad_with_seen_data(df, number_of_timesteps_to_pad=self.x_dim)
+        if df is not None:
+            df = df.copy()
+            df_padded = self.pad_with_seen_data(
+                df, number_of_timesteps_to_pad=self.x_dim
+            )
+        else:
+            df_padded = None
 
-        W = WindowGenerator(
-            input_width=self.x_dim,
-            label_width=self.lookahead,
-            shift=self.lookahead,
-            train_df=df,
-            label_columns=["power", "date"],
-            overlapping_windows=overlapping_windows,
+        W, window_data = self.get_window_data(
+            df_padded, self.x_dim, self.lookahead, overlapping_windows, data_type
         )
 
         cols_to_keep_as_features = ["power"]
@@ -146,12 +157,12 @@ class LSTM(TorchBaseModel):
             cols_to_keep_as_features += ["time_window", "workday"]
 
         dataset = W.convert_to_torch_dataset(
-            W.train, cols_to_keep_as_features, cols_to_keep_as_labels=["power"]
+            window_data, cols_to_keep_as_features, cols_to_keep_as_labels=["power"]
         )
 
         if return_y_date:
             x_dates, y_dates = W.convert_to_torch_dataset(
-                W.train,
+                window_data,
                 cols_to_keep_as_features=["date"],
                 cols_to_keep_as_labels=["date"],
             ).get_full_data()
@@ -214,7 +225,7 @@ class LSTM_model(nn.Module):
         # hn is of size [num_layers, batch_size, hidden_size]
         hn = hn[-1]  # use the last layer's output
         # hn is now of size [batch_size, hidden_size]
-        if self.batch_norm and hn.size(0) > 1:
+        if (self.batch_norm is not None) and (hn.size(0) > 1):
             hn = self.batch_norm(hn)
         hn = self.dropout(hn)
         out = self.activation(hn)

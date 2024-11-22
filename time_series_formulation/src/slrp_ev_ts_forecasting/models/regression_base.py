@@ -2,7 +2,6 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import TypeOptimizeLags
 from slrp_ev_ts_forecasting.models.base import Base
@@ -18,15 +17,28 @@ class RegressionBaseModel(Base):
         alpha: float,
         time_mode: Literal["window", "cyclical"],
         optimize_lags: TypeOptimizeLags,
+        get_val_data_from_shuffled_train: bool,
     ):
         """_summary_
 
         Args:
-            x_dim (int, optional): How many past timesteps ahead we want to use as inputs. Defaults to 16.
+            x_dim (int, optional): How many past timesteps ahead we want to use as inputs. \
+                Defaults to 16.
             lookahead (int, optional): How many timesteps ahead we want to predict. Defaults to 16.
-            alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
+            alpha (int, optional): Underpredictions are penalized alpha times more than \
+                overpredictions for weighted error metric. Defaults to 2.
+            get_val_data_from_shuffled_train (bool): Whether to get the \
+                validation data from the shuffled train data. This can help \
+                improving the algorithm's performance since there will more \
+                recent data in the training set (otherwise, the most recent data \
+                is in the val and test sets)
         """
-        super().__init__(x_dim=x_dim, lookahead=lookahead, optimize_lags=optimize_lags)
+        super().__init__(
+            x_dim=x_dim,
+            lookahead=lookahead,
+            optimize_lags=optimize_lags,
+            get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+        )
 
         self.lookahead = lookahead
         self.x_dim = x_dim
@@ -47,7 +59,7 @@ class RegressionBaseModel(Base):
                 # "Year cos",
             ]
 
-    def fit(self, train: pd.DataFrame, val: pd.DataFrame):
+    def fit(self, train: pd.DataFrame, val: pd.DataFrame | None):
         """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
 
         Args:
@@ -59,10 +71,11 @@ class RegressionBaseModel(Base):
         if self.optimize_lags:
             self.pacf_top_values = self.get_top_pacf_values(train)
 
-        X_train, y_train = self.get_X_y(train, overlapping_windows=True)  # type: ignore
+        X_train, y_train = self.get_X_y(train, data_type="train", overlapping_windows=True)  # type: ignore
         self.update_seen_data(train)
-        X_val, y_val = self.get_X_y(val, overlapping_windows=False)  # type: ignore
-        self.update_seen_data(val)
+        X_val, y_val = self.get_X_y(val, data_type="val", overlapping_windows=False)  # type: ignore
+        if val is not None:
+            self.update_seen_data(val)
 
         self.models = {}
         if self.time_mode == "window":
@@ -107,7 +120,7 @@ class RegressionBaseModel(Base):
         Returns:
             tuple (float, float, list): RMSE, weighted RMSE, array of predictions
         """
-        X_test, y_test, y_dates = self.get_X_y(test, return_y_date=True)  # type: ignore
+        X_test, y_test, y_dates = self.get_X_y(test, data_type="test", return_y_date=True)  # type: ignore
 
         forecasts = []
 
@@ -140,26 +153,24 @@ class RegressionBaseModel(Base):
 
     def get_X_y(
         self,
-        df,
+        df: pd.DataFrame | None,
+        data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ):
-        df = df.copy()
-
         if self.optimize_lags:
             input_width = self.index_farthest_lag
         else:
             input_width = self.x_dim
 
-        df_padded = self.pad_with_seen_data(df, input_width)
+        if df is not None:
+            df = df.copy()
+            df_padded = self.pad_with_seen_data(df, input_width)
+        else:
+            df_padded = None
 
-        W = WindowGenerator(
-            input_width=input_width,
-            label_width=self.lookahead,
-            shift=self.lookahead,
-            train_df=df_padded,
-            label_columns=["power", "date"],
-            overlapping_windows=overlapping_windows,
+        W, window_data = self.get_window_data(
+            df_padded, input_width, self.lookahead, overlapping_windows, data_type
         )
 
         cols_keep_last_value = ["workday"]
@@ -177,7 +188,7 @@ class RegressionBaseModel(Base):
 
         if self.optimize_lags:
             flat_inputs, flat_labels = W.flatten_dataset(
-                W.train,
+                window_data,
                 cols_keep_last_value=cols_keep_last_value,
                 cols_keep_some_values=[
                     {
@@ -190,7 +201,7 @@ class RegressionBaseModel(Base):
             )
         else:
             flat_inputs, flat_labels = W.flatten_dataset(
-                W.train,
+                window_data,
                 cols_to_flatten=["power"],
                 cols_keep_last_value=cols_keep_last_value,
                 label_cols_to_flatten=["power"],
@@ -199,7 +210,7 @@ class RegressionBaseModel(Base):
 
         if return_y_date:
             x_dates, y_dates = W.flatten_dataset(
-                W.train, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
+                window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
             )
             return flat_inputs, flat_labels, y_dates
         else:

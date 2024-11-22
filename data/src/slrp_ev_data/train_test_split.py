@@ -29,13 +29,13 @@ def train_test_split(
 
     data_length = data.shape[0]
     split_train_index = int(data_length * fraction_in_train)
-    train = data.loc[: split_train_index - 1]
+    train = data.iloc[:split_train_index]
 
     if generate_validation:
         split_val_index = int(data_length * (fraction_in_train + fraction_in_val))
-        val = data.loc[split_train_index : split_val_index - 1]
-        test = data.loc[split_val_index:]
+        val = data.iloc[split_train_index:split_val_index]
+        test = data.iloc[split_val_index:]
         return train, val, test
     else:
-        test = data.loc[split_train_index:]
+        test = data.iloc[split_train_index:]
         return train, test

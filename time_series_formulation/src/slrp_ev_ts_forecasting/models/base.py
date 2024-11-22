@@ -1,4 +1,7 @@
+from typing import Literal, Optional
+
 import pandas as pd
+from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.default_parameters import (
     NUMBER_OF_DAYS_FOR_PACF,
     TypeOptimizeLags,
@@ -7,10 +10,17 @@ from slrp_ev_ts_forecasting.pacf import get_pacf_values, get_threshold, sort_pac
 
 
 class Base:
-    def __init__(self, lookahead, x_dim, optimize_lags: TypeOptimizeLags):
+    def __init__(
+        self,
+        lookahead,
+        x_dim,
+        optimize_lags: TypeOptimizeLags,
+        get_val_data_from_shuffled_train: bool,
+    ):
         self.lookahead = lookahead
         self.x_dim = x_dim
         self.optimize_lags = optimize_lags
+        self.get_val_data_from_shuffled_train = get_val_data_from_shuffled_train
 
     def get_top_pacf_values(
         self, data: pd.DataFrame, nb_of_days_for_pacf: int = NUMBER_OF_DAYS_FOR_PACF
@@ -104,3 +114,58 @@ class Base:
         new_data_to_pad = pd.concat([padding_data, new_data_to_pad], ignore_index=True)
 
         return new_data_to_pad
+
+    def get_window_data(
+        self,
+        df_padded: Optional[pd.DataFrame],
+        input_width: int,
+        label_width: int,
+        overlapping_windows: bool,
+        data_type: Literal["train", "val", "test"],
+    ) -> tuple[WindowGenerator, list[tuple]]:
+
+        if self.get_val_data_from_shuffled_train:
+            if data_type == "train":
+                # in this case, we save the window with the full data to be able to
+                # generate the validation set later
+                if df_padded is None:
+                    raise ValueError(
+                        "df_padded should be provided to generate windows "
+                        "for train and test data types"
+                    )
+                self._val_and_train_window = WindowGenerator(
+                    input_width=input_width,
+                    label_width=label_width,
+                    shift=self.lookahead,
+                    train_df=df_padded,
+                    get_val_from_shuffled_train=True,
+                    label_columns=["power", "date"],
+                    overlapping_windows=overlapping_windows,
+                    verbose=True,
+                )
+                return self._val_and_train_window, self._val_and_train_window.train
+            elif data_type == "val":
+                if df_padded is not None:
+                    raise ValueError(
+                        "df_padded should be None when getting the validation data "
+                        "from the shuffled train data"
+                    )
+                return self._val_and_train_window, self._val_and_train_window.val
+
+        if df_padded is None:
+            raise ValueError(
+                "df_padded should be provided to generate windows "
+                "for train and test data types"
+            )
+        # default case
+        W = WindowGenerator(
+            input_width=input_width,
+            label_width=label_width,
+            shift=self.lookahead,
+            train_df=df_padded,
+            label_columns=["power", "date"],
+            overlapping_windows=overlapping_windows,
+        )
+        window_data = W.train
+
+        return W, window_data

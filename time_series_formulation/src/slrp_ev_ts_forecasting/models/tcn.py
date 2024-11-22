@@ -5,7 +5,7 @@ import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
-from slrp_ev_data.window_generator import TFToTorchDataset, WindowGenerator
+from slrp_ev_data.window_generator import TFToTorchDataset
 from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 from torch.nn.utils.parametrizations import weight_norm
 
@@ -30,6 +30,7 @@ class TCN(TorchBaseModel):
         batch_size: int = default_parameters.BATCH_SIZE,
         use_decoder: bool = True,
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
+        get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     ):
         """
         Initialize the TCN model with the given parameters.
@@ -57,6 +58,13 @@ class TCN(TorchBaseModel):
                 so there will be some of the input in what the model \
                 is trying to predict. You then have to use self.first_prediction_index \
                 to get the index from which the predictions start.
+            error_metric (default_parameters.TypeErrorMetric): Error metric to \
+                use for training.
+            get_val_data_from_shuffled_train (bool): Whether to get the \
+                validation data from the shuffled train data. This can help \
+                improving the algorithm's performance since there will more \
+                recent data in the training set (otherwise, the most recent data \
+                is in the val and test sets)
         """
         # TCN-specific parameters
         self.x_dim = x_dim
@@ -91,6 +99,7 @@ class TCN(TorchBaseModel):
             error_metric=error_metric,
             x_dim=x_dim,
             lookahead=lookahead,
+            get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
         )
 
         # Other parameters
@@ -152,7 +161,8 @@ class TCN(TorchBaseModel):
 
     def get_dataset(
         self,
-        df: pd.DataFrame,
+        df: pd.DataFrame | None,
+        data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ) -> TFToTorchDataset | tuple[TFToTorchDataset, torch.Tensor]:
@@ -161,16 +171,16 @@ class TCN(TorchBaseModel):
         if not self.use_decoder:
             # To have an output of the same length as the input
             label_width = self.x_dim
+        if df is not None:
+            df = df.copy()
+            df_padded = self.pad_with_seen_data(
+                df, number_of_timesteps_to_pad=self.x_dim
+            )
+        else:
+            df_padded = None
 
-        df = self.pad_with_seen_data(df, number_of_timesteps_to_pad=self.x_dim)
-
-        W = WindowGenerator(
-            input_width=self.x_dim,
-            label_width=label_width,
-            shift=self.lookahead,
-            train_df=df,
-            label_columns=["power", "date"],
-            overlapping_windows=overlapping_windows,
+        W, window_data = self.get_window_data(
+            df_padded, self.x_dim, label_width, overlapping_windows, data_type
         )
 
         cols_to_keep_as_features = ["power"]
@@ -187,15 +197,15 @@ class TCN(TorchBaseModel):
             cols_to_keep_as_features += ["time_window", "workday"]
 
         dataset = W.convert_to_torch_dataset(
-            W.train, cols_to_keep_as_features, cols_to_keep_as_labels=["power"]
+            window_data, cols_to_keep_as_features, cols_to_keep_as_labels=["power"]
         )
 
         if return_y_date:
             # x_dates, y_dates = W.flatten_dataset(
-            #     W.train, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
+            #     window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
             # )
             x_dates, y_dates = W.convert_to_torch_dataset(
-                W.train,
+                window_data,
                 cols_to_keep_as_features=["date"],
                 cols_to_keep_as_labels=["date"],
             ).get_full_data()
