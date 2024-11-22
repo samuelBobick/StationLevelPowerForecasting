@@ -1,8 +1,12 @@
+from typing import Optional
+
 import cvxpy as cp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from constants.dcm import get_dcm_theta
+from constants.tariffs import DICT_TARIFFS, TypeTariffName
 from scipy.special import softmax
 from utils import (
     get_e_need,
@@ -20,50 +24,52 @@ class BaselineSimulator:
     # TODO: I actually think it would be better to have the parameters listed as class inputs rather than kwargs
     # (so that we know what the parameters are without having to look at the __init__ method)
     # Is there any specific reason why you chose to use kwargs?
-    def __init__(self, test_df, **kwargs):
+    def __init__(
+        self,
+        test_df,
+        var_dim_constant: int = 96,
+        delta_t: float = 0.25,
+        power_rate: float = 6.6,
+        flexibility_constant: float = 0.57,
+        tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
+        custom_cost_dc: Optional[float] = 500,
+        monte_carlo: bool = False,
+        verbose: bool = False,
+    ):
         """
         Initialize the BaselineSimulator with default or user-defined parameters.
 
         Args:
-            **kwargs: Key-value pairs to override default parameters.
+            var_dim_constant: 24-hour lookahead. Default is 96 (96 timesteps in a day with 15min data).
+            delta_t: Size, in hour, of a timestep (e.g. 15min interval are 0.25h intervals). Default is 0.25.
+            power_rate: Maximum power in kW of the chargers. Default is 6.6 kW.
+            flexibility_constant: Proportion of flexibility to artificially reduce to the energy need of the \
+                regular users, compared to the cumulative energy they used historically. \
+                Default is 0.57 (the historical average flexibility of scheduled sessions).
+            tariff_name: Name of the tariff to use. See constants.tariffs.TypeTariffName for available options. \
+                Default is "BEV2S Secondary June 2023".
+            custom_cost_dc: Custom demand charge cost in cents/kW that will replace the one from the tariffs. \
+                Set to None to use the dc of the selected tariff. Default is 500 cents/kW.
+            monte_carlo: Whether to re-evaluate choices with Discrete Choice Model (DCM). \
+                If False, we assume the charging choice of each session is the one historical done. \
+                If True, we will use the DCM to simulate the choice. Default is False.
+            verbose: Print optimization information. Default is False.
+
         """
         self.test_df = test_df
 
         # Default simulation constants
-        self.var_dim_constant = kwargs.get("var_dim_constant", 96)  # 24-hour lookahead
-        self.delta_t = kwargs.get("delta_t", 0.25)  # time step in hours
-        self.power_rate = kwargs.get("power_rate", 6.6)  # max power in kW
-        self.flexibility_constant = kwargs.get(
-            "flexibility_constant", 0.57
-        )  # proportion of flexibility
+        self.var_dim_constant = var_dim_constant  # 24-hour lookahead
+        self.delta_t = delta_t  # time step in hours
+        self.power_rate = power_rate  # max power in kW
+        self.flexibility_constant = flexibility_constant  # proportion of flexibility
 
-        # TODO: Should we add a parameter to select the tariffs? E.g. `tariff_name`?
-        # link for source of rates: https://www.pge.com/tariffs/en/rate-information/electric-rates.html#accordion-a84c67dc1e-item-69d101345a
-        # TOU A-10 Primary Tariff June 2023
-        # self.cost_dc = kwargs.get('cost_dc', 1942)  # cents/kW
-        # tou = np.ones((96,)) * 24.7  # off-peak cents/kWh
-        # tou[:34] = 22.2  # off-peak
-        # tou[86:] = 22.2  # 9:30pm super off-peak
-        # self.TOU = kwargs.get('tou', np.concatenate([tou, tou, tou]))  # wrap around for multi-day sessions
+        # Get the tariff
+        self.TOU = DICT_TARIFFS[tariff_name]["TOU"]
 
-        # Original Slrp-EV Tariffs
-        # self.cost_dc = kwargs.get('cost_dc', 500)  # cents/kW
-        # tou = np.ones((96,)) * 17.5  # off-peak cents/kWh
-        # tou[64:84] = 36.7  # 4 pm - 9 pm peak
-        # tou[36:56] = 14.9  # 9 am - 2 pm super off-peak
-        # self.TOU = kwargs.get('tou', np.concatenate([tou, tou, tou]))  # wrap around for multi-day sessions
-
-        # PGE BEV2S Secondary June 2023
-        # self.cost_dc = kwargs.get("cost_dc", 191)  # cents/kW
-        self.cost_dc = kwargs.get(
-            "cost_dc", 500
-        )  # our modification to make DC more relevant
-        tou = np.ones((96,)) * 18.6  # off-peak cents/kWh
-        tou[64:84] = 39.9  # 4 pm - 9 pm peak
-        tou[36:56] = 16.3  # 9 am - 2 pm super off-peak
-        self.TOU = kwargs.get(
-            "tou", np.concatenate([tou, tou, tou])
-        )  # wrap around for multi-day sessions
+        self.cost_dc = DICT_TARIFFS[tariff_name]["cost_dc"]
+        if custom_cost_dc:
+            self.cost_dc = custom_cost_dc  # our modification to make DC more relevant
 
         # Default price grid for optimization
         # prices = kwargs.get('prices', np.arange(20, 40, 5))
@@ -74,34 +80,11 @@ class BaselineSimulator:
         self.tariff_grid = [(i, 30) for i in np.arange(10, 30, 2.5)]
 
         # Default discrete choice model parameters
-        dcm_charging_sch_params = np.array(
-            [[-self.power_rate * 0.0184 / 2], [self.power_rate * 0.0184 / 2], [0], [0]]
-        )
-        dcm_charging_reg_params = np.array(
-            [
-                [self.power_rate * 0.0184 / 2],
-                [-self.power_rate * 0.0184 / 2],
-                [0],
-                [0.341],
-            ]
-        )
-        dcm_leaving_params = np.array([[self.power_rate * 0.005], [0], [0], [-1]])
-        self.theta = kwargs.get(
-            "theta",
-            np.vstack(
-                (
-                    dcm_charging_sch_params.T,
-                    dcm_charging_reg_params.T,
-                    dcm_leaving_params.T,
-                )
-            ),
-        )
+        self.theta = get_dcm_theta(self.power_rate)
 
         # Default simulation options
-        self.monte_carlo = kwargs.get(
-            "monte_carlo", False
-        )  # Whether to re-evaluate choices with DCM
-        self.verbose = kwargs.get("verbose", False)  # Print optimization information
+        self.monte_carlo = monte_carlo  # Whether to re-evaluate choices with DCM
+        self.verbose = verbose  # Print optimization information
 
     def get_J(
         self,
