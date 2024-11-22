@@ -12,6 +12,7 @@ from slrp_ev_ts_forecasting.compute_losses import get_real_scale_losses
 from slrp_ev_ts_forecasting.default_parameters import (
     DATASET,
     DEFAULT_RESULTS_FILENAME,
+    GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     TypeModelChoice,
 )
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
@@ -43,49 +44,52 @@ def run_one_model(
             f"Datset of type {DATASET} is not defined. Please refer to "
             "TypeDataSet for supported datasets."
         )
-    train, val, test = train_test_split.train_test_split(data, generate_validation=True)  # type: ignore
+
+    get_val_data_from_shuffled_train = model_parameters.get(
+        "get_val_data_from_shuffled_train", GET_VAL_DATA_FROM_SHUFFLED_TRAIN
+    )
+    # If we want to get the validation data from the shuffled train data,
+    # we need to split the data into train and test only
+    if get_val_data_from_shuffled_train:
+        train, test = train_test_split.train_test_split(data, generate_validation=False, fraction_in_train=0.9)  # type: ignore
+        val = None
+    else:
+        train, val, test = train_test_split.train_test_split(data, generate_validation=True)  # type: ignore
+
     normalize_parameters = get_train_min_and_max(train)
     train_eng = feature_engineering(train, normalize_parameters)
-    val_eng = feature_engineering(val, normalize_parameters)
+    val_eng = (
+        feature_engineering(val, normalize_parameters) if val is not None else None
+    )
     test_eng = feature_engineering(test, normalize_parameters)
 
     dict_model: dict[TypeModelChoice, dict] = {
         "KNN": {
             "model": KNN,
             "model_params": {},
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "XGBoost": {
             "model": XGBoost,
             "model_params": {},
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "Last_Week": {"model": LastWeek, "model_params": {}, "fit_params": {}},
         "Similar_Day": {"model": SimilarDay, "model_params": {}, "fit_params": {}},
         "Basic_NN": {
             "model": FFNN,
             "model_params": {},
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "LSTM": {
             "model": LSTM,
             "model_params": {},
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "TCN": {
             "model": TCN,
             "model_params": {},
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "AutoETS": {
             "model": SktimeBaseModel,
@@ -95,9 +99,7 @@ def run_one_model(
                 "downsample_hours": 1,
                 "refit_model_before_predictions": False,
             },  # default maxiter = 1000
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "AutoARIMA": {
             # takes a very long time to run...
@@ -118,9 +120,7 @@ def run_one_model(
                 "refit_model_before_predictions": False,
                 "start_data_date": "2023-08",
             },  # default maxiter = 1000
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "ARIMA": {
             "model": SktimeBaseModel,
@@ -134,9 +134,7 @@ def run_one_model(
                 "refit_model_before_predictions": False,
                 "start_data_date": "2023-01",
             },  # default maxiter = 1000
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
         "Prophet": {
             "model": SktimeBaseModel,
@@ -161,9 +159,7 @@ def run_one_model(
                 "refit_model_before_predictions": False,
                 # "start_data_date": "2023",
             },
-            "fit_params": {
-                "val": val_eng,
-            },
+            "fit_params": {},
         },
     }
     model_parameters = model_parameters | dict_model[model_choice]["model_params"]
@@ -174,7 +170,7 @@ def run_one_model(
     model = dict_model[model_choice]["model"](**model_parameters)
     model_name = getattr(model, "model_str_name", model_choice)
     print("# Fitting...")
-    model.fit(train_eng, **dict_model[model_choice]["fit_params"])
+    model.fit(train_eng, val=val_eng, **dict_model[model_choice]["fit_params"])
 
     print("# Making prediction(s)...")
     losses, forecast, forecast_dates = model.predict(test_eng)
