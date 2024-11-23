@@ -8,6 +8,7 @@ import seaborn as sns
 from constants.dcm import get_dcm_theta
 from constants.tariffs import DICT_TARIFFS, TypeTariffName
 from scipy.special import softmax
+from tqdm.auto import tqdm
 from utils import (
     get_e_need,
     get_new_reg_obj,
@@ -21,9 +22,6 @@ class BaselineSimulator:
     A class to replay the optimization of SLRP-EV sessions.
     """
 
-    # TODO: I actually think it would be better to have the parameters listed as class inputs rather than kwargs
-    # (so that we know what the parameters are without having to look at the __init__ method)
-    # Is there any specific reason why you chose to use kwargs?
     def __init__(
         self,
         test_df,
@@ -59,10 +57,10 @@ class BaselineSimulator:
         self.test_df = test_df
 
         # Default simulation constants
-        self.var_dim_constant = var_dim_constant  # 24-hour lookahead
-        self.delta_t = delta_t  # time step in hours
-        self.power_rate = power_rate  # max power in kW
-        self.flexibility_constant = flexibility_constant  # proportion of flexibility
+        self.var_dim_constant = var_dim_constant
+        self.delta_t = delta_t
+        self.power_rate = power_rate
+        self.flexibility_constant = flexibility_constant
 
         # Get the tariff
         self.TOU = DICT_TARIFFS[tariff_name]["TOU"]
@@ -83,8 +81,8 @@ class BaselineSimulator:
         self.theta = get_dcm_theta(self.power_rate)
 
         # Default simulation options
-        self.monte_carlo = monte_carlo  # Whether to re-evaluate choices with DCM
-        self.verbose = verbose  # Print optimization information
+        self.monte_carlo = monte_carlo
+        self.verbose = verbose
 
     def get_J(
         self,
@@ -117,11 +115,10 @@ class BaselineSimulator:
         num_sch_user = 0
         num_reg_user = 0
 
-        # TODO: why only one of them in a cp.Constant?
         existing_sch_obj = cp.Constant(0)  # profit objective for existing scheduled
         existing_reg_obj = 0  # profit objective for existing regular
 
-        for index, row in sub_df.iloc[:-1].iterrows():
+        for _, row in sub_df.iloc[:-1].iterrows():
             TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
                 row, current_time, self.delta_t
             )
@@ -194,39 +191,34 @@ class BaselineSimulator:
             )
         )
 
-        # TODO: Should this be self.cost_dc??
-        COST_DC = 500
-        # TODO: Should we rename J0, J1, J2 to something more descriptive?
-        # J_schedule
-        J0 = (
+        J_schedule = (
             (new_sch_obj + existing_sch_obj + existing_reg_obj)
-            + cp.Constant(COST_DC) * (p_dc_sch - running_peak)
+            + cp.Constant(self.cost_dc) * (p_dc_sch - running_peak)
         ) * cp.Constant(v[0])
-        # J_regular
-        J1 = (
+        J_regular = (
             (
                 new_reg_obj
                 + existing_sch_obj
                 + existing_reg_obj
-                + cp.Constant(COST_DC) * (p_dc_reg - running_peak)
+                + cp.Constant(self.cost_dc) * (p_dc_reg - running_peak)
             )
         ) * cp.Constant(v[1])
-        # J_leave
-        J2 = (new_leave_obj + existing_sch_obj + existing_reg_obj) * cp.Constant(v[2])
+        J_leave = (new_leave_obj + existing_sch_obj + existing_reg_obj) * cp.Constant(
+            v[2]
+        )
 
         # J0 = (new_sch_obj + existing_sch_obj + existing_reg_obj) * v[0]
         # J1 = (new_reg_obj + existing_sch_obj + existing_reg_obj) * v[1]
         # J2 = (new_leave_obj + existing_sch_obj + existing_reg_obj) * v[2]
 
-        # J_total
-        J = J0 + J1 + J2
+        J_total = J_schedule + J_regular + J_leave
 
         return (
-            J,
+            J_total,
             [
-                J0 / v[0],
-                J1 / v[1],
-                J2 / v[2],
+                J_schedule / v[0],
+                J_regular / v[1],
+                J_leave / v[2],
                 new_sch_obj,
                 new_reg_obj,
                 existing_sch_obj,
@@ -447,7 +439,9 @@ class BaselineSimulator:
         hourly_prices = {c: () for c in self.test_df["dcosId"]}
         running_peak = 0
 
-        for startChargeTime in pd.to_datetime(self.test_df["startChargeTime"]):
+        for startChargeTime in tqdm(
+            pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
+        ):
             grid_search_results, sub_df = self.grid_search(
                 startChargeTime, running_peak, power_profiles, prices
             )
@@ -523,9 +517,8 @@ class BaselineSimulator:
                     get_timestep_info(last_row, startChargeTime, self.delta_t)
                 )
 
-                # TODO: Should we replace `last_row["cumEnergy_Wh"] / 1000` by e_need here?
                 N_reg = (
-                    last_row["cumEnergy_Wh"] / 1000 / self.power_rate / self.delta_t
+                    e_need / self.power_rate / self.delta_t
                 )  # how many time steps would it take the user to charge if they chose regular?
                 N_reg_remainder = (
                     N_reg % 1
