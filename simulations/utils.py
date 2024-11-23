@@ -19,8 +19,10 @@ def get_timestep_info(row, current_time, delta_t):
     )  # current time, beginning of optimization horizon
     start_time = pd.to_datetime(row["startChargeTime"])
     TOU_start_idx = int(np.ceil((start_time.hour + start_time.minute / 60) / delta_t))
+    # TODO: change np.floor to np.ceil below here, because ran into an issue
+    # if N_remain is 0
     TOU_end_idx = int(
-        np.floor(TOU_start_idx + row["DurationHrs"] / delta_t)
+        np.ceil(TOU_start_idx + row["DurationHrs"] / delta_t)
     )  # end time index
     N_remain = TOU_end_idx - TOU_current_idx  # number of timesteps remaining
     return TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain
@@ -238,10 +240,10 @@ def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
             z_sch,
             z_reg,
             start_time,
-            charging_revenue,
-            TOU_cost,
-            energy_delivered,
-            power_profile,
+            round(charging_revenue, 1),
+            round(TOU_cost, 1),
+            round(energy_delivered, 1),
+            np.round(power_profile, 2),
         ]
         rows.append(row)
 
