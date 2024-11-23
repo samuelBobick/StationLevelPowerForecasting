@@ -1,3 +1,6 @@
+import ast
+import re
+
 import cvxpy as cp
 import numpy as np
 import pandas as pd
@@ -16,8 +19,10 @@ def get_timestep_info(row, current_time, delta_t):
     )  # current time, beginning of optimization horizon
     start_time = pd.to_datetime(row["startChargeTime"])
     TOU_start_idx = int(np.ceil((start_time.hour + start_time.minute / 60) / delta_t))
+    # TODO: change np.floor to np.ceil below here, because ran into an issue
+    # if N_remain is 0
     TOU_end_idx = int(
-        np.floor(TOU_start_idx + row["DurationHrs"] / delta_t)
+        np.ceil(TOU_start_idx + row["DurationHrs"] / delta_t)
     )  # end time index
     N_remain = TOU_end_idx - TOU_current_idx  # number of timesteps remaining
     return TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain
@@ -102,8 +107,12 @@ def get_e_need(
         flexibility_constant: proportion of regular demand that a user would have demanded if they chose scheduled
     """
     if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
+        # Case where the session was really scheduled and we have the energy needed
+        # for the session given by the user
         e_need = row["energyReq_Wh"] / 1000 / delta_t
     elif row["choice"] == "SCHEDULED":
+        # case for when we consider the session scheduled but the real one was regular
+        # so we have to estimate the energy needed
         e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
     else:
         e_need = row["cumEnergy_Wh"] / 1000 / delta_t
@@ -153,7 +162,6 @@ def aggregate_power_profiles(test_df, power_profiles, delta_t):
     return agg_power_profile
 
 
-
 def get_profit(test_df, power_profiles, prices, delta_t, TOU):
     """
     Aggregate the profit from a simulation
@@ -184,7 +192,6 @@ def get_profit(test_df, power_profiles, prices, delta_t, TOU):
     return charging_revenue, TOU_costs
 
 
-
 def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
     """
     Aggregate the power profiles from a month-long simulation
@@ -192,8 +199,8 @@ def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
         Inputs:
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power profiles
-        prices: 
-        TOU: 
+        prices:
+        TOU:
         delta_t: timestep size, in hours
     """
 
@@ -228,19 +235,28 @@ def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
         TOU_cost = sum(power_profile[:N_remain] * TOU[TOU_start_idx:TOU_end_idx])
         energy_delivered = sum(power_profile) * delta_t
 
-        row = [dcosId, z_sch, z_reg, start_time, charging_revenue, TOU_cost, energy_delivered, power_profile]
+        row = [
+            dcosId,
+            z_sch,
+            z_reg,
+            start_time,
+            round(charging_revenue, 1),
+            round(TOU_cost, 1),
+            round(energy_delivered, 1),
+            np.round(power_profile, 2),
+        ]
         rows.append(row)
 
         # Column names
         columns = [
-            "dcosId", 
-            "z_sch", 
-            "z_reg", 
-            "start_time", 
-            "charging_revenue", 
-            "TOU_cost", 
-            "energy_delivered", 
-            "power_profile"
+            "dcosId",
+            "z_sch",
+            "z_reg",
+            "start_time",
+            "charging_revenue",
+            "TOU_cost",
+            "energy_delivered",
+            "power_profile",
         ]
 
         # Create DataFrame
@@ -249,3 +265,19 @@ def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
     return df
 
 
+def get_session_power_profile(row) -> pd.DataFrame:
+    """Helper function to parse the power profile of a session to a DataFrame.
+    This is helpful to check the cumulative power consumption of a session.
+    WARNING: Computing the cumulative power consumption of a session like that \
+        does not give the same results as the column cumEnergy_Wh in the sessions_df. \
+        But the value in cumEnergy_Wh makes more sense and is the one that should be used.
+    """
+    df_power = pd.DataFrame(columns=["timestamp", "power"])
+    list_power = row["power"]
+    list_power = re.sub(r"Decimal\('(\d+)'\)", r"\1", list_power)
+    for i, row_power in enumerate(ast.literal_eval(list_power)):
+        df_power.loc[i, "power"] = row_power["power_W"]
+        df_power.loc[i, "timestamp"] = row_power["timestamp"]
+
+    df_power["timestamp"] = pd.to_datetime(df_power["timestamp"], unit="s")
+    return df_power
