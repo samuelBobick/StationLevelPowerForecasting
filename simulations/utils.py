@@ -199,9 +199,9 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
         Inputs:
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power profiles
-        powerr_rate: TODO
-        prices: TODO
-        TOU: TODO
+        power_rate: max power of a single EV charger, in kW
+        prices: dictionary mapping dcodIds to (sch_price, reg_price) tuples
+        TOU: electricity price time series, with TOU[0] representing the price at midnight, in units of cents/kWh
         delta_t: timestep size, in hours
     """
 
