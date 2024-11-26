@@ -192,15 +192,16 @@ def get_profit(test_df, power_profiles, prices, delta_t, TOU):
     return charging_revenue, TOU_costs
 
 
-def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
+def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_t):
     """
     Aggregate the power profiles from a month-long simulation
 
         Inputs:
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power profiles
-        prices:
-        TOU:
+        power_rate: max power of a single EV charger, in kW
+        prices: dictionary mapping dcodIds to (sch_price, reg_price) tuples
+        TOU: electricity price time series, with TOU[0] representing the price at midnight, in units of cents/kWh
         delta_t: timestep size, in hours
     """
 
@@ -235,10 +236,19 @@ def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
         TOU_cost = sum(power_profile[:N_remain] * TOU[TOU_start_idx:TOU_end_idx])
         energy_delivered = sum(power_profile) * delta_t
 
+        hours_if_reg = (
+            energy_delivered / power_rate
+        )  # how many time steps would it take the user to charge if they chose regular?
+        
+        # convert the optimal prices from $/kWh to $/hour
+        z_sch_hourly = float(z_sch * energy_delivered / (N_remain * delta_t))
+        z_reg_hourly = z_reg * energy_delivered / (hours_if_reg)
         row = [
             dcosId,
             z_sch,
             z_reg,
+            round(z_sch_hourly, 2),
+            round(z_reg_hourly, 2),
             start_time,
             round(charging_revenue, 1),
             round(TOU_cost, 1),
@@ -252,6 +262,8 @@ def get_session_results(test_df, power_profiles, prices, TOU, delta_t):
             "dcosId",
             "z_sch",
             "z_reg",
+            "hourly_scheduled_price",
+            "hourly_regular_price",
             "start_time",
             "charging_revenue",
             "TOU_cost",
