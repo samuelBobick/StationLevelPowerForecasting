@@ -84,6 +84,11 @@ class BaselineSimulator:
         self.monte_carlo = monte_carlo
         self.verbose = verbose
 
+    def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
+        # TODO: can this be negative? I thought there was a penalty only when
+        # the current peak is higher than the running peak
+        return cp.Constant(self.cost_dc) * (current_daily_peak - running_monthly_peak)
+
     def get_J(
         self,
         u: cp.Variable,
@@ -155,7 +160,7 @@ class BaselineSimulator:
                     )
                 num_reg_user += 1
 
-        # We add the +1 is because we haven't counted the new user yet (below we imagine
+        # We add the +1 here because we haven't counted the new user yet (below we imagine
         # that the new user is scheduled)
         sch_power_sum_profile = cp.reshape(
             u, (self.var_dim_constant, num_sch_user + 1)
@@ -191,16 +196,16 @@ class BaselineSimulator:
             )
         )
 
-        J_schedule = (
+        J_scheduled = (
             (new_sch_obj + existing_sch_obj + existing_reg_obj)
-            + cp.Constant(self.cost_dc) * (p_dc_sch - running_peak)
+            + self.get_dc_penalty(p_dc_sch, running_peak)
         ) * cp.Constant(v[0])
         J_regular = (
             (
                 new_reg_obj
                 + existing_sch_obj
                 + existing_reg_obj
-                + cp.Constant(self.cost_dc) * (p_dc_reg - running_peak)
+                + self.get_dc_penalty(p_dc_reg, running_peak)
             )
         ) * cp.Constant(v[1])
         J_leave = (new_leave_obj + existing_sch_obj + existing_reg_obj) * cp.Constant(
@@ -211,12 +216,12 @@ class BaselineSimulator:
         # J1 = (new_reg_obj + existing_sch_obj + existing_reg_obj) * v[1]
         # J2 = (new_leave_obj + existing_sch_obj + existing_reg_obj) * v[2]
 
-        J_total = J_schedule + J_regular + J_leave
+        J_total = J_scheduled + J_regular + J_leave
 
         return (
             J_total,
             [
-                J_schedule / v[0],
+                J_scheduled / v[0],
                 J_regular / v[1],
                 J_leave / v[2],
                 new_sch_obj,
