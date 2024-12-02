@@ -111,8 +111,7 @@ class ThresholdSimulator(BaselineSimulator):
                 else:
                     price_lst.append(row["sch_centsPerHr"])
 
-            # TODO: is this cleaner than `len(e_need_lst)`?
-            num_sch_user = sub_df.loc[sub_df["choice"] == "SCHEDULED"].shape[0]
+            num_sch_user = len(e_need_lst)
 
             ### Decision Variables
             e_delivered = cp.Variable(
