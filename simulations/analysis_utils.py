@@ -114,7 +114,10 @@ def generate_session_results(
 
     if os.path.exists(summary_file_name):
         summary_df = pd.read_csv(summary_file_name)
-        summary_df = summary_df.append(row, ignore_index=True)
+        summary_df = pd.concat(
+            [summary_df, pd.DataFrame([row], columns=summary_df.columns)],
+            ignore_index=True,
+        )
     else:
         columns = [
             "Month",
