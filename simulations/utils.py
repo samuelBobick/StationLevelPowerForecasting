@@ -239,7 +239,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
         hours_if_reg = (
             energy_delivered / power_rate
         )  # how many time steps would it take the user to charge if they chose regular?
-        
+
         # convert the optimal prices from $/kWh to $/hour
         z_sch_hourly = float(z_sch * energy_delivered / (N_remain * delta_t))
         z_reg_hourly = z_reg * energy_delivered / (hours_if_reg)
