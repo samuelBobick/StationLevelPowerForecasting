@@ -161,6 +161,9 @@ class BaselineSimulator:
 
         # We add the +1 here because we haven't counted the new user yet (below we imagine
         # that the new user is scheduled)
+        # initial shape of u: (self.var_dim_constant * (num_sch_user + 1), 1). The
+        # first self.var_dim_constant elements of u are for the next session, that
+        # we are trying to optimize
         sch_power_sum_profile = cp.reshape(
             u, (self.var_dim_constant, num_sch_user + 1)
         ).T  # Shape: (num_sch_user + 1, self.var_dim_constant)
@@ -344,7 +347,7 @@ class BaselineSimulator:
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
-        prob.solve()
+        prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
         if prob.status == "optimal_inaccurate":
             # TODO: look into why this is happening
             print("WARNING: optimal solution found, but is inaccurate")
@@ -543,8 +546,8 @@ class BaselineSimulator:
                 print("Utilities (scheduled, regular, leave):", self.theta @ zk)
                 print(
                     "Optimized delivery of",
-                    round(sum(u[: self.var_dim_constant])[0] * self.delta_t, 2),
-                    f'kW to session #{last_row["dcosId"]}',
+                    e_need,
+                    f'kWh to session #{last_row["dcosId"]}',
                 )
                 print("Number of active sessions:", len(sub_df))
                 print(
@@ -572,8 +575,18 @@ class BaselineSimulator:
                         else min_J_arr[2].value
                     ),
                 )
-                print("new_sch_obj", min_J_arr[3].value)
-                print("new_reg_obj", min_J_arr[4])
+                print("If scheduled user:")
+                print("  new_sch_obj (TOU-EV revenue) =", min_J_arr[3].value)
+                print(
+                    "  Demand charge penalty sch =",
+                    self.get_dc_penalty(current_peak_sch, previous_running_peak).value,
+                )
+                print("If regular user:")
+                print("  new_reg_obj (TOU-EV revenue) =", min_J_arr[4])
+                print(
+                    "  Demand charge penalty reg =",
+                    self.get_dc_penalty(current_peak_reg, previous_running_peak).value,
+                )
                 print(
                     "existing_sch_obj",
                     (
@@ -583,7 +596,7 @@ class BaselineSimulator:
                     ),
                 )
                 print("existing_reg_obj", min_J_arr[6])
-                print("Total profit", min_J)
+                print("Total daily profit so far", min_J)
 
                 # TODO: put this in a separate function? (e.g. `plot_prices_grid_profit_heatmap`)
                 # Collect the data

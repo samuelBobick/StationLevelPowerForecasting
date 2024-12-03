@@ -62,7 +62,7 @@ def get_simulator(
     """
     # TODO this function returns different children of BaselineSimulator once we implement them (conditioned on scenario)
     if scenario in ["all_scheduled", "all_regular"]:
-        sim = BaselineSimulator(
+        return BaselineSimulator(
             data,
             var_dim_constant,
             delta_t,
@@ -74,7 +74,7 @@ def get_simulator(
             verbose,
         )
     elif scenario == "smooth_dc_penalty":
-        sim = SmoothDCPenaltySimulator(
+        return SmoothDCPenaltySimulator(
             data,
             var_dim_constant,
             delta_t,
@@ -89,8 +89,6 @@ def get_simulator(
         raise ValueError(
             "Invalid scenario name in get_simulator. Please refer to TypeScenario."
         )
-
-    return sim
 
 
 def generate_session_results(
@@ -149,8 +147,8 @@ def generate_session_results(
             "Charging Revenue (cents)",
             "TOU Cost (cents)",
             "Demand Charge (cents)",
-            "Peak Power (kWh)",
-            "Energy Delivered (kW)",
+            "Peak Power (kW)",
+            "Energy Delivered (kWh)",
             "Aggregate Power Profile (kW)",
         ]
 

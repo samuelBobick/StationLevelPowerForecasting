@@ -17,7 +17,6 @@ class SmoothDCPenaltySimulator(BaselineSimulator):
         custom_cost_dc: Optional[float] = 500,
         monte_carlo: bool = False,
         verbose: bool = False,
-        dc_penalty_smoothing: float = 1 / 55,
     ):
         """_summary_
 
@@ -38,9 +37,8 @@ class SmoothDCPenaltySimulator(BaselineSimulator):
             monte_carlo,
             verbose,
         )
-        self.dc_penalty_smoothing = dc_penalty_smoothing
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
-        return cp.Constant(self.cost_dc) * cp.exp(
-            (current_daily_peak - running_monthly_peak) * self.dc_penalty_smoothing
-        )
+        """Apply a softplus penalty to the distance between the current daily peak and the running monthly peak."""
+        x = current_daily_peak - running_monthly_peak
+        return cp.Constant(self.cost_dc) * cp.log_sum_exp(cp.hstack([0, x]))
