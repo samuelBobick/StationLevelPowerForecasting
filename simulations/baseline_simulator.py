@@ -345,7 +345,10 @@ class BaselineSimulator:
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
         prob.solve()
-        if prob.status != "optimal":
+        if prob.status == "optimal_inaccurate":
+            # TODO: look into why this is happening
+            print("WARNING: optimal solution found, but is inaccurate")
+        elif prob.status != "optimal":
             print(prob.status)
             print("Gurobi failed, cant solve for power")
             prob.solve(solver="GUROBI", verbose=True)
@@ -430,6 +433,7 @@ class BaselineSimulator:
         for startChargeTime in tqdm(
             pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
         ):
+
             grid_search_results, sub_df = self.grid_search(
                 startChargeTime, running_peak, power_profiles, prices
             )
