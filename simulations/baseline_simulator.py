@@ -85,17 +85,16 @@ class BaselineSimulator:
         self.verbose = verbose
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
-        # TODO: can this be negative? I thought there was a penalty only when
-        # the current peak is higher than the running peak
-        return cp.Constant(self.cost_dc) * (current_daily_peak - running_monthly_peak)
+        # having to use cp.maximum is much slower than putting this max into inequality constraints
+        return cp.Constant(self.cost_dc) * cp.maximum(
+            current_daily_peak - running_monthly_peak, 0
+        )
 
     def get_J(
         self,
         u: cp.Variable,
         z: list,
         v: np.ndarray,
-        p_dc_sch: cp.Variable,
-        p_dc_reg: cp.Variable,
         sub_df: pd.DataFrame,
         current_time: pd.Timestamp,
         running_peak: float,
@@ -111,7 +110,7 @@ class BaselineSimulator:
             v: array with softmax results [sm_c, sm_uc, sm_y] (sm_y = leave)
             p_dc_sch: cvxpy variable which represents the peak power if the most recent user chooses scheduled
             p_dc_reg: cvxpy variable which represents the peak power if the most recent user chooses regular
-            sub_df: dataframe containing rows of sessions_df that represent active sessions at the time of optimization
+            sub_df: DataFrame containing rows of sessions_df that represent active sessions at the time of optimization
             current_time: time of optimization
             running_peak: running peak power this billing cycle
             power_profiles: dictionary mapping dcosIds to power_profiles
@@ -198,14 +197,14 @@ class BaselineSimulator:
 
         J_scheduled = (
             (new_sch_obj + existing_sch_obj + existing_reg_obj)
-            + self.get_dc_penalty(p_dc_sch, running_peak)
+            + self.get_dc_penalty(current_peak_sch, running_peak)
         ) * cp.Constant(v[0])
         J_regular = (
             (
                 new_reg_obj
                 + existing_sch_obj
                 + existing_reg_obj
-                + self.get_dc_penalty(p_dc_reg, running_peak)
+                + self.get_dc_penalty(current_peak_reg, running_peak)
             )
         ) * cp.Constant(v[1])
         J_leave = (new_leave_obj + existing_sch_obj + existing_reg_obj) * cp.Constant(
@@ -228,7 +227,6 @@ class BaselineSimulator:
                 new_reg_obj,
                 existing_sch_obj,
                 existing_reg_obj,
-                self.cost_dc * (p_dc_sch - running_peak),
             ],
             current_peak_sch,
             current_peak_reg,
@@ -250,7 +248,7 @@ class BaselineSimulator:
         Inputs:
             z: array where [tariff_flex, tariff_asap, tariff_overstay, leave = 1]
             v: array with softmax results [sm_c, sm_uc, sm_y] (sm_y = leave)
-            sub_df: dataframe containing rows of sessions_df that represent active \
+            sub_df: DataFrame containing rows of sessions_df that represent active \
                 sessions at the time of optimization
             current_time: time of optimization
             running_peak: running peak power this billing cycle
@@ -308,8 +306,6 @@ class BaselineSimulator:
         u = cp.Variable(
             shape=(self.var_dim_constant * num_sch_user, 1)
         )  # charging profile (extra scheduled user profile added in case new user chooses scheduled
-        p_dc_sch = cp.Variable(shape=1)
-        p_dc_reg = cp.Variable(shape=1)
 
         ### Constraints incorporate all SCH users
         constraints = [u >= 0, u <= self.power_rate]
@@ -339,20 +335,12 @@ class BaselineSimulator:
             u,
             z,
             v,
-            p_dc_sch,
-            p_dc_reg,
             sub_df,
             current_time,
             running_peak,
             power_profiles,
             prices,
         )
-
-        # Demand charge constraints
-        constraints += [running_peak <= p_dc_sch]
-        constraints += [running_peak <= p_dc_reg]
-        constraints += [current_peak_sch <= p_dc_sch]
-        constraints += [current_peak_reg <= p_dc_reg]
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
@@ -365,8 +353,6 @@ class BaselineSimulator:
         return (
             u.value,
             e_delivered.value,
-            p_dc_sch.value[0],
-            p_dc_reg.value[0],
             current_peak_sch.value,
             current_peak_reg.value,
             J,
@@ -387,7 +373,7 @@ class BaselineSimulator:
             current_time: time of optimization
             running_peak: running peak power this billing cycle
             power_profiles: dictionary mapping dcosIds to power_profiles
-            prices: dictionary mapping dcodIds to (sch_price, reg_price) tuples
+            prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
         sub_df = self.test_df[
             pd.to_datetime(self.test_df["startChargeTime"]) <= current_time
@@ -401,6 +387,7 @@ class BaselineSimulator:
 
         assert len(sub_df) > 0, "sub_df is empty, nothing to grid search over!"
 
+        # TODO: Grid search below can be parallelized
         grid_search_results = {}
         for z_sch_k, z_reg_k in self.tariff_grid:
             zk = [z_sch_k, z_reg_k, 1, 1]
@@ -411,8 +398,6 @@ class BaselineSimulator:
             (
                 uk_flex,
                 e_delivered,
-                p_dc_sch_k,
-                p_dc_reg_k,
                 current_peak_sch,
                 current_peak_reg,
                 J,
@@ -427,8 +412,6 @@ class BaselineSimulator:
                 "J_arr": J_array,  # values of J_0=J_schedule, J_1=J_regular, J_2=J_leave, new_sch_obj, new_reg_obj, existing_sch_obj, existing_reg_obj, dc_charge_sch
                 "u": uk_flex,
                 "v": vk,  # array with probabilities of each choice [sch, reg, leave]
-                "p_dc_sch_k": p_dc_sch_k,
-                "p_dc_reg_k": p_dc_reg_k,
                 "current_peak_sch": current_peak_sch,
                 "current_peak_reg": current_peak_reg,
             }
@@ -458,10 +441,14 @@ class BaselineSimulator:
             min_J_arr = grid_search_results[optimal_prices]["J_arr"]
             u = grid_search_results[optimal_prices]["u"]
             v = grid_search_results[optimal_prices]["v"]
-            dc_sch = grid_search_results[optimal_prices]["p_dc_sch_k"]
-            dc_reg = grid_search_results[optimal_prices]["p_dc_reg_k"]
-            current_peak_sch = grid_search_results[optimal_prices]["current_peak_sch"]
-            current_peak_reg = grid_search_results[optimal_prices]["current_peak_reg"]
+            # dc_sch = grid_search_results[optimal_prices]["p_dc_sch_k"]
+            # dc_reg = grid_search_results[optimal_prices]["p_dc_reg_k"]
+            current_peak_sch = grid_search_results[optimal_prices][
+                "current_peak_sch"
+            ].item()
+            current_peak_reg = grid_search_results[optimal_prices][
+                "current_peak_reg"
+            ].item()
 
             num_sch_user = 0
             for index, row in (
@@ -510,14 +497,15 @@ class BaselineSimulator:
             else:
                 choice = last_row["choice"]
 
+            previous_running_peak = running_peak
             if choice == "SCHEDULED":
-                running_peak = max(running_peak, dc_sch)
+                running_peak = max(previous_running_peak, current_peak_sch)
                 power_profiles[last_row["dcosId"]] = u[
                     : self.var_dim_constant
                 ].flatten()
                 num_sch_user += 1
             else:
-                running_peak = max(running_peak, dc_reg)
+                running_peak = max(previous_running_peak, current_peak_reg)
                 TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = (
                     get_timestep_info(last_row, startChargeTime, self.delta_t)
                 )
@@ -557,13 +545,13 @@ class BaselineSimulator:
                 print("Number of active sessions:", len(sub_df))
                 print(
                     "Current peak options (scheduled, regular):",
-                    np.round(current_peak_sch, 2),
-                    np.round(current_peak_reg, 2),
+                    round(current_peak_sch, 2),
+                    round(current_peak_reg, 2),
                 )
                 print(
                     "Running DC options (scheduled, regular):",
-                    round(dc_sch, 2),
-                    round(dc_reg, 2),
+                    round(max(previous_running_peak, current_peak_sch), 2),
+                    round(max(previous_running_peak, current_peak_reg), 2),
                 )
                 print("Peak thus far", round(running_peak, 2))
                 print(
