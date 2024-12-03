@@ -56,7 +56,7 @@ def get_simulator(
         scenario (_type_): _description_
     """
     # TODO this function returns different children of BaselineSimulator once we implement them (conditioned on scenario)
-    if scenario == 'all_sch':
+    if scenario == 'all_scheduled':
         return BaselineSimulator(
             data,
             var_dim_constant,
