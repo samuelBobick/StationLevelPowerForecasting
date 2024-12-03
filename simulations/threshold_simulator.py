@@ -174,7 +174,7 @@ class ThresholdSimulator(BaselineSimulator):
             prob = cp.Problem(obj, constraints)
             prob.solve()
 
-            while running_peak <= self.power_rate * 8 and prob.status != "optimal":
+            while running_peak <= self.power_rate * 8 - self.step and prob.status != "optimal":
                 # Increment the hard threshold constraints by self.step
                 constraints = constraints[:-2]
                 running_peak += self.step
