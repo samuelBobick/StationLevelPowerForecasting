@@ -79,7 +79,7 @@ def get_new_reg_obj(row, z, delta_t, TOU, power_rate, flexibility_constant):
 
 def get_power_profile_idx(row, current_time, delta_t):
     """
-    Helper function to get the current index of the power profile (i.e. how many timeseteps has the EV been charging so far)
+    Helper function to get the current index of the power profile (i.e. how many timesteps has the EV been charging so far)
 
         row: row from sessions_df
         current_time: time of optimization as a pd.datetime object
@@ -169,7 +169,7 @@ def get_profit(test_df, power_profiles, prices, delta_t, TOU):
         Inputs:
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power_profiles
-        prices: dictionary mapping dcodIds to (sch_price, reg_price) tuples
+        prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         delta_t: timestep size, in hours
         TOU: electricity price time series, with TOU[0] representing the price at midnight, in units of cents/kWh
     """
@@ -200,7 +200,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power profiles
         power_rate: max power of a single EV charger, in kW
-        prices: dictionary mapping dcodIds to (sch_price, reg_price) tuples
+        prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         TOU: electricity price time series, with TOU[0] representing the price at midnight, in units of cents/kWh
         delta_t: timestep size, in hours
     """
