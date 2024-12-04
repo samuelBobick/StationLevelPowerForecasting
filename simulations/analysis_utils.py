@@ -46,7 +46,7 @@ def get_simulator(
     flexibility_constant: float = 0.57,
     tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
     custom_cost_dc: Optional[float] = 500,
-    step: Optional[float] = 2,
+    step: Optional[float] = 1,
     monte_carlo: bool = False,
     verbose: bool = False,
 ):
