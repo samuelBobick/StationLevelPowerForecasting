@@ -252,102 +252,7 @@ class BaselineSimulator:
             power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
-        e_need_lst = []
-        N_remain_lst = []
-        price_lst = []
-
-        last_row = sub_df.iloc[-1]
-        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
-            last_row, current_time, self.delta_t
-        )
-        e_need = get_e_need(
-            last_row,
-            current_time,
-            power_profiles,
-            self.delta_t,
-            self.power_rate,
-            self.flexibility_constant,
-        )
-        e_need_lst.append(e_need)
-        N_remain_lst.append(N_remain)
-
-        for index, row in (
-            sub_df.iloc[:-1].loc[sub_df["choice"] == "SCHEDULED"].iterrows()
-        ):
-            TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
-                row, current_time, self.delta_t
-            )
-            e_need = get_e_need(
-                row,
-                current_time,
-                power_profiles,
-                self.delta_t,
-                self.power_rate,
-                self.flexibility_constant,
-            )
-            e_need_lst.append(e_need)
-            N_remain_lst.append(N_remain)
-
-            if prices[row["dcosId"]]:
-                price_lst.append(prices[row["dcosId"]])
-            else:
-                price_lst.append(row["sch_centsPerHr"])
-
-        # TODO: is this cleaner than `len(e_need_lst)`?
-        num_sch_user = sub_df.loc[sub_df["choice"] == "SCHEDULED"].shape[0]
-
-        ### Decision Variables
-        e_delivered = cp.Variable(
-            shape=((self.var_dim_constant + 1) * num_sch_user, 1)
-        )  # energy delivered
-        u = cp.Variable(
-            shape=(self.var_dim_constant * num_sch_user, 1)
-        )  # charging profile (extra scheduled user profile added in case new user chooses scheduled
-        p_dc_sch = cp.Variable(shape=1)
-        p_dc_reg = cp.Variable(shape=1)
-
-        ### Constraints incorporate all SCH users
-        constraints = [u >= 0, u <= self.power_rate]
-
-        # Iterate through all existing flex users
-        for i in range(num_sch_user):
-            e_need = e_need_lst[i]
-            N_remain = N_remain_lst[i]
-
-            # For now we don't have sessions longer than 1 day, but we
-            # add that check in case it happens in the future
-            assert N_remain <= self.var_dim_constant, (
-                f"This session lasts {N_remain} timesteps, which is longer than the power profile dimension {self.var_dim_constant}."
-                "Please check the length of the sessions or make the power profile longer in the optimizer."
-            )
-
-            u_start = int(i * self.var_dim_constant)
-            u_end = int(i * self.var_dim_constant + N_remain)
-
-            constraints += [cp.sum(u[u_start:u_end]) == e_need]
-            # The user is only plugged in between u_start and u_end so below,
-            # so we constraint the timesteps that the user is not plug in to 0
-            constraints += [u[u_end : u_start + self.var_dim_constant] == 0]
-
-        ### Solve
-        J, J_array, current_peak_sch, current_peak_reg = self.get_J(
-            u,
-            z,
-            v,
-            p_dc_sch,
-            p_dc_reg,
-            sub_df,
-            current_time,
-            running_peak,
-            power_profiles,
-            prices,
-        )
-
-        # Demand charge constraints
-        constraints += [running_peak <= p_dc_sch]
-        constraints += [running_peak <= p_dc_reg]
-        constraints += [current_peak_sch <= p_dc_sch]
-        constraints += [current_peak_reg <= p_dc_reg]
+        u, e_delivered, J, J_array, p_dc_sch, p_dc_reg, current_peak_sch, current_peak_reg, constraints = self.initialize_problem(z, v, sub_df, current_time, running_peak, power_profiles, prices)
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
@@ -620,3 +525,115 @@ class BaselineSimulator:
                 # print('')
 
         return power_profiles, prices, hourly_prices
+
+    def initialize_problem(self, z, v, sub_df, current_time, running_peak, power_profiles, prices):
+        """Helper function to return the cvxpy variables to solve the optimization problem.
+
+        Inputs:
+            z: array where [tariff_flex, tariff_asap, tariff_overstay, leave = 1]
+            v: array with softmax results [sm_c, sm_uc, sm_y] (sm_y = leave)
+            sub_df: dataframe containing rows of sessions_df that represent active \
+                sessions at the time of optimization
+            current_time: time of optimization
+            running_peak: running peak power this billing cycle
+            power_profiles: dictionary mapping dcosIds to power_profiles
+            prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
+        """
+
+        e_need_lst = []
+        N_remain_lst = []
+        price_lst = []
+
+        last_row = sub_df.iloc[-1]
+        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+            last_row, current_time, self.delta_t
+        )
+        e_need = get_e_need(
+            last_row,
+            current_time,
+            power_profiles,
+            self.delta_t,
+            self.power_rate,
+            self.flexibility_constant,
+        )
+        e_need_lst.append(e_need)
+        N_remain_lst.append(N_remain)
+
+        for index, row in (
+            sub_df.iloc[:-1].loc[sub_df["choice"] == "SCHEDULED"].iterrows()
+        ):
+            TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+                row, current_time, self.delta_t
+            )
+            e_need = get_e_need(
+                row,
+                current_time,
+                power_profiles,
+                self.delta_t,
+                self.power_rate,
+                self.flexibility_constant,
+            )
+            e_need_lst.append(e_need)
+            N_remain_lst.append(N_remain)
+
+            if prices[row["dcosId"]]:
+                price_lst.append(prices[row["dcosId"]])
+            else:
+                price_lst.append(row["sch_centsPerHr"])
+
+        num_sch_user = len(e_need_lst)
+
+        ### Decision Variables
+        e_delivered = cp.Variable(
+            shape=((self.var_dim_constant + 1) * num_sch_user, 1)
+        )  # energy delivered
+        u = cp.Variable(
+            shape=(self.var_dim_constant * num_sch_user, 1)
+        )  # charging profile (extra scheduled user profile added in case new user chooses scheduled
+        p_dc_sch = cp.Variable(shape=1)
+        p_dc_reg = cp.Variable(shape=1)
+
+        ### Constraints incorporate all SCH users
+        constraints = [u >= 0, u <= self.power_rate]
+
+        # Iterate through all existing flex users
+        for i in range(num_sch_user):
+            e_need = e_need_lst[i]
+            N_remain = N_remain_lst[i]
+
+            # For now we don't have sessions longer than 1 day, but we
+            # add that check in case it happens in the future
+            assert N_remain <= self.var_dim_constant, (
+                f"This session lasts {N_remain} timesteps, which is longer than the power profile dimension {self.var_dim_constant}."
+                "Please check the length of the sessions or make the power profile longer in the optimizer."
+            )
+
+            u_start = int(i * self.var_dim_constant)
+            u_end = int(i * self.var_dim_constant + N_remain)
+
+            constraints += [cp.sum(u[u_start:u_end]) == e_need]
+            # The user is only plugged in between u_start and u_end so below,
+            # so we constraint the timesteps that the user is not plug in to 0
+            constraints += [u[u_end : u_start + self.var_dim_constant] == 0]
+
+        ### Solve
+        J, J_array, current_peak_sch, current_peak_reg = self.get_J(
+            u,
+            z,
+            v,
+            p_dc_sch,
+            p_dc_reg,
+            sub_df,
+            current_time,
+            running_peak,
+            power_profiles,
+            prices,
+        )
+
+        # Demand charge constraints
+        constraints += [running_peak <= p_dc_sch]
+        constraints += [running_peak <= p_dc_reg]
+        constraints += [current_peak_sch <= p_dc_sch]
+        constraints += [current_peak_reg <= p_dc_reg]
+
+        return u, e_delivered, J, J_array, p_dc_sch, p_dc_reg, current_peak_sch, current_peak_reg, constraints
