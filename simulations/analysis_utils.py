@@ -1,14 +1,19 @@
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 import pandas as pd
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import TypeTariffName
+from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
 from utils import aggregate_power_profiles, get_profit, get_session_results
 
+TypeScenario = Literal[
+    "all_scheduled", "all_regular", "standard", "smooth_dc_penalty", "threshold"
+]
 
-def filter_data(data, month, year, scenario):
+
+def filter_data(data, month, year, scenario: TypeScenario):
     """Helper function to filter the sessions dataframe
 
     Args:
@@ -33,13 +38,15 @@ def filter_data(data, month, year, scenario):
         test_df["choice"] = "SCHEDULED"
     elif scenario == "all_regular":
         test_df["choice"] = "REGULAR"
+    else:
+        print("INFO: Using historical choices")
 
     return test_df
 
 
 def get_simulator(
     data,
-    scenario,
+    scenario: TypeScenario,
     var_dim_constant: int = 96,
     delta_t: float = 0.25,
     power_rate: float = 6.6,
@@ -68,6 +75,18 @@ def get_simulator(
             monte_carlo,
             verbose,
         )
+    elif scenario == "smooth_dc_penalty":
+        return SmoothDCPenaltySimulator(
+            data,
+            var_dim_constant,
+            delta_t,
+            power_rate,
+            flexibility_constant,
+            tariff_name,
+            custom_cost_dc,
+            monte_carlo,
+            verbose,
+        )
     elif scenario == "threshold":
         return ThresholdSimulator(
             data,
@@ -81,6 +100,10 @@ def get_simulator(
             verbose,
             step,
         )
+    else:
+        raise ValueError(
+            "Invalid scenario name in get_simulator. Please refer to TypeScenario."
+        )
 
 
 def generate_session_results(
@@ -92,7 +115,7 @@ def generate_session_results(
         sim (BaselineSimulator): simulator
         month (int): month, as an integer. 1 = Jan, 2 = Feb, ...
         results_file_name (string): filepath to store result dataframe
-        summary_file_name (string): filepath of summary dataframe. If summart dataframe doesn't exists, creates a .csv file here.
+        summary_file_name (string): filepath of summary dataframe. If summary dataframe doesn't exists, creates a .csv file here.
         verbose (bool, optional): _description_. Defaults to False. If true, prints summary information.
     """
     power_profiles, prices, hourly_prices = sim.simulate()
@@ -128,7 +151,10 @@ def generate_session_results(
 
     if os.path.exists(summary_file_name):
         summary_df = pd.read_csv(summary_file_name)
-        summary_df = summary_df.append(row, ignore_index=True)
+        summary_df = pd.concat(
+            [summary_df, pd.DataFrame([row], columns=summary_df.columns)],
+            ignore_index=True,
+        )
     else:
         columns = [
             "Month",
@@ -136,8 +162,8 @@ def generate_session_results(
             "Charging Revenue (cents)",
             "TOU Cost (cents)",
             "Demand Charge (cents)",
-            "Peak Power (kWh)",
-            "Energy Delivered (kW)",
+            "Peak Power (kW)",
+            "Energy Delivered (kWh)",
             "Aggregate Power Profile (kW)",
         ]
 

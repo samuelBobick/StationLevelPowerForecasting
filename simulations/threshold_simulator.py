@@ -84,8 +84,6 @@ class ThresholdSimulator(BaselineSimulator):
             e_delivered,
             J,
             J_array,
-            p_dc_sch,
-            p_dc_reg,
             current_peak_sch,
             current_peak_reg,
             constraints,
@@ -94,8 +92,8 @@ class ThresholdSimulator(BaselineSimulator):
         )
 
         # Hard threshold constraint
-        constraints += [p_dc_sch <= running_peak]
-        constraints += [p_dc_reg <= running_peak]
+        constraints += [current_peak_sch <= running_peak]
+        constraints += [current_peak_reg <= running_peak]
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
@@ -105,8 +103,8 @@ class ThresholdSimulator(BaselineSimulator):
             # Increment the hard threshold constraints by self.step
             constraints = constraints[:-2]
             running_peak += self.step
-            constraints += [p_dc_sch <= running_peak]
-            constraints += [p_dc_reg <= running_peak]
+            constraints += [current_peak_sch <= running_peak]
+            constraints += [current_peak_reg <= running_peak]
 
             obj = cp.Minimize(J)
             prob = cp.Problem(obj, constraints)
@@ -118,8 +116,6 @@ class ThresholdSimulator(BaselineSimulator):
         return (
             u.value,
             e_delivered.value,
-            p_dc_sch.value[0],
-            p_dc_reg.value[0],
             current_peak_sch.value,
             current_peak_reg.value,
             J,

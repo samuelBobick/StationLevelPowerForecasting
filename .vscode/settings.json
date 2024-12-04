@@ -1,0 +1,21 @@
+{
+    "cSpell.words": [
+        "argmin",
+        "dataframe",
+        "dcos"
+    ],
+    "python.analysis.fixAll": [
+        "source.unusedImports"
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.codeActionsOnSave": {
+            "source.organizeImports.ruff": "explicit",
+            "source.fixAll.ruff": "explicit"
+        }
+    },
+    "editor.formatOnSave": true,
+    "notebook.formatOnSave.enabled": true,
+    "notebook.formatOnCellExecution": true,
+}
