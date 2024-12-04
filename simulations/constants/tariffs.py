@@ -15,7 +15,7 @@ TypeTariffName = Literal[
 ]
 
 # TOU A-10 Primary Tariff June 2023
-tou_a20p = np.ones((96,)) * 24.7  # off-peak cents/kWh
+tou_a20p = np.ones((96,)) * 24.7  # on-peak cents/kWh
 tou_a20p[:34] = 22.2  # off-peak
 tou_a20p[86:] = 22.2  # 9:30pm super off-peak
 tariff_A_10_primary_062023: TypeTariff = {"cost_dc": 1942, "TOU": tou_a20p}

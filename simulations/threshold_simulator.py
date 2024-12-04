@@ -1,21 +1,11 @@
-from baseline_simulator import BaselineSimulator
 from typing import Optional
 
 import cvxpy as cp
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
-from constants.dcm import get_dcm_theta
-from constants.tariffs import DICT_TARIFFS, TypeTariffName
-from scipy.special import softmax
-from tqdm.auto import tqdm
-from utils import (
-    get_e_need,
-    get_new_reg_obj,
-    get_new_sch_obj,
-    get_timestep_info,
-)
+from baseline_simulator import BaselineSimulator
+from constants.tariffs import TypeTariffName
+
 
 class ThresholdSimulator(BaselineSimulator):
     def __init__(
@@ -29,7 +19,7 @@ class ThresholdSimulator(BaselineSimulator):
         custom_cost_dc: Optional[float] = 500,
         monte_carlo: bool = False,
         verbose: bool = False,
-        step: int = 1
+        step: float = 1,
     ):
         """
         Initialize child of BaselineSimulator which iteratively attempts to optimize with a hard threshold peak power threshold
@@ -61,7 +51,7 @@ class ThresholdSimulator(BaselineSimulator):
             tariff_name,
             custom_cost_dc,
             monte_carlo,
-            verbose
+            verbose,
         )
 
         self.step = step
@@ -89,7 +79,19 @@ class ThresholdSimulator(BaselineSimulator):
             power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
-        u, e_delivered, J, J_array, p_dc_sch, p_dc_reg, current_peak_sch, current_peak_reg, constraints = self.initialize_problem(z, v, sub_df, current_time, running_peak, power_profiles, prices)
+        (
+            u,
+            e_delivered,
+            J,
+            J_array,
+            p_dc_sch,
+            p_dc_reg,
+            current_peak_sch,
+            current_peak_reg,
+            constraints,
+        ) = self.initialize_problem(
+            z, v, sub_df, current_time, running_peak, power_profiles, prices
+        )
 
         # Hard threshold constraint
         constraints += [p_dc_sch <= running_peak]
@@ -97,7 +99,7 @@ class ThresholdSimulator(BaselineSimulator):
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
-        prob.solve()
+        prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
 
         while running_peak <= self.power_rate * 8 and prob.status != "optimal":
             # Increment the hard threshold constraints by self.step
@@ -108,20 +110,18 @@ class ThresholdSimulator(BaselineSimulator):
 
             obj = cp.Minimize(J)
             prob = cp.Problem(obj, constraints)
-            prob.solve()
+            prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
 
-            if prob.status != "optimal":
-                print(prob.status)
-                print("Gurobi failed, cant solve for power")
-                prob.solve(solver="GUROBI", verbose=True)
+        if prob.status != "optimal":
+            raise Exception(f"Optimization failed with status {prob.status}")
 
-            return (
-                u.value,
-                e_delivered.value,
-                p_dc_sch.value[0],
-                p_dc_reg.value[0],
-                current_peak_sch.value,
-                current_peak_reg.value,
-                J,
-                J_array,
-            )
+        return (
+            u.value,
+            e_delivered.value,
+            p_dc_sch.value[0],
+            p_dc_reg.value[0],
+            current_peak_sch.value,
+            current_peak_reg.value,
+            J,
+            J_array,
+        )

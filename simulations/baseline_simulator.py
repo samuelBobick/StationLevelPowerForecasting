@@ -252,15 +252,25 @@ class BaselineSimulator:
             power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
-        u, e_delivered, J, J_array, p_dc_sch, p_dc_reg, current_peak_sch, current_peak_reg, constraints = self.initialize_problem(z, v, sub_df, current_time, running_peak, power_profiles, prices)
+        (
+            u,
+            e_delivered,
+            J,
+            J_array,
+            p_dc_sch,
+            p_dc_reg,
+            current_peak_sch,
+            current_peak_reg,
+            constraints,
+        ) = self.initialize_problem(
+            z, v, sub_df, current_time, running_peak, power_profiles, prices
+        )
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
-        prob.solve()
+        prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
         if prob.status != "optimal":
-            print(prob.status)
-            print("Gurobi failed, cant solve for power")
-            prob.solve(solver="GUROBI", verbose=True)
+            raise Exception(f"Optimization failed with status {prob.status}")
 
         return (
             u.value,
@@ -526,7 +536,9 @@ class BaselineSimulator:
 
         return power_profiles, prices, hourly_prices
 
-    def initialize_problem(self, z, v, sub_df, current_time, running_peak, power_profiles, prices):
+    def initialize_problem(
+        self, z, v, sub_df, current_time, running_peak, power_profiles, prices
+    ):
         """Helper function to return the cvxpy variables to solve the optimization problem.
 
         Inputs:
@@ -636,4 +648,14 @@ class BaselineSimulator:
         constraints += [current_peak_sch <= p_dc_sch]
         constraints += [current_peak_reg <= p_dc_reg]
 
-        return u, e_delivered, J, J_array, p_dc_sch, p_dc_reg, current_peak_sch, current_peak_reg, constraints
+        return (
+            u,
+            e_delivered,
+            J,
+            J_array,
+            p_dc_sch,
+            p_dc_reg,
+            current_peak_sch,
+            current_peak_reg,
+            constraints,
+        )
