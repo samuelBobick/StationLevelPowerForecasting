@@ -4,6 +4,7 @@ from typing import Optional
 import pandas as pd
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import TypeTariffName
+from threshold_simulator import ThresholdSimulator
 from utils import aggregate_power_profiles, get_profit, get_session_results
 
 
@@ -45,6 +46,7 @@ def get_simulator(
     flexibility_constant: float = 0.57,
     tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
     custom_cost_dc: Optional[float] = 500,
+    step: Optional[float] = 1,
     monte_carlo: bool = False,
     verbose: bool = False,
 ):
@@ -54,19 +56,32 @@ def get_simulator(
         scenario (_type_): _description_
     """
     # TODO this function returns different children of BaselineSimulator once we implement them (conditioned on scenario)
-    sim = BaselineSimulator(
-        data,
-        var_dim_constant,
-        delta_t,
-        power_rate,
-        flexibility_constant,
-        tariff_name,
-        custom_cost_dc,
-        monte_carlo,
-        verbose,
-    )
+    if scenario == 'all_scheduled':
+        return BaselineSimulator(
+            data,
+            var_dim_constant,
+            delta_t,
+            power_rate,
+            flexibility_constant,
+            tariff_name,
+            custom_cost_dc,
+            monte_carlo,
+            verbose
+        )
+    elif scenario == 'threshold':
+        return ThresholdSimulator(
+            data,
+            var_dim_constant,
+            delta_t,
+            power_rate,
+            flexibility_constant,
+            tariff_name,
+            custom_cost_dc,
+            monte_carlo,
+            verbose,
+            step
+        )
 
-    return sim
 
 
 def generate_session_results(
