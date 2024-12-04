@@ -29,7 +29,7 @@ def filter_data(data, month, year, scenario):
     test_df = test_df[test_df["DurationHrs"] > 0.5]
     test_df = test_df[test_df["cumEnergy_Wh"] > 0]
 
-    if scenario in ["all_scheduled", "threshold"]:
+    if scenario == "all_scheduled":
         test_df["choice"] = "SCHEDULED"
     elif scenario == "all_regular":
         test_df["choice"] = "REGULAR"
