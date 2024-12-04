@@ -7,7 +7,7 @@ from constants.tariffs import TypeTariffName
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from utils import aggregate_power_profiles, get_profit, get_session_results
 
-TypeScenario = Literal["all_scheduled", "all_regular", "smooth_dc_penalty"]
+TypeScenario = Literal["all_scheduled", "all_regular", "standard", "smooth_dc_penalty"]
 
 
 def filter_data(data, month, year, scenario: TypeScenario):
@@ -31,14 +31,12 @@ def filter_data(data, month, year, scenario: TypeScenario):
     test_df = test_df[test_df["DurationHrs"] > 0.5]
     test_df = test_df[test_df["cumEnergy_Wh"] > 0]
 
-    if scenario in ["all_scheduled", "smooth_dc_penalty"]:
+    if scenario == "all_scheduled":
         test_df["choice"] = "SCHEDULED"
     elif scenario == "all_regular":
         test_df["choice"] = "REGULAR"
     else:
-        raise ValueError(
-            "Invalid scenario name in filter_data. Please refer to TypeScenario."
-        )
+        print("INFO: Using historical choices")
 
     return test_df
 
@@ -61,7 +59,7 @@ def get_simulator(
         scenario (_type_): _description_
     """
     # TODO this function returns different children of BaselineSimulator once we implement them (conditioned on scenario)
-    if scenario in ["all_scheduled", "all_regular"]:
+    if scenario in ["all_scheduled", "all_regular", "standard"]:
         return BaselineSimulator(
             data,
             var_dim_constant,

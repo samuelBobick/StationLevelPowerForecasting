@@ -300,7 +300,7 @@ class BaselineSimulator:
                 price_lst.append(row["sch_centsPerHr"])
 
         # TODO: is this cleaner than `len(e_need_lst)`?
-        num_sch_user = sub_df.loc[sub_df["choice"] == "SCHEDULED"].shape[0]
+        num_sch_user = len(e_need_lst)
 
         ### Decision Variables
         e_delivered = cp.Variable(
@@ -543,6 +543,7 @@ class BaselineSimulator:
                     hourly_optimal_prices,
                 )
                 print("Probabilities (scheduled, regular, leave):", vk)
+                print("Selected choice:", choice)
                 print("Utilities (scheduled, regular, leave):", self.theta @ zk)
                 print(
                     "Optimized delivery of",
