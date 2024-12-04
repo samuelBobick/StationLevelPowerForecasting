@@ -46,7 +46,7 @@ def get_simulator(
     flexibility_constant: float = 0.57,
     tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
     custom_cost_dc: Optional[float] = 500,
-    step: Optional[float] = 1,
+    step: float = 1,
     monte_carlo: bool = False,
     verbose: bool = False,
 ):
@@ -56,7 +56,7 @@ def get_simulator(
         scenario (_type_): _description_
     """
     # TODO this function returns different children of BaselineSimulator once we implement them (conditioned on scenario)
-    if scenario == 'all_scheduled':
+    if scenario in ["all_scheduled", "all_regular", "standard"]:
         return BaselineSimulator(
             data,
             var_dim_constant,
@@ -66,9 +66,9 @@ def get_simulator(
             tariff_name,
             custom_cost_dc,
             monte_carlo,
-            verbose
+            verbose,
         )
-    elif scenario == 'threshold':
+    elif scenario == "threshold":
         return ThresholdSimulator(
             data,
             var_dim_constant,
@@ -79,9 +79,8 @@ def get_simulator(
             custom_cost_dc,
             monte_carlo,
             verbose,
-            step
+            step,
         )
-
 
 
 def generate_session_results(
