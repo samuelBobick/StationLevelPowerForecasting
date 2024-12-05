@@ -1,0 +1,2 @@
+date,batch_size,x_dim,lookahead,time_mode,dataset,get_val_data_from_shuffled_train,error_metric,model_name,rmse,wrmse (alpha=2),wprmse (beta=3),mae,r2
+2024-12-05 10:25:30.087660,32,192,96,cyclical,slrp-ev_old,False,mse,LinearModel,6472.457501590252,11588.735594451427,9836.19022488594,4429.055991619825,0.5113503932952881
