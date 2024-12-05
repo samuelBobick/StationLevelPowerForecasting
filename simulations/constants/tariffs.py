@@ -4,6 +4,12 @@ import numpy as np
 
 # link for source of rates: https://www.pge.com/tariffs/en/rate-information/electric-rates.html#accordion-a84c67dc1e-item-69d101345a
 
+# below we set a higher demand charge rate, based on this paper:
+# https://www.nrel.gov/docs/fy17osti/68963.pdf
+# We do that because the DC rate for the BEV2S is very low
+# To prove that we can efficiently manage dc, with need a higher dc rate
+MODIFIED_DC = 2_000
+
 
 class TypeTariff(TypedDict):
     cost_dc: float  # in cents/kW

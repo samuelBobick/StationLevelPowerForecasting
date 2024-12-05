@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 import pandas as pd
 from baseline_simulator import BaselineSimulator
-from constants.tariffs import TypeTariffName
+from constants.tariffs import MODIFIED_DC, TypeTariffName
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
 from utils import aggregate_power_profiles, get_profit, get_session_results
@@ -52,7 +52,7 @@ def get_simulator(
     power_rate: float = 6.6,
     flexibility_constant: float = 0.57,
     tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
-    custom_cost_dc: Optional[float] = 500,
+    custom_cost_dc: Optional[float] = MODIFIED_DC,
     step: float = 1,
     monte_carlo: bool = False,
     verbose: bool = False,
