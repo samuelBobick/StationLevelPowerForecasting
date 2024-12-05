@@ -4,7 +4,7 @@ import cvxpy as cp
 import numpy as np
 import pandas as pd
 from baseline_simulator import BaselineSimulator
-from constants.tariffs import TypeTariffName
+from constants.tariffs import MODIFIED_DC, TypeTariffName
 
 
 class ThresholdSimulator(BaselineSimulator):
@@ -16,7 +16,7 @@ class ThresholdSimulator(BaselineSimulator):
         power_rate: float = 6.6,
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
-        custom_cost_dc: Optional[float] = 500,
+        custom_cost_dc: Optional[float] = MODIFIED_DC,
         monte_carlo: bool = False,
         verbose: bool = False,
         step: float = 1,

@@ -2,7 +2,7 @@ from typing import Optional
 
 import cvxpy as cp
 from baseline_simulator import BaselineSimulator
-from constants.tariffs import TypeTariffName
+from constants.tariffs import MODIFIED_DC, TypeTariffName
 
 
 class SmoothDCPenaltySimulator(BaselineSimulator):
@@ -14,7 +14,7 @@ class SmoothDCPenaltySimulator(BaselineSimulator):
         power_rate: float = 6.6,
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
-        custom_cost_dc: Optional[float] = 500,
+        custom_cost_dc: Optional[float] = MODIFIED_DC,
         monte_carlo: bool = False,
         verbose: bool = False,
     ):

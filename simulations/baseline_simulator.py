@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from constants.dcm import get_dcm_theta
-from constants.tariffs import DICT_TARIFFS, TypeTariffName
+from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
 from scipy.special import softmax
 from tqdm.auto import tqdm
 from utils import (
@@ -30,7 +30,7 @@ class BaselineSimulator:
         power_rate: float = 6.6,
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
-        custom_cost_dc: Optional[float] = 500,
+        custom_cost_dc: Optional[float] = MODIFIED_DC,
         monte_carlo: bool = False,
         verbose: bool = False,
     ):
