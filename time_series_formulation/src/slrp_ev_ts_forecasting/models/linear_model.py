@@ -1,6 +1,5 @@
 from typing import Literal
 
-import numpy as np
 import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 from sklearn import linear_model
@@ -35,12 +34,12 @@ class LinearModel(RegressionBaseModel):
         )
         self.alpha = alpha
         self.time_mode = time_mode
-        
+        # TODO: Do no forget to normalize the "next user power profile", dividing it by the max power (6.6)
 
     @property
     def model_str_name(self):
         return (
-            f"LinearModel"
+            "LinearModel"
             + ("_lagsOpti" if self.optimize_lags else "")
             + ("Short" if self.optimize_lags == "short_opt" else "")
             + ("Long" if self.optimize_lags == "long_opt" else "")
@@ -69,4 +68,3 @@ class LinearModel(RegressionBaseModel):
 
     def predict_model(self, model, X_test: pd.DataFrame):
         return model.predict(X_test)
-

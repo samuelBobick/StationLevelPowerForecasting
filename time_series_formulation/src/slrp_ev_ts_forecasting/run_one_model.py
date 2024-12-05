@@ -18,6 +18,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
 from slrp_ev_ts_forecasting.models.knn import KNN
 from slrp_ev_ts_forecasting.models.last_week import LastWeek
+from slrp_ev_ts_forecasting.models.linear_model import LinearModel
 from slrp_ev_ts_forecasting.models.lstm import LSTM
 from slrp_ev_ts_forecasting.models.similar_day import SimilarDay
 from slrp_ev_ts_forecasting.models.sktime_base import SktimeBaseModel
@@ -64,6 +65,11 @@ def run_one_model(
     test_eng = feature_engineering(test, normalize_parameters)
 
     dict_model: dict[TypeModelChoice, dict] = {
+        "LinearRegression": {
+            "model": LinearModel,
+            "model_params": {},
+            "fit_params": {},
+        },
         "KNN": {
             "model": KNN,
             "model_params": {},

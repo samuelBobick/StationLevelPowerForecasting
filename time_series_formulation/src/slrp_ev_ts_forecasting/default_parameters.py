@@ -27,10 +27,11 @@ TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if pos
 ERROR_METRIC: TypeErrorMetric = "mse"
 
 TypeDataSet = Literal["slrp-ev_old", "ucsd-all_garages"]
-DATASET: TypeDataSet = "ucsd-all_garages"
+DATASET: TypeDataSet = "slrp-ev_old"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = False
 
 TypeModelChoice = Literal[
+    "LinearRegression",
     "KNN",
     "XGBoost",
     "Basic_NN",
