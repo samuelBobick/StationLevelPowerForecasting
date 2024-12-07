@@ -1,11 +1,9 @@
-from slrp_ev_ts_forecasting.default_parameters import (
-    TypeModelChoice,
-)
+from slrp_ev_ts_forecasting.default_parameters import TypeDataSet, TypeModelChoice
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
 model_choices: list[TypeModelChoice] = ["LinearRegression"]
 number_of_models_per_config = 1
-
+dataset: TypeDataSet = "slrp-ev_new"
 
 if __name__ == "__main__":
     for model_choice in model_choices:
@@ -21,4 +19,5 @@ if __name__ == "__main__":
                                 # "batch_norm": batch_norm,
                             },  #
                             save_results_filename="results_linear_model",
+                            dataset=dataset,
                         )

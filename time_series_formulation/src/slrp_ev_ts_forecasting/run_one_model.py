@@ -1,7 +1,12 @@
 from sktime.forecasting.arima import ARIMA, AutoARIMA
 from sktime.forecasting.ets import AutoETS
 from sktime.forecasting.fbprophet import Prophet
-from slrp_ev_data import read_old_data, read_ucsd_data, train_test_split
+from slrp_ev_data import (
+    read_new_slrpev_data,
+    read_old_slrpev_data,
+    read_ucsd_data,
+    train_test_split,
+)
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
     get_train_min_and_max,
@@ -13,6 +18,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
     DATASET,
     DEFAULT_RESULTS_FILENAME,
     GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+    TypeDataSet,
     TypeModelChoice,
 )
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
@@ -33,16 +39,19 @@ def run_one_model(
     model_parameters={},
     verbose: bool = True,
     save_results_filename: str = DEFAULT_RESULTS_FILENAME,
+    dataset: TypeDataSet = DATASET,
 ) -> None:
     # Read the data
     print("# Starting...")
-    if DATASET == "slrp-ev_old":
-        data = read_old_data.read_old_data()
-    elif DATASET == "ucsd-all_garages":
+    if dataset == "slrp-ev_old":
+        data = read_old_slrpev_data.read_old_slrpev_data()
+    elif dataset == "slrp-ev_new":
+        data = read_new_slrpev_data.read_new_slrpev_data()
+    elif dataset == "ucsd-all_garages":
         data = read_ucsd_data.read_ucsd_data()
     else:
         raise ValueError(
-            f"Datset of type {DATASET} is not defined. Please refer to "
+            f"Dataset of type {dataset} is not defined. Please refer to "
             "TypeDataSet for supported datasets."
         )
 

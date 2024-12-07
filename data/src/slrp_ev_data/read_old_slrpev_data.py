@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 
-def read_old_data():
+def read_old_slrpev_data():
     data = pd.read_csv(Path(__file__).parent / "data.csv", index_col=0)
 
     # convert date and time to datetime
