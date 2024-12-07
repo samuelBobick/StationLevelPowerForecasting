@@ -17,15 +17,27 @@ def visualize_forecast(
         forecast_dates: The dates for the forecasted values.
     """
     fig = go.Figure()
+    # resample in case there is missing values
+    test_data = test_data.set_index("date").resample("15min").mean().reset_index()
     fig.add_trace(
         go.Scatter(
             x=test_data["date"], y=test_data["power"], mode="lines", name="Actual"
         )
     )
+
+    # resample in case there is missing values
+    forecast_data = (
+        pd.DataFrame({"date": forecast_dates, "power": forecast})
+        .set_index("date")
+        .resample("15min")
+        .mean()
+        .reset_index()
+    )
+
     fig.add_trace(
         go.Scatter(
-            x=forecast_dates,
-            y=forecast,
+            x=forecast_data["date"],
+            y=forecast_data["power"],
             mode="lines",
             name="Forecast",
         )

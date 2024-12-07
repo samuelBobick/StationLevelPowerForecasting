@@ -4,7 +4,7 @@ from typing import Literal, Optional
 import torch
 
 NUMBER_OF_INITIAL_MODELS = 1
-X_DIM = 96 * 2
+X_DIM = 96
 LOOKAHEAD = 96
 EPOCHS = 5
 TIME_MODE: Literal["cyclical", "window"] = "cyclical"
@@ -26,8 +26,8 @@ DEFAULT_RESULTS_FILENAME = "results"
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"
 
-TypeDataSet = Literal["slrp-ev_old", "ucsd-all_garages"]
-DATASET: TypeDataSet = "slrp-ev_old"
+TypeDataSet = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
+DATASET: TypeDataSet = "slrp-ev_new"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = False
 
 TypeModelChoice = Literal[
