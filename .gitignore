@@ -3,8 +3,8 @@
 # data package
 data/src/slrp_ev_data/darts_logs/*
 data/src/slrp_ev_data/data/UCSD_garage_datasets_PF/*
-data/src/slrp_ev_data/data/power_df_2008-2406_v241206_15min.csv
-data/src/slrp_ev_data/data/power_df_2008-2406_v241206.csv
+data/src/slrp_ev_data/data/power_df_2008-2406_v241209_15min.csv
+data/src/slrp_ev_data/data/power_df_2008-2406_v241209.csv
 
 # time series formulation package
 time_series_formulation/src/slrp_ev_ts_forecasting/runs/**
