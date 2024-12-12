@@ -1,3 +1,4 @@
+import pandas as pd
 from sktime.forecasting.arima import ARIMA, AutoARIMA
 from sktime.forecasting.ets import AutoETS
 from sktime.forecasting.fbprophet import Prophet
@@ -8,6 +9,7 @@ from slrp_ev_data import (
     train_test_split,
 )
 from slrp_ev_data.feature_engineering import (
+    convert_date_from_int_to_datetime,
     feature_engineering,
     get_train_min_and_max,
     reverse_feature_engineering,
@@ -32,6 +34,43 @@ from slrp_ev_ts_forecasting.models.tcn import TCN
 from slrp_ev_ts_forecasting.models.xgboost_model import XGBoost
 from slrp_ev_ts_forecasting.save_losses import save_losses
 from slrp_ev_ts_forecasting.visualization import visualize_forecast
+
+
+def reverse_engineer_forecast(
+    df_test_example, df_predictions, normalize_parameters
+) -> pd.DataFrame:
+    # Reverse engineer the forecast to get the original features back
+    # convert from float32 to int64
+    df_predictions["date"] = df_predictions["date"].astype("int64")
+
+    # initialize final dataframe
+    df_reversed_predictions = pd.DataFrame()
+    df_reversed_predictions["date"] = convert_date_from_int_to_datetime(
+        df_predictions["date"]
+    )
+
+    next_power_column_number = len(df_predictions.columns) - 1
+    for i in range(next_power_column_number):
+        # merge_asof performs a left merge with the closest date
+        df_reverse_helper = pd.merge_asof(
+            df_predictions[["date", f"power_{i}"]],
+            df_test_example.drop(columns=["power"]),
+            on="date",
+        ).rename(columns={f"power_{i}": "power"})
+        df_reverse_helper = df_reverse_helper.dropna(subset=["power"])
+        df_reverse_helper = reverse_feature_engineering(
+            df_reverse_helper, normalize_parameters, bypass_output_validation=True
+        )
+
+        df_reverse_helper = df_reverse_helper[["date", "power"]]
+        helper_date_mask = df_reversed_predictions["date"].isin(
+            df_reverse_helper["date"]
+        )
+        df_reversed_predictions.loc[helper_date_mask, f"power_{i}"] = df_reverse_helper[
+            "power"
+        ]
+
+    return df_reversed_predictions
 
 
 def run_one_model(
@@ -188,9 +227,9 @@ def run_one_model(
     model.fit(train_eng, val=val_eng, **dict_model[model_choice]["fit_params"])
 
     print("# Making prediction(s)...")
-    losses, forecast, forecast_dates = model.predict(test_eng)
+    losses, df_predictions = model.predict(test_eng)
 
-    data_length_days = len(forecast) // 96
+    data_length_days = df_predictions.shape[0] // 96
     losses = get_real_scale_losses(losses, normalize_parameters=normalize_parameters)
     print(
         f"{model_choice}: ",
@@ -202,20 +241,15 @@ def run_one_model(
     )
 
     # Reverse engineer the forecast to get the original features back
-    df_forecast = test_eng.copy()
-    df_forecast = df_forecast.iloc[: len(forecast)]
-    df_forecast["power"] = forecast
-    df_forecast["date"] = forecast_dates
-    df_forecast = reverse_feature_engineering(
-        df_forecast, normalize_parameters, bypass_output_validation=True
+    df_predictions = reverse_engineer_forecast(
+        test_eng, df_predictions, normalize_parameters
     )
 
     if verbose:
         visualize_forecast(
             test,
-            df_forecast["power"],
+            df_predictions,
             data_length_days,
-            forecast_dates=df_forecast["date"],
         )
 
     save_losses(losses, model_name, model_parameters, filename=save_results_filename)

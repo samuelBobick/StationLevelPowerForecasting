@@ -1,3 +1,4 @@
+import os
 from typing import TypedDict
 
 import matplotlib.pyplot as plt
@@ -11,6 +12,10 @@ from torch.utils.data import Dataset
 from .feature_engineering import reverse_feature_engineering
 
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
+
+# Set the logging level using TensorFlow's logging module, to only show errors
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+tf.get_logger().setLevel("ERROR")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Window Generator is using device: {DEVICE}")
@@ -404,7 +409,7 @@ class WindowGenerator:
         ]
         if columns_not_selected:
             print(
-                f"WARNING: The following columns will be dropped when flattening: {columns_not_selected}"
+                f"WARNING: The following columns will be dropped when flattening inputs: {columns_not_selected}"
             )
         no_user_last_keep_value = False
         if not cols_keep_last_value:
