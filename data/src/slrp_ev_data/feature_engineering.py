@@ -6,6 +6,20 @@ from .input_data_type import DataSchema, FeaturedEngineeredSchema
 COLS_TO_NORMALIZE = ["power"]
 
 
+def convert_date_from_int_to_datetime(date_column: pd.Series) -> pd.Series:
+    # Convert the date back to a Timestamp
+    date_column = pd.to_datetime(date_column, unit="s")
+    # Round dates to closest minute
+    date_column = date_column.dt.round("5min")
+    return date_column
+
+
+def convert_date_from_datetime_to_int(date_column: pd.Series) -> pd.Series:
+    # Convert the date back to a Timestamp
+    date_column = date_column.astype("int64") // 10**9
+    return date_column
+
+
 def feature_engineering(
     data_input: pd.DataFrame,
     standardize_parameters: tuple[pd.Series, pd.Series] | None = None,
@@ -58,9 +72,9 @@ def feature_engineering(
     # Convert the date to an int
     # we choose int instead of having a float, because the date magnitude (10**9)
     # is too large for a float32 (the tensorflow default dtype) to be precise
-    data["date"] = data["date"].astype("int64") // 10**9
+    data["date"] = convert_date_from_datetime_to_int(data["date"])
 
-    s_in_day = 24 * 60 * 60
+    s_in_day = 24 * 60 * 60  # number of seconds in a day
     s_in_week = 7 * s_in_day
     s_in_year = (365.2425) * s_in_day
     data["Day sin"] = np.sin(data["date"] * (2 * np.pi / s_in_day))
@@ -133,9 +147,7 @@ def reverse_feature_engineering(
     )
 
     # Convert the date back to a Timestamp
-    data["date"] = pd.to_datetime(data["date"], unit="s")
-    # Round dates to closest minute
-    data["date"] = data["date"].dt.round("5min")
+    data["date"] = convert_date_from_int_to_datetime(data["date"])
 
     # Reverse the standardization
     if normalize_parameters and standardize_parameters:
