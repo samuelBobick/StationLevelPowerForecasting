@@ -209,6 +209,7 @@ class RegressionBaseModel(Base):
             overlapping_windows = True
 
         if self.optimize_lags:
+            # TODO: Fix optimize lags for missing data
             input_width = self.index_farthest_lag
         else:
             input_width = self.x_dim
@@ -268,6 +269,8 @@ class RegressionBaseModel(Base):
             # TODO: Also add the number of active sessions as a feature? Information is
             # maybe already in the "load until the start of this session"
             # TODO: Change the loss function in the model, to better predict peaks
+            # TODO: Add all of "if new_power_profile" in a separate function
+
             # Look in sessions_df and round to the next 15-min interval
             sessions = pd.read_csv(Path(__file__).parents[4] / "data/Sessions3.csv")
             sessions["startChargeTime"] = pd.to_datetime(sessions["startChargeTime"])
@@ -309,22 +312,25 @@ class RegressionBaseModel(Base):
                 axis=1,
             )
 
+            sessions_in_samples_range = sessions.loc[
+                (sessions["startChargeTime"] >= start_dates_prediction_window.iloc[0])
+                & (
+                    sessions["startChargeTime"]
+                    <= start_dates_prediction_window.iloc[-1]
+                ),
+                ["startChargeTime", "dcosId"],
+            ]
+
             for index, row in tqdm(
-                sessions.loc[
-                    (
-                        sessions["startChargeTime"]
-                        >= start_dates_prediction_window.iloc[0]
-                    )
-                    & (
-                        sessions["startChargeTime"]
-                        <= start_dates_prediction_window.iloc[-1]
-                    ),
-                    ["startChargeTime", "dcosId"],
-                ].iterrows(),
+                sessions_in_samples_range.iterrows(),
                 "Generating Session Features",
+                total=sessions_in_samples_range.shape[0],
             ):
+                # TODO: speed up this loop. Maybe having a list of unique dcosIds in power_df,
+                # and going through the search only if the dcosId of the session is in power_df
                 dcosId = row["dcosId"]
 
+                # TODO: Do not hardcode the 96
                 power_array = np.array([None] * 96)
                 # Loop through columns and extract corresponding 'power' column based on
                 # the dcosId match
@@ -347,6 +353,7 @@ class RegressionBaseModel(Base):
                             start_charge_time_in_intervals
                             - start_charge_time_in_sessions
                         )
+                        # TODO: Do not hardcode the frequency
                         if abs(time_difference) >= pd.Timedelta(minutes=15):
                             # print(
                             #     f"WARNING: Time difference exceeds 15 minutes: {time_difference} for session {dcosId}. startChargeTime: {start_charge_time_in_sessions}. recordTimestamp: {start_charge_time_in_intervals}"
