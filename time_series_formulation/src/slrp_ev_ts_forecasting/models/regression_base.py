@@ -6,6 +6,7 @@ import pandas as pd
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_losses
 from slrp_ev_ts_forecasting.default_parameters import TypeOptimizeLags
 from slrp_ev_ts_forecasting.models.base import Base
+from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from tqdm import tqdm
 
 
@@ -406,6 +407,26 @@ class RegressionBaseModel(Base):
             flat_inputs = merged_inputs_dates_sessions[
                 list(flat_inputs.columns) + [f"u_{i+1}" for i in range(96)]
             ]
+            print(flat_labels[flat_labels.isna().any(axis=1)])
+            if peak_prediction:
+                dates_to_extract = merged_inputs_dates_sessions["startChargeTime"].dt.date
+
+                y_max = []
+                for d in dates_to_extract:
+                    day_timeseries = power_df[pd.to_datetime(power_df['recordTimestamp']).dt.date == d]['totalPower']
+                    print('d', d)
+                    print(day_timeseries)
+                    y_max.append(day_timeseries.max())
+                    # print(day_timeseries.max())
+                    assert not pd.isna(day_timeseries.max())
+
+                assert len(y_max) == len(flat_labels), f'{len(y_max)}, {len(flat_labels)}'
+
+                flat_labels = pd.DataFrame(index=flat_inputs.index, columns={'y_max' : y_max})
+            print(flat_labels[flat_labels.isna().any(axis=1)])
+
+            flat_inputs.to_csv('flat_inputs.csv')
+            flat_labels.to_csv('flat_labels.csv')
 
         if return_y_date:
             if new_power_profile:
