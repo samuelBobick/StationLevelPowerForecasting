@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import cvxpy as cp
 import matplotlib.pyplot as plt
@@ -83,6 +83,8 @@ class BaselineSimulator:
         # Default simulation options
         self.monte_carlo = monte_carlo
         self.verbose = verbose
+
+        self.aggregate_power_profile = pd.DataFrame(columns=['date', 'power'])
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
         # having to use cp.maximum is much slower than putting this max into inequality constraints
@@ -181,9 +183,7 @@ class BaselineSimulator:
         )
         new_leave_obj = 0
 
-        current_peak_sch = self.power_rate * num_reg_user + cp.max(
-            sch_power_sum_profile
-        )
+        current_peak_sch = self.get_current_peak_sch(num_reg_user, sch_power_sum_profile)
         # add the + 1 because we imagine that the new user is regular here
         # the second term is basically the max power from the current scheduled users
         # (without considering that the new user is scheduled)
@@ -232,6 +232,21 @@ class BaselineSimulator:
             current_peak_sch,
             current_peak_reg,
         )
+
+    def get_current_peak_sch(self, num_reg_user, sch_power_sum_profile) -> cp.Expression:
+        """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
+
+        Args:
+            num_reg_user (int): number of regular users
+            sch_power_sum_profile (cp.Variable): contains scheduled power profiles to optimize 
+
+        Returns:
+            cp.Expression: current scheduled peak
+        """
+        return self.power_rate * num_reg_user + cp.max(
+            sch_power_sum_profile
+        )
+
 
     def argmin_u(
         self,
@@ -353,10 +368,13 @@ class BaselineSimulator:
         prices = {c: () for c in self.test_df["dcosId"]}
         hourly_prices = {c: () for c in self.test_df["dcosId"]}
         running_peak = 0
+        # active_sessions = [{dcosId : start_time},......] TODO
 
         for startChargeTime in tqdm(
             pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
         ):
+            # TODO look at ongoing sessions, and add the chunk that occurred since the last optimization @Sam
+            # update_aggregate_power_profile(previousStartChargeTime, startChargeTime, power_profiles)
 
             grid_search_results, sub_df = self.grid_search(
                 startChargeTime, running_peak, power_profiles, prices

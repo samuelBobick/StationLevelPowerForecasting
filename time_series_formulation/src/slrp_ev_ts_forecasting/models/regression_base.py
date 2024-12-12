@@ -414,15 +414,13 @@ class RegressionBaseModel(Base):
                 y_max = []
                 for d in dates_to_extract:
                     day_timeseries = power_df[pd.to_datetime(power_df['recordTimestamp']).dt.date == d]['totalPower']
-                    print('d', d)
-                    print(day_timeseries)
                     y_max.append(day_timeseries.max())
                     # print(day_timeseries.max())
                     assert not pd.isna(day_timeseries.max())
 
                 assert len(y_max) == len(flat_labels), f'{len(y_max)}, {len(flat_labels)}'
 
-                flat_labels = pd.DataFrame(index=flat_inputs.index, columns={'y_max' : y_max})
+                flat_labels = pd.DataFrame(index=flat_inputs.index, data={'y_max' : y_max})
             print(flat_labels[flat_labels.isna().any(axis=1)])
 
             flat_inputs.to_csv('flat_inputs.csv')
