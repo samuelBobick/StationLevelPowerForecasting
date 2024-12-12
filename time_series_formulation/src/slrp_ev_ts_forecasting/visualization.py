@@ -4,9 +4,8 @@ import plotly.graph_objects as go
 
 def visualize_forecast(
     test_data: pd.DataFrame,
-    forecast: pd.Series,
+    df_predictions: pd.DataFrame,
     number_of_days: int,
-    forecast_dates: pd.Series,
 ) -> None:
     """
     Visualize the forecasted values.
@@ -17,6 +16,7 @@ def visualize_forecast(
         forecast_dates: The dates for the forecasted values.
     """
     fig = go.Figure()
+    # First we plot the true test data that we are trying to predict
     # resample in case there is missing values
     test_data = test_data.set_index("date").resample("15min").mean().reset_index()
     fig.add_trace(
@@ -26,26 +26,24 @@ def visualize_forecast(
     )
 
     # resample in case there is missing values
-    forecast_data = (
-        pd.DataFrame({"date": forecast_dates, "power": forecast})
-        .set_index("date")
-        .resample("15min")
-        .mean()
-        .reset_index()
+    df_predictions = (
+        df_predictions.set_index("date").resample("15min").mean().reset_index()
     )
 
-    fig.add_trace(
-        go.Scatter(
-            x=forecast_data["date"],
-            y=forecast_data["power"],
-            mode="lines",
-            name="Forecast",
+    next_power_column_number = len(df_predictions.columns) - 1
+    for i in range(next_power_column_number):
+        fig.add_trace(
+            go.Scatter(
+                x=df_predictions["date"],
+                y=df_predictions[f"power_{i}"],
+                mode="lines",
+                name=f"Forecast_{i}",
+            )
         )
-    )
+
     fig.update_layout(
         title=f"Forecast for {number_of_days} days",
         xaxis_title="Date",
         yaxis_title="Value",
     )
-
     fig.show()
