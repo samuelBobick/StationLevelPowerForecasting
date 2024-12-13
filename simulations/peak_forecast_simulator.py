@@ -94,18 +94,18 @@ class PeakForecastSimulator(BaselineSimulator):
         self.labels_norm_parameters_min = np.array(labels_norm_parameters_min)
         self.labels_norm_parameters_max = np.array(labels_norm_parameters_max)
 
-    def make_prediction(self, features: np.ndarray, workday: int):
+    def make_prediction(self, features: np.ndarray, workday: int) -> np.ndarray:
         """Make a prediction using the linear model
 
         Args:
-            features (np.ndarray): 1D array with all the features. Make sure that \
+            features: 1D array with all the features. Make sure that \
                 all the features are in the correct order (same \
                 self.features_name). You can check the features order by visualizing \
                 the samples with the function visualize_samples()
-            workday (int): 1 if it is a workday, 0 if it is a non-workday.
+            workday: 1 if it is a workday, 0 if it is a non-workday.
 
         Returns:
-            _type_: _description_
+            predictions
         """
         normalized_features = (features - self.features_norm_parameters_min) / (
             self.features_norm_parameters_max - self.features_norm_parameters_min
