@@ -95,6 +95,18 @@ class PeakForecastSimulator(BaselineSimulator):
         self.labels_norm_parameters_max = np.array(labels_norm_parameters_max)
 
     def make_prediction(self, features: np.ndarray, workday: int):
+        """Make a prediction using the linear model
+
+        Args:
+            features (np.ndarray): 1D array with all the features. Make sure that \
+                all the features are in the correct order (same \
+                self.features_name). You can check the features order by visualizing \
+                the samples with the function visualize_samples()
+            workday (int): 1 if it is a workday, 0 if it is a non-workday.
+
+        Returns:
+            _type_: _description_
+        """
         normalized_features = (features - self.features_norm_parameters_min) / (
             self.features_norm_parameters_max - self.features_norm_parameters_min
         )
@@ -113,7 +125,9 @@ class PeakForecastSimulator(BaselineSimulator):
 
         return reversed_prediction
 
-    def visualize_samples(self, sample: np.ndarray, prediction):
+    def visualize_samples(
+        self, sample: np.ndarray, prediction: Optional[np.ndarray] = None
+    ):
         power_indexes = []
         u_indexes = []
         for i, name in enumerate(self.features_name):
@@ -145,14 +159,15 @@ class PeakForecastSimulator(BaselineSimulator):
                 line=dict(dash="dash"),
             )
         )
-        fig.add_trace(
-            go.Scatter(
-                x=[time_u[0]],
-                y=prediction,
-                mode="markers",
-                name="Predicted Peak",
+        if prediction:
+            fig.add_trace(
+                go.Scatter(
+                    x=[time_u[0]],
+                    y=prediction,
+                    mode="markers",
+                    name="Predicted Peak",
+                )
             )
-        )
         fig.update_layout(
             title="Sample Visualization",
             xaxis_title="Time",
