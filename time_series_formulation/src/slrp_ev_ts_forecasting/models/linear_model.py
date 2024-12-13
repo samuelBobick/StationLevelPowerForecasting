@@ -1,6 +1,8 @@
+import json
 from typing import Literal
 
 import pandas as pd
+import plotly.graph_objects as go
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 from sklearn import linear_model
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
@@ -42,12 +44,7 @@ class LinearModel(RegressionBaseModel):
 
     @property
     def model_str_name(self):
-        return (
-            "LinearModel"
-            + ("_lagsOpti" if self.optimize_lags else "")
-            + ("Short" if self.optimize_lags == "short_opt" else "")
-            + ("Long" if self.optimize_lags == "long_opt" else "")
-        )
+        return "LinearModel" + self.model_str_name_suffix
 
     def fit_model(
         self,
@@ -64,7 +61,10 @@ class LinearModel(RegressionBaseModel):
             # [col for col in X_train.columns if not col.startswith("power")],
             axis=1,
         )
+        self.feature_names = list(X_input.columns)
+
         y_input = y_train[train_mask]
+        self.label_names = list(y_input.columns)
 
         lm = linear_model.LinearRegression()
         lm.fit(X_input, y_input)
@@ -72,3 +72,47 @@ class LinearModel(RegressionBaseModel):
 
     def predict_model(self, model, X_test: pd.DataFrame):
         return model.predict(X_test)
+
+    def save_model(self, model, model_name: str, plot_feature_importance: bool = False):
+        saved_model_filename = (
+            default_parameters.SAVED_MODELS_PATH / f"{model_name}.json"
+        )
+        if plot_feature_importance:
+            self.plot_feature_importance(model)
+
+        # Extract parameters
+        params = {
+            "intercept": (
+                model.intercept_.tolist()
+                if hasattr(model.intercept_, "tolist")
+                else model.intercept_
+            ),
+            "coefficients": model.coef_.tolist(),
+            "feature_names": self.feature_names,
+            "label_names": self.label_names,
+        }
+
+        # Save to JSON file
+        with open(saved_model_filename, "w") as json_file:
+            json.dump(params, json_file, indent=4)
+
+    def plot_feature_importance(self, model):
+        # Create a DataFrame for better visualization
+        importance_df = pd.DataFrame(
+            {"Feature": self.feature_names, "Importance": abs(model.coef_[0])}
+        )
+
+        # Sort and plot
+        importance_df.sort_values(by="Importance", ascending=False, inplace=True)
+
+        fig = go.Figure(
+            data=[go.Bar(x=importance_df["Feature"], y=importance_df["Importance"])]
+        )
+        fig.update_layout(
+            xaxis_title="Feature",
+            yaxis_title="Coefficient Absolute Value",
+            title=f"Feature Importance in Linear Regression for label {self.label_names[0]}",
+            xaxis=dict(tickangle=-90),
+        )
+
+        fig.show()

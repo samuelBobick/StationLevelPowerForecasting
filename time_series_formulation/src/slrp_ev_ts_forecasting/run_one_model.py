@@ -11,9 +11,9 @@ from slrp_ev_data import (
 from slrp_ev_data.feature_engineering import (
     convert_date_from_int_to_datetime,
     feature_engineering,
-    get_train_min_and_max,
     reverse_feature_engineering,
 )
+from slrp_ev_data.normalization_and_standardization import get_train_min_and_max
 
 from slrp_ev_ts_forecasting.compute_losses import get_real_scale_losses
 from slrp_ev_ts_forecasting.default_parameters import (
@@ -113,7 +113,7 @@ def run_one_model(
     else:
         train, val, test = train_test_split.train_test_split(data, generate_validation=True)  # type: ignore
 
-    normalize_parameters = get_train_min_and_max(train)
+    normalize_parameters = get_train_min_and_max(train, dataset_name=dataset)
     train_eng = feature_engineering(train, normalize_parameters)
     val_eng = (
         feature_engineering(val, normalize_parameters) if val is not None else None

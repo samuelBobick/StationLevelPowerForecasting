@@ -46,13 +46,7 @@ class XGBoost(RegressionBaseModel):
 
     @property
     def model_str_name(self):
-        return (
-            "XGBoost"
-            + f"_dropout{self.dropout}"
-            + ("_lagsOpti" if self.optimize_lags else "")
-            + ("Short" if self.optimize_lags == "short_opt" else "")
-            + ("Long" if self.optimize_lags == "long_opt" else "")
-        )
+        return "XGBoost" + f"_dropout{self.dropout}" + self.model_str_name_suffix
 
     def fit_model(
         self,

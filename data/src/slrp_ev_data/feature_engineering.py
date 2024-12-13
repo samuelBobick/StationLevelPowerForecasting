@@ -1,9 +1,15 @@
 import numpy as np
 import pandas as pd
 
-from .input_data_type import DataSchema, FeaturedEngineeredSchema
+from slrp_ev_data.normalization_and_standardization import (
+    COLS_TO_NORMALIZE,
+    normalize_data,
+    reverse_normalize_data,
+    reverse_standardize_data,
+    standardize_data,
+)
 
-COLS_TO_NORMALIZE = ["power"]
+from .input_data_type import DataSchema, FeaturedEngineeredSchema
 
 
 def convert_date_from_int_to_datetime(date_column: pd.Series) -> pd.Series:
@@ -59,11 +65,13 @@ def feature_engineering(
         )
     if standardize_parameters:
         train_mean, train_std = standardize_parameters
-        data[COLS_TO_NORMALIZE] = (data[COLS_TO_NORMALIZE] - train_mean) / train_std
+        data[COLS_TO_NORMALIZE] = standardize_data(
+            data[COLS_TO_NORMALIZE], train_mean, train_std
+        )
     if normalize_parameters:
         train_min, train_max = normalize_parameters
-        data[COLS_TO_NORMALIZE] = (data[COLS_TO_NORMALIZE] - train_min) / (
-            train_max - train_min
+        data[COLS_TO_NORMALIZE] = normalize_data(
+            data[COLS_TO_NORMALIZE], train_min, train_max
         )
 
     # Add the 4 hour time window
@@ -156,11 +164,13 @@ def reverse_feature_engineering(
         )
     if standardize_parameters:
         train_mean, train_std = standardize_parameters
-        data[COLS_TO_NORMALIZE] = data[COLS_TO_NORMALIZE] * train_std + train_mean
+        data[COLS_TO_NORMALIZE] = reverse_standardize_data(
+            data[COLS_TO_NORMALIZE], train_mean, train_std
+        )
     if normalize_parameters:
         train_min, train_max = normalize_parameters
-        data[COLS_TO_NORMALIZE] = (
-            data[COLS_TO_NORMALIZE] * (train_max - train_min) + train_min
+        data[COLS_TO_NORMALIZE] = reverse_normalize_data(
+            data[COLS_TO_NORMALIZE], train_min, train_max
         )
     if not bypass_output_validation:
         DataSchema.validate(data)
@@ -191,33 +201,3 @@ def one_hot_encoding(
 
     data_encoded = pd.get_dummies(data_input, columns=cols_to_encode, dtype=int)
     return data_encoded
-
-
-def get_train_mean_and_std(df_train: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    """Get the mean and standard deviation of the training data, used to normalize the rest of the data.
-
-    Args:
-        df_train (pd.DataFrame): Train dataframe, should be in the format of the DataSchema.
-
-    Returns:
-        tuple[pd.Series, pd.Series]: training data mean, training data standard deviation
-
-    Example:
-    >>> train_mean, train_std = get_train_mean_and_std(df_train)
-    >>> df_val_eng = feature_engineering(df_val, train_mean, train_std)
-    """
-    # Check that the data is in the correct format
-    DataSchema.validate(df_train)
-
-    train_mean = df_train[COLS_TO_NORMALIZE].mean()
-    train_std = df_train[COLS_TO_NORMALIZE].std()
-    return train_mean, train_std
-
-
-def get_train_min_and_max(df_train: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    DataSchema.validate(df_train)
-
-    train_min = df_train[COLS_TO_NORMALIZE].min()
-    train_max = df_train[COLS_TO_NORMALIZE].max()
-
-    return train_min, train_max

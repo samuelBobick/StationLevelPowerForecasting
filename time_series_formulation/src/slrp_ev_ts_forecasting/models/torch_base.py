@@ -13,6 +13,7 @@ from slrp_ev_ts_forecasting.asymmetric_loss import AsymmetricRMSELoss
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_torch_losses
 from slrp_ev_ts_forecasting.default_parameters import (
     DEVICE,
+    SAVED_MODELS_PATH,
     TypeErrorMetric,
     TypeOptimizeLags,
 )
@@ -76,7 +77,7 @@ class TorchBaseModel(Base):
             )
         # Path parameters
         self.model_path = (
-            Path(__file__).parent / "pytorch_saved_models" / f"{model_str_name}.pt"
+            SAVED_MODELS_PATH / "pytorch_saved_models" / f"{model_str_name}.pt"
         )
         self.model_path.parent.mkdir(exist_ok=True, parents=True)
         self.tensorboard_path = Path(__file__).parent / "runs"
