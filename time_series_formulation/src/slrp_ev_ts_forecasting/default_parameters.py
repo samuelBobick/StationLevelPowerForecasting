@@ -30,6 +30,9 @@ TypeDataSet = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
 DATASET: TypeDataSet = "slrp-ev_new"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = False
 
+SESSION_BASED_MODE = True
+PEAK_PREDICTION = True
+
 TypeModelChoice = Literal[
     "LinearRegression",
     "KNN",

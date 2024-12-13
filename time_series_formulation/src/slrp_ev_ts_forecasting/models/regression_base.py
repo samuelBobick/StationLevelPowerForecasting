@@ -3,10 +3,11 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from slrp_ev_data.feature_engineering import convert_date_from_int_to_datetime
+from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_losses
 from slrp_ev_ts_forecasting.default_parameters import TypeOptimizeLags
 from slrp_ev_ts_forecasting.models.base import Base
-from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from tqdm import tqdm
 
 
@@ -20,6 +21,8 @@ class RegressionBaseModel(Base):
         time_mode: Literal["window", "cyclical"],
         optimize_lags: TypeOptimizeLags,
         get_val_data_from_shuffled_train: bool,
+        session_based_mode: bool,
+        peak_prediction: bool,
     ):
         """_summary_
 
@@ -46,6 +49,8 @@ class RegressionBaseModel(Base):
         self.x_dim = x_dim
 
         self.optimize_lags = optimize_lags
+        self.session_based_mode = session_based_mode
+        self.peak_prediction = peak_prediction
 
         self.alpha = alpha
         self.time_mode = time_mode
@@ -149,6 +154,10 @@ class RegressionBaseModel(Base):
         predictions_array = np.stack(
             (y_dates.to_numpy(), np.array(forecasts).squeeze()), axis=-1
         )
+        # Reshape to add a 3rd dimension in case we predict only the peak
+        if len(predictions_array.shape) == 2:
+            predictions_array = np.expand_dims(predictions_array, axis=1)
+
         df_predictions = pd.DataFrame(columns=["date"])
         for i in range(predictions_array.shape[0]):
             df_single_prediction = pd.DataFrame(
@@ -200,11 +209,13 @@ class RegressionBaseModel(Base):
         data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-        new_power_profile: bool = True,
-        peak_prediction: bool = True,
     ):
-        if new_power_profile:
-            # if new_power_profile is True, we do session forecasting, and
+        if self.peak_prediction and not self.session_based_mode:
+            raise ValueError(
+                "self.peak_prediction can only be True if self.session_based_mode is True"
+            )
+        if self.session_based_mode:
+            # if self.session_based_mode is True, we do session forecasting, and
             # we will look for the sessions in all of the windows,
             # so we need overlapping_windows to be True
             overlapping_windows = True
@@ -241,9 +252,12 @@ class RegressionBaseModel(Base):
             cols_keep_last_value += ["time_window"]
 
         label_cols_to_flatten = ["power"]
-        if new_power_profile:
-            # TODO: We want to have ["date"] below, but it doesn't seem to work, check why
-            label_cols_to_flatten += []
+        if self.session_based_mode:
+            label_cols_to_flatten += ["date"]
+
+        input_cols_to_flatten = ["power"]
+        if self.peak_prediction:
+            input_cols_to_flatten += ["date"]
 
         if self.optimize_lags:
             flat_inputs, flat_labels = W.flatten_dataset(
@@ -251,46 +265,42 @@ class RegressionBaseModel(Base):
                 cols_keep_last_value=cols_keep_last_value,
                 cols_keep_some_values=[
                     {
-                        "col_name": "power",
+                        "col_name": col_to_flatten,
                         "indexes_to_keep": input_width
                         - self.pacf_top_values.index.to_numpy(),
                     }
+                    for col_to_flatten in input_cols_to_flatten
                 ],
                 label_cols_to_flatten=label_cols_to_flatten,
             )
         else:
             flat_inputs, flat_labels = W.flatten_dataset(
                 window_data,
-                cols_to_flatten=["power"],
+                cols_to_flatten=input_cols_to_flatten,
                 cols_keep_last_value=cols_keep_last_value,
                 label_cols_to_flatten=label_cols_to_flatten,
             )
 
-        if new_power_profile:
+        if self.session_based_mode:
             # TODO: Also add the number of active sessions as a feature? Information is
             # maybe already in the "load until the start of this session"
             # TODO: Change the loss function in the model, to better predict peaks
-            # TODO: Add all of "if new_power_profile" in a separate function
+            # TODO: Add all of "if self.session_based_mode" in a separate function
 
-            # Look in sessions_df and round to the next 15-min interval
-            sessions = pd.read_csv(Path(__file__).parents[4] / "data/Sessions3.csv")
-            sessions["startChargeTime"] = pd.to_datetime(sessions["startChargeTime"])
+            # get sessions
+            sessions_df = pd.read_csv(Path(__file__).parents[4] / "data/Sessions3.csv")
+            sessions_df["startChargeTime"] = pd.to_datetime(
+                sessions_df["startChargeTime"]
+            )
             # Round to the nearest 15-minute interval
-            sessions["startChargeTime"] = sessions["startChargeTime"].dt.round("15min")
-
-            power_df = pd.read_csv(
-                Path(__file__).parents[4]
-                / "data/src/slrp_ev_data/data/power_df_2008-2406_v241209_15min.csv"
+            sessions_df["startChargeTime"] = sessions_df["startChargeTime"].dt.round(
+                "15min"
             )
-            power_df["recordTimestamp"] = pd.to_datetime(power_df["recordTimestamp"])
 
-            # TODO: Get y_dates from flat_labels when the date column is fixed
-            x_dates, y_dates = W.flatten_dataset(
-                window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            )
+            power_df = read_new_slrpev_data(keep_all_columns=True)
 
             start_dates_prediction_window = (
-                pd.to_datetime(y_dates["date_0"], unit="s")
+                pd.to_datetime(flat_labels["date_0"], unit="s")
                 .dt.round("15min")
                 .rename("start_date_prediction_window")
             )
@@ -306,80 +316,93 @@ class RegressionBaseModel(Base):
                 flat_inputs.shape[0]
                 == start_dates_prediction_window.shape[0]
                 == flat_labels.shape[0]
-                == y_dates.shape[0]
-            ), f"Concatenation of arrays of different sizes: {flat_inputs.shape[0]} {start_dates_prediction_window.shape[0]} {flat_labels.shape[0]} {y_dates.shape[0]}"
+            ), f"Concatenation of arrays of different sizes: {flat_inputs.shape[0]} {start_dates_prediction_window.shape[0]} {flat_labels.shape[0]}"
             flat_inputs_dates = pd.concat(
-                [flat_inputs, start_dates_prediction_window, flat_labels, y_dates],
+                [flat_inputs, start_dates_prediction_window, flat_labels],
                 axis=1,
             )
 
-            sessions_in_samples_range = sessions.loc[
-                (sessions["startChargeTime"] >= start_dates_prediction_window.iloc[0])
+            # Filter sessions within the prediction window
+            sessions_in_samples_range = sessions_df.loc[
+                (
+                    sessions_df["startChargeTime"]
+                    >= start_dates_prediction_window.iloc[0]
+                )
                 & (
-                    sessions["startChargeTime"]
+                    sessions_df["startChargeTime"]
                     <= start_dates_prediction_window.iloc[-1]
                 ),
                 ["startChargeTime", "dcosId"],
-            ]
+            ].reset_index(drop=True)
+
+            # Create a dictionary to map dcosId to their corresponding power profiles
+            session_profiles_from_interval = {}
+            for i in range(1, 9):
+                dcos_column = f"dcosId{i}"
+                power_column = f"power{i}"
+
+                df_power_profiles = (
+                    power_df[power_df[dcos_column].notna()][
+                        [dcos_column, power_column, "date"]
+                    ]
+                    .groupby(dcos_column)
+                    .agg(list)
+                )
+                df_power_profiles = df_power_profiles.rename(
+                    columns={power_column: "power_profiles"}
+                )
+                session_profiles_from_interval.update(
+                    df_power_profiles.to_dict(orient="index")
+                )
+
+            # Initialize an array to store power arrays
+            # TODO: Do not hardcode the 96
+            power_arrays = np.full((sessions_in_samples_range.shape[0], 96), None)
 
             for index, row in tqdm(
                 sessions_in_samples_range.iterrows(),
                 "Generating Session Features",
                 total=sessions_in_samples_range.shape[0],
             ):
-                # TODO: speed up this loop. Maybe having a list of unique dcosIds in power_df,
-                # and going through the search only if the dcosId of the session is in power_df
                 dcosId = row["dcosId"]
 
-                # TODO: Do not hardcode the 96
-                power_array = np.array([None] * 96)
-                # Loop through columns and extract corresponding 'power' column based on
-                # the dcosId match
-                for i in range(1, 9):
-                    dcos_column = f"dcosId{i}"
-                    power_column = f"power{i}"
+                if dcosId in session_profiles_from_interval:
+                    session_profiles = session_profiles_from_interval[dcosId]
+                    power_array = session_profiles["power_profiles"]
 
-                    if (power_df[dcos_column] == dcosId).any():
-                        power_array = power_df[power_df[dcos_column] == dcosId][
-                            power_column
-                        ].to_numpy()
-
-                        # Here we try to see if the power profile starts at the same time in the
-                        # interval data and in the sessions data
-                        start_charge_time_in_intervals = power_df[
-                            power_df[dcos_column] == dcosId
-                        ].iloc[0]["recordTimestamp"]
-                        start_charge_time_in_sessions = row["startChargeTime"]
-                        time_difference = (
+                    # Here we try to see if the power profile starts at the same time in the
+                    # interval data and in the sessions data
+                    start_charge_time_in_intervals = session_profiles["date"][0]
+                    start_charge_time_in_sessions = row["startChargeTime"]
+                    time_difference = (
+                        start_charge_time_in_intervals - start_charge_time_in_sessions
+                    )
+                    # TODO: Do not hardcode the frequency
+                    if abs(time_difference) >= pd.Timedelta(minutes=15):
+                        sessions_in_samples_range.loc[index, "startChargeTime"] = (
                             start_charge_time_in_intervals
-                            - start_charge_time_in_sessions
                         )
-                        # TODO: Do not hardcode the frequency
-                        if abs(time_difference) >= pd.Timedelta(minutes=15):
-                            # print(
-                            #     f"WARNING: Time difference exceeds 15 minutes: {time_difference} for session {dcosId}. startChargeTime: {start_charge_time_in_sessions}. recordTimestamp: {start_charge_time_in_intervals}"
-                            # )
-                            sessions.loc[index, "startChargeTime"] = (
-                                start_charge_time_in_intervals
-                            )
 
-                        if len(power_array) > 96:
-                            print(
-                                f"WARNING: session {dcosId} power profile truncated to 24 hours because it is {len(power_array)/4} hours long"
-                            )
-                            power_array = power_array[:96]
-                        elif len(power_array) < 96:
-                            power_array = np.pad(
-                                power_array, (0, 96 - len(power_array)), mode="constant"
-                            )
+                    # Truncate or pad power array to 96 elements
+                    if len(power_array) > 96:
+                        print(
+                            f"WARNING: session {dcosId} power profile truncated to 24 hours because it is {len(power_array)/4} hours long"
+                        )
+                        power_array = power_array[:96]
+                    elif len(power_array) < 96:
+                        power_array = np.pad(
+                            power_array, (0, 96 - len(power_array)), mode="constant"
+                        )
 
-                        break
+                    power_arrays[index] = power_array
 
-                sessions.loc[index, [f"u_{i+1}" for i in range(96)]] = power_array
+            # Assign power arrays to sessions_in_samples_range
+            for i in range(96):
+                sessions_in_samples_range[f"u_{i+1}"] = power_arrays[:, i]
 
             # Create a dataframe of samples, where we keep only the samples that have
             # a corresponding session
-            merged_inputs_dates_sessions = sessions[
+            merged_inputs_dates_sessions = sessions_in_samples_range[
                 ["startChargeTime"] + [f"u_{i+1}" for i in range(96)]
             ].merge(
                 flat_inputs_dates,
@@ -387,12 +410,18 @@ class RegressionBaseModel(Base):
                 right_on="start_date_prediction_window",
                 how="inner",
             )
-            print(
-                f"Number of sessions in DataFrame: {merged_inputs_dates_sessions.shape[0]}"
-            )
 
             merged_inputs_dates_sessions = merged_inputs_dates_sessions.dropna()
 
+            # convert the u columns to float, and normalize them by the EVSE max power
+            for i in range(96):
+                merged_inputs_dates_sessions[f"u_{i+1}"] = merged_inputs_dates_sessions[
+                    f"u_{i+1}"
+                ].astype(float) / (6_600 * 8)
+
+            print(
+                f"Number of sessions in DataFrame: {merged_inputs_dates_sessions.shape[0]}"
+            )
             flat_labels = merged_inputs_dates_sessions[
                 [
                     col_name
@@ -405,30 +434,75 @@ class RegressionBaseModel(Base):
             )
 
             flat_inputs = merged_inputs_dates_sessions[
-                list(flat_inputs.columns) + [f"u_{i+1}" for i in range(96)]
+                list(flat_inputs.columns[~flat_inputs.columns.str.contains(r"date_*+")])
+                + [f"u_{i+1}" for i in range(96)]
             ]
-            print(flat_labels[flat_labels.isna().any(axis=1)])
-            if peak_prediction:
-                dates_to_extract = merged_inputs_dates_sessions["startChargeTime"].dt.date
 
-                y_max = []
-                for d in dates_to_extract:
-                    day_timeseries = power_df[pd.to_datetime(power_df['recordTimestamp']).dt.date == d]['totalPower']
-                    y_max.append(day_timeseries.max())
-                    # print(day_timeseries.max())
-                    assert not pd.isna(day_timeseries.max())
+            if self.peak_prediction:
+                # Convert 'recordTimestamp' to datetime once
+                # power_df["recordTimestamp"] = pd.to_datetime(
+                #     power_df["recordTimestamp"]
+                # )
 
-                assert len(y_max) == len(flat_labels), f'{len(y_max)}, {len(flat_labels)}'
+                # Extract dates from 'startChargeTime'
+                dates_to_extract = merged_inputs_dates_sessions[
+                    "startChargeTime"
+                ].dt.date
 
-                flat_labels = pd.DataFrame(index=flat_inputs.index, data={'y_max' : y_max})
-            print(flat_labels[flat_labels.isna().any(axis=1)])
+                # # Group by date and calculate the max 'totalPower' for each date
+                # power_df["date_only"] = power_df["date"].dt.date
+                # max_power_by_date_old = power_df.groupby("date_only")["power"].max()
 
-            flat_inputs.to_csv('flat_inputs.csv')
-            flat_labels.to_csv('flat_labels.csv')
+                # TODO: Look into predicting only the peak power for the rest of the day
+                # (and not the whole day). In this case we only use labels_power_df_from_samples
+                inputs_power_df_from_samples = pd.DataFrame(
+                    data=merged_inputs_dates_sessions.filter(
+                        regex=r"(power|date)_(\d+)\b"
+                    )
+                    .to_numpy()
+                    .reshape(-1, 2),
+                    columns=["power", "date"],
+                )
+                labels_power_df_from_samples = pd.DataFrame(
+                    data=merged_inputs_dates_sessions.filter(
+                        regex=r"(power|date)_(\d+)_label"
+                    )
+                    .to_numpy()
+                    .reshape(-1, 2),
+                    columns=["power", "date"],
+                )
+                power_df_from_samples = pd.concat(
+                    [inputs_power_df_from_samples, labels_power_df_from_samples]
+                )
+                power_df_from_samples["date"] = convert_date_from_int_to_datetime(
+                    power_df_from_samples["date"]
+                ).dt.date
+                max_power_by_date = power_df_from_samples.groupby("date")["power"].max()
+
+                # Ensure there are no NaN values in the max power
+                assert not max_power_by_date.isna().any()
+
+                # Extract the max power values for the dates of interest
+                y_max = max_power_by_date.reindex(dates_to_extract).values
+
+                # Ensure the lengths match
+                assert len(y_max) == len(
+                    flat_labels
+                ), f"{len(y_max)}, {len(flat_labels)}"
+
+                # Create the DataFrame with the results
+                flat_labels = pd.DataFrame(
+                    index=flat_inputs.index, data={"y_max": y_max}
+                )
 
         if return_y_date:
-            if new_power_profile:
-                y_dates = merged_inputs_dates_sessions[y_dates.columns]
+            if self.session_based_mode:
+                if self.peak_prediction:
+                    y_dates = merged_inputs_dates_sessions["date_0_label"]
+                else:
+                    y_dates = merged_inputs_dates_sessions.filter(
+                        regex=r"date_(\d+)_label"
+                    )
             else:
                 x_dates, y_dates = W.flatten_dataset(
                     window_data,
