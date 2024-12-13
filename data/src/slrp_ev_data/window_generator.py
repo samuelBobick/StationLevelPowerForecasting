@@ -458,7 +458,7 @@ class WindowGenerator:
             else:
                 items_to_flatten = tf.zeros([inputs.shape[0], 0], dtype=tf.float32)
 
-            # Initialize empty dataframe with good shape
+            # Initialize empty dataframe with good shape (batch_size, 0)
             items_to_keep_some_values = tf.zeros([inputs.shape[0], 0], dtype=tf.float32)
             # Gather the values of the columns in which we only keep some values
             for col_dict in keep_some_values_indices:
@@ -503,7 +503,7 @@ class WindowGenerator:
 
         ### Generate Column Names ###
         input_column_names = (
-            [f"{name}_{i}" for name in cols_to_flatten for i in range(inputs.shape[1])]
+            [f"{name}_{i}" for i in range(inputs.shape[1]) for name in cols_to_flatten]
             + [
                 f"{dict_keep_some_values['col_name']}_{i}"
                 for dict_keep_some_values in cols_keep_some_values
@@ -513,11 +513,11 @@ class WindowGenerator:
         )
         label_column_names = [
             f"{name}_{i}"
-            for name in label_cols_to_flatten
             for i in range(labels.shape[1])
+            for name in label_cols_to_flatten
         ]
 
-        # Convert lists to Pandas DataFrames
+        # Convert arrays to Pandas DataFrames
         flat_inputs_df = pd.DataFrame(flat_inputs, columns=input_column_names)
         if no_user_last_keep_value:
             # if the user didn't specify any columns to keep the last value from but we had to select
