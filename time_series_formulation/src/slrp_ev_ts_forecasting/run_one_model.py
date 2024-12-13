@@ -56,6 +56,7 @@ def reverse_engineer_forecast(
             df_predictions[["date", f"power_{i}"]],
             df_test_example.drop(columns=["power"]),
             on="date",
+            direction="nearest",
         ).rename(columns={f"power_{i}": "power"})
         df_reverse_helper = df_reverse_helper.dropna(subset=["power"])
         df_reverse_helper = reverse_feature_engineering(
@@ -92,6 +93,13 @@ def run_one_model(
         raise ValueError(
             f"Dataset of type {dataset} is not defined. Please refer to "
             "TypeDataSet for supported datasets."
+        )
+
+    session_based_mode = model_parameters.get("session_based_mode", None)
+    peak_prediction = model_parameters.get("peak_prediction", None)
+    if (session_based_mode or peak_prediction) and dataset != "slrp-ev_new":
+        raise ValueError(
+            "Session based mode and peak prediction are only available for the slrp-ev_new dataset"
         )
 
     get_val_data_from_shuffled_train = model_parameters.get(
