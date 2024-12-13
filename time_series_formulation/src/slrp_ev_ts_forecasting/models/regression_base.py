@@ -314,14 +314,6 @@ class RegressionBaseModel(Base):
         # maybe already in the "load until the start of this session"
         # TODO: Change the loss function in the model, to better predict peaks
 
-        # get sessions
-        sessions_df = pd.read_csv(Path(__file__).parents[4] / "data/Sessions3.csv")
-        sessions_df["startChargeTime"] = pd.to_datetime(sessions_df["startChargeTime"])
-        # Round to the nearest 15-minute interval
-        sessions_df["startChargeTime"] = sessions_df["startChargeTime"].dt.round(
-            "15min"
-        )
-
         power_df = read_new_slrpev_data(keep_all_columns=True)
 
         start_dates_prediction_window = (
@@ -345,6 +337,13 @@ class RegressionBaseModel(Base):
             axis=1,
         )
 
+        # get sessions
+        sessions_df = pd.read_csv(Path(__file__).parents[4] / "data/Sessions3.csv")
+        sessions_df["startChargeTime"] = pd.to_datetime(sessions_df["startChargeTime"])
+        # Round to the nearest 15-minute interval
+        sessions_df["startChargeTime"] = sessions_df["startChargeTime"].dt.round(
+            "15min"
+        )
         # Filter sessions within the prediction window
         sessions_in_samples_range = sessions_df.loc[
             (sessions_df["startChargeTime"] >= start_dates_prediction_window.iloc[0])
