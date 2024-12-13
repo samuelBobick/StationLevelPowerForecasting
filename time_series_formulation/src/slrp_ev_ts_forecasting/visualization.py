@@ -25,10 +25,20 @@ def visualize_forecast(
         )
     )
 
-    # resample in case there is missing values
-    df_predictions = (
-        df_predictions.set_index("date").resample("15min").mean().reset_index()
-    )
+    prediction_scatter_mode = "lines"
+    # Below we try to detect if it is a peak prediction, in which case we should
+    # plot markers instead of lines
+    # For timeseries prediction, we should have values every 15 minutes, so the
+    # average difference between 2 values should be around 15 minutes
+    # (slightly more because of potential missing values)
+    if df_predictions["date"].diff().mean() > pd.Timedelta(hours=1):
+        prediction_scatter_mode = "markers"
+    else:
+        # resample in case there is missing values.
+        # We do not need to do that if we plot markers
+        df_predictions = (
+            df_predictions.set_index("date").resample("15min").mean().reset_index()
+        )
 
     next_power_column_number = len(df_predictions.columns) - 1
     for i in range(next_power_column_number):
@@ -36,7 +46,7 @@ def visualize_forecast(
             go.Scatter(
                 x=df_predictions["date"],
                 y=df_predictions[f"power_{i}"],
-                mode="lines",
+                mode=prediction_scatter_mode,
                 name=f"Forecast_{i}",
             )
         )

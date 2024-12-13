@@ -40,5 +40,9 @@ class SmoothDCPenaltySimulator(BaselineSimulator):
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
         """Apply a softplus penalty to the distance between the current daily peak and the running monthly peak."""
+        # TODO: Have this function change depending on the hour of the day
+        # look at the sessionStartTime of the users that contribute to the peak
+        # it is at those hours that we should apply the highest penalty (and
+        # something closer to the standard penalty at other hours)
         x = current_daily_peak - running_monthly_peak
         return cp.Constant(self.cost_dc) * cp.log_sum_exp(cp.hstack([0, x]))

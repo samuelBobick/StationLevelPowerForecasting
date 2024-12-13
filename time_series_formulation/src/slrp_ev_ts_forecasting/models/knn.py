@@ -19,6 +19,8 @@ class KNN(RegressionBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+        session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
+        peak_prediction: bool = default_parameters.PEAK_PREDICTION,
     ):
         """_summary_
 
@@ -36,6 +38,8 @@ class KNN(RegressionBaseModel):
             time_mode=time_mode,
             optimize_lags=optimize_lags,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            session_based_mode=session_based_mode,
+            peak_prediction=peak_prediction,
         )
         self.alpha = alpha
         self.time_mode = time_mode
