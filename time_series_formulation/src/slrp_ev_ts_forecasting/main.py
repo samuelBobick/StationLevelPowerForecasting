@@ -1,11 +1,11 @@
 from slrp_ev_ts_forecasting.default_parameters import TypeDataSet, TypeModelChoice
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
-model_choices: list[TypeModelChoice] = ["XGBoost"]
+model_choices: list[TypeModelChoice] = ["LinearRegression"]
 number_of_models_per_config = 1
 dataset: TypeDataSet = "slrp-ev_new"
-session_based_mode = False
-peak_prediction = False
+session_based_mode = True
+peak_prediction = True
 
 if __name__ == "__main__":
     for model_choice in model_choices:
