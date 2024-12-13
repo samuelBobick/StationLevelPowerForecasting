@@ -22,6 +22,8 @@ NUMBER_OF_DAYS_FOR_PACF = 70
 
 RESULTS_PATH = Path(__file__).parent / "results"
 DEFAULT_RESULTS_FILENAME = "results"
+SAVED_MODELS_PATH = Path(__file__).parent / "models" / "saved_models"
+SAVED_MODELS_PATH.mkdir(parents=True, exist_ok=True)
 
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"

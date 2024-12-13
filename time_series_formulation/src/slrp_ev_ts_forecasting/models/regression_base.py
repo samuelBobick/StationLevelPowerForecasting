@@ -4,6 +4,9 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from slrp_ev_data.feature_engineering import convert_date_from_int_to_datetime
+from slrp_ev_data.normalization_and_standardization import (
+    SINGLE_EVSE_NORMALIZATION_PARAM,
+)
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_losses
 from slrp_ev_ts_forecasting.default_parameters import TypeOptimizeLags
@@ -44,7 +47,6 @@ class RegressionBaseModel(Base):
             optimize_lags=optimize_lags,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
         )
-
         self.lookahead = lookahead
         self.x_dim = x_dim
 
@@ -65,6 +67,16 @@ class RegressionBaseModel(Base):
                 # "Year sin",
                 # "Year cos",
             ]
+
+    @property
+    def model_str_name_suffix(self):
+        return (
+            ("_lagsOpti" if self.optimize_lags else "")
+            + ("Short" if self.optimize_lags == "short_opt" else "")
+            + ("Long" if self.optimize_lags == "long_opt" else "")
+            + ("_SessionBased" if self.session_based_mode else "")
+            + ("_PeakPrediction" if self.peak_prediction else "")
+        )
 
     def fit(self, train: pd.DataFrame, val: pd.DataFrame | None):
         """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
@@ -96,6 +108,10 @@ class RegressionBaseModel(Base):
                     self.models[(t_w, w)] = self.fit_model(
                         X_train, y_train, train_mask, X_val, y_val, val_mask
                     )
+                    self.save_model(
+                        self.models[(t_w, w)],
+                        self.model_str_name + f"_{t_w}_{w}",
+                    )
         elif self.time_mode == "cyclical":
             for w in [0, 1]:
                 train_mask = X_train["workday"] == w
@@ -103,6 +119,7 @@ class RegressionBaseModel(Base):
                 self.models[w] = self.fit_model(
                     X_train, y_train, train_mask, X_val, y_val, val_mask
                 )
+                self.save_model(self.models[w], self.model_str_name + f"_{w}")
 
     def fit_model(
         self,
@@ -137,65 +154,18 @@ class RegressionBaseModel(Base):
                 [row.drop(self.cols_to_drop_for_model)]
             )  # .to_numpy().reshape(1, -1)
             if self.time_mode == "window":
-                forecasts.append(
-                    self.predict_model(
-                        self.models[(row["time_window"], row["workday"])], input
-                    )
-                )
+                model = self.models[(row["time_window"], row["workday"])]
+                forecasts.append(self.predict_model(model, input))
+
             elif self.time_mode == "cyclical":
-                forecasts.append(self.predict_model(self.models[row["workday"]], input))
+                model = self.models[row["workday"]]
+                forecasts.append(self.predict_model(model, input))
 
         forecast = np.array(forecasts).squeeze().flatten()
         real = y_test.to_numpy().flatten()
         losses = compute_losses(forecast, real, self.alpha)
 
-        # TODO: Put following loop in a function in Base class + use it in all the
-        # other predict functions
-        predictions_array = np.stack(
-            (y_dates.to_numpy(), np.array(forecasts).squeeze()), axis=-1
-        )
-        # Reshape to add a 3rd dimension in case we predict only the peak
-        if len(predictions_array.shape) == 2:
-            predictions_array = np.expand_dims(predictions_array, axis=1)
-
-        df_predictions = pd.DataFrame(columns=["date"])
-        for i in range(predictions_array.shape[0]):
-            df_single_prediction = pd.DataFrame(
-                {
-                    "date": predictions_array[i, :, 0],
-                    "power_0": predictions_array[i, :, 1],
-                }
-            )
-
-            if df_single_prediction["date"].isin(df_predictions["date"]).any():
-                # if we already have prediction data for these timesteps, we need to iterate
-                # over the other power_x columns to find the first one that doesn't have data yet
-                # if they all have data, we create a new column
-                df_predictions_these_dates = df_predictions[
-                    df_predictions["date"].isin(df_single_prediction["date"])
-                ]
-                next_power_column_number = len(df_predictions.columns) - 1
-                # by default we add the data to a new column
-                df_single_prediction = df_single_prediction.rename(
-                    columns={"power_0": f"power_{next_power_column_number}"}
-                )
-                # If possible, we add it to an existing column
-                for j in range(0, next_power_column_number):
-                    if df_predictions_these_dates[f"power_{j}"].isna().all():
-                        df_single_prediction = df_single_prediction.rename(
-                            columns={f"power_{next_power_column_number}": f"power_{j}"}
-                        )
-                        break
-                df_predictions = df_predictions.merge(df_single_prediction, how="outer")
-            else:
-                if df_predictions.empty:
-                    # in the initial case, we have a pandas warning with the
-                    # concat operation if the dataframe is empty, we solve it like so
-                    df_predictions = df_single_prediction
-                else:
-                    df_predictions = pd.concat(
-                        [df_predictions, df_single_prediction], ignore_index=True
-                    )
+        df_predictions = self.prepare_df_predictions(forecasts, y_dates)
         return losses, df_predictions
 
     def predict_model(self, model, X_test: pd.DataFrame):
@@ -441,9 +411,10 @@ class RegressionBaseModel(Base):
         # TODO: improve the normalization, this only works for SLRPEV data
         # (if the max power is 6.6kW and there are 8 EVSEs)
         for i in range(max_timesteps_per_session):
-            merged_inputs_dates_sessions[f"u_{i+1}"] = merged_inputs_dates_sessions[
-                f"u_{i+1}"
-            ].astype(float) / (6_600 * 8)
+            merged_inputs_dates_sessions[f"u_{i+1}"] = (
+                merged_inputs_dates_sessions[f"u_{i+1}"].astype(float)
+                / SINGLE_EVSE_NORMALIZATION_PARAM
+            )
 
         print(
             f"Number of sessions in DataFrame: {merged_inputs_dates_sessions.shape[0]}"
@@ -518,6 +489,6 @@ class RegressionBaseModel(Base):
         y_max = max_power_by_date.reindex(dates_to_extract).values
 
         # Create the DataFrame with the results
-        flat_labels = pd.DataFrame(index=flat_labels.index, data={"y_max": y_max})
+        flat_labels = pd.DataFrame(index=flat_labels.index, data={"peak_power": y_max})
 
         return flat_labels
