@@ -178,7 +178,7 @@ class Base:
         add_real = reals is not None
         if add_real:
             predictions_array = np.stack(
-                (y_dates.to_numpy(), forecasts.squeeze(), reals),
+                (y_dates.to_numpy(), forecasts.squeeze(), reals.squeeze()),
                 axis=-1,
             )
         else:
