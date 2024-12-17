@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.graph_objects as go
+from slrp_ev_data.feature_engineering import add_missing_timesteps
 
 
 def visualize_forecast(
@@ -18,7 +19,7 @@ def visualize_forecast(
     """
     fig = go.Figure()
     # resample in case there is missing values
-    test_data = test_data.set_index("date").resample("15min").mean().reset_index()
+    test_data = add_missing_timesteps(test_data)
     fig.add_trace(
         go.Scatter(
             x=test_data["date"], y=test_data["power"], mode="lines", name="Actual"
@@ -26,12 +27,8 @@ def visualize_forecast(
     )
 
     # resample in case there is missing values
-    forecast_data = (
+    forecast_data = add_missing_timesteps(
         pd.DataFrame({"date": forecast_dates, "power": forecast})
-        .set_index("date")
-        .resample("15min")
-        .mean()
-        .reset_index()
     )
 
     fig.add_trace(
