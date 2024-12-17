@@ -112,7 +112,7 @@ class FFNN(TorchBaseModel):
         data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> Dataset | tuple[Dataset, torch.Tensor]:
+    ) -> Dataset | tuple[Dataset, pd.DataFrame]:
 
         if self.optimize_lags:
             input_width = self.index_farthest_lag
@@ -166,14 +166,16 @@ class FFNN(TorchBaseModel):
         if self.time_mode == "window":
             flat_inputs = one_hot_encoding(flat_inputs, ["time_window"])
 
+        mask_nan = flat_inputs.isna().any(axis=1) | flat_labels.isna().any(axis=1)
+        flat_inputs = flat_inputs[~mask_nan]
+        flat_labels = flat_labels[~mask_nan]
         dataset = TensorDataset(flat_inputs, flat_labels)
 
         if return_y_date:
-            x_dates, y_dates = W.convert_to_torch_dataset(
-                window_data,
-                cols_to_keep_as_features=["date"],
-                cols_to_keep_as_labels=["date"],
-            ).get_full_data()
+            x_dates, y_dates = W.flatten_dataset(
+                window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
+            )
+            y_dates = y_dates[~mask_nan]
             return dataset, y_dates
         else:
             return dataset

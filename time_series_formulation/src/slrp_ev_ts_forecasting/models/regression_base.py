@@ -206,12 +206,16 @@ class RegressionBaseModel(Base):
                 cols_keep_last_value=cols_keep_last_value,
                 label_cols_to_flatten=["power"],
             )
+        mask_nan = flat_inputs.isna().any(axis=1) | flat_labels.isna().any(axis=1)
+        flat_inputs = flat_inputs[~mask_nan]
+        flat_labels = flat_labels[~mask_nan]
         print(flat_inputs.shape, flat_labels.shape)
 
         if return_y_date:
             x_dates, y_dates = W.flatten_dataset(
                 window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
             )
+            y_dates = y_dates[~mask_nan]
             return flat_inputs, flat_labels, y_dates
         else:
             return flat_inputs, flat_labels

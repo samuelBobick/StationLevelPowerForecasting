@@ -18,7 +18,7 @@ DataSchema = pa.DataFrameSchema(
                     error="The data does not seem to be in W.",
                 ),
             ],
-            nullable=True,
+            nullable=False,
         ),
         "workday": pa.Column(pa.Int, nullable=False),
     }
@@ -36,7 +36,7 @@ FeaturedEngineeredSchema = pa.DataFrameSchema(
             ),
         ),
         "power": pa.Column(
-            pa.Float, nullable=False
+            pa.Float, nullable=True
         ),  # , pa.Check.greater_than_or_equal_to(0) not useable if we standardize
         "time_window": pa.Column(
             pa.Int32, pa.Check.isin(range(6)), nullable=False, required=False
