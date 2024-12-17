@@ -241,14 +241,14 @@ class WindowGenerator:
 
     def make_dataset(self, data, shuffle: bool = False) -> list[tuple]:
         data = np.array(data, dtype=np.float32)
-        max_number_of_samples = np.floor(
+        max_number_of_windows = np.floor(
             (data.shape[0] - self.total_window_size + self.sequence_stride)
             / self.sequence_stride
         )
         if self.verbose:
             print(
                 f"Data length: {data.shape[0]:.0f}. "
-                f"We should have {max_number_of_samples:.0f} samples"
+                f"We should have {max_number_of_windows:.0f} windows"
             )
 
         ds = tf.keras.utils.timeseries_dataset_from_array(  # type: ignore
@@ -261,13 +261,13 @@ class WindowGenerator:
         )
 
         ds = ds.map(self.split_window)
-        number_of_samples = self.get_dataset_size(ds)
+        number_of_windows = self.get_dataset_size(ds)
         if self.verbose:
             gaps = (
-                max_number_of_samples - number_of_samples
+                max_number_of_windows - number_of_windows
             )  # counter for the number of gaps in the data
             if gaps > 0:
-                percentage_gaps = gaps / max_number_of_samples
+                percentage_gaps = gaps / max_number_of_windows
                 print(
                     f"WARNING: Number of gaps (=number of windows dropped) found "
                     f"when making windows: {gaps:.0f} ({percentage_gaps:.2%}% of the data)"
