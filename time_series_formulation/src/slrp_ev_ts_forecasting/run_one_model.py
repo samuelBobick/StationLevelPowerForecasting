@@ -42,13 +42,18 @@ def reverse_engineer_forecast(
 
     next_power_column_number = len(df_predictions.columns) - 1
     for i in range(next_power_column_number):
+        col_name = f"power_{i}"
+        if (i == next_power_column_number - 1) and (
+            "real_power" in df_predictions.columns
+        ):
+            col_name = "real_power"
         # merge_asof performs a left merge with the closest date
         df_reverse_helper = pd.merge_asof(
-            df_predictions[["date", f"power_{i}"]],
+            df_predictions[["date", col_name]],
             df_test_example.drop(columns=["power"]),
             on="date",
             direction="nearest",
-        ).rename(columns={f"power_{i}": "power"})
+        ).rename(columns={col_name: "power"})
         df_reverse_helper = df_reverse_helper.dropna(subset=["power"])
         df_reverse_helper = reverse_feature_engineering(
             df_reverse_helper, normalize_parameters, bypass_output_validation=True
@@ -58,7 +63,7 @@ def reverse_engineer_forecast(
         helper_date_mask = df_reversed_predictions["date"].isin(
             df_reverse_helper["date"]
         )
-        df_reversed_predictions.loc[helper_date_mask, f"power_{i}"] = df_reverse_helper[
+        df_reversed_predictions.loc[helper_date_mask, col_name] = df_reverse_helper[
             "power"
         ]
 

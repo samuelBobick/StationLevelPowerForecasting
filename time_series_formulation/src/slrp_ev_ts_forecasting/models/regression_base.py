@@ -165,7 +165,9 @@ class RegressionBaseModel(Base):
         real = y_test.to_numpy().flatten()
         losses = compute_losses(forecast, real, self.alpha)
 
-        df_predictions = self.prepare_df_predictions(forecasts, y_dates)
+        if not self.peak_prediction:
+            real = None
+        df_predictions = self.prepare_df_predictions(forecasts, y_dates, real)
         return losses, df_predictions
 
     def predict_model(self, model, X_test: pd.DataFrame):
@@ -287,6 +289,7 @@ class RegressionBaseModel(Base):
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         # TODO: Also add the number of current active sessions as a feature? Information is
         # maybe already in the "load until the start of this session"
+        # TODO: Add the fraction of scheduled users in the current sessions?
         # TODO: Change the loss function in the model, to better predict peaks
 
         power_df = read_new_slrpev_data(keep_all_columns=True)
@@ -466,16 +469,26 @@ class RegressionBaseModel(Base):
 
         # Create dataframes of all the samples with 2 columns: 'power' and 'date'
         inputs_power_df_from_samples = pd.DataFrame(
-            data=merged_inputs_dates_sessions.filter(regex=r"(power|date)_(\d+)\b")
-            .to_numpy()
-            .reshape(-1, 2),
-            columns=["power", "date"],
+            data={
+                "power": merged_inputs_dates_sessions.filter(regex=r"(power)_(\d+)\b")
+                .to_numpy()
+                .flatten(),
+                "date": merged_inputs_dates_sessions.filter(regex=r"(date)_(\d+)\b")
+                .to_numpy()
+                .flatten(),
+            }
         )
         labels_power_df_from_samples = pd.DataFrame(
-            data=merged_inputs_dates_sessions.filter(regex=r"(power|date)_(\d+)_label")
-            .to_numpy()
-            .reshape(-1, 2),
-            columns=["power", "date"],
+            data={
+                "power": merged_inputs_dates_sessions.filter(
+                    regex=r"(power)_(\d+)_label"
+                )
+                .to_numpy()
+                .flatten(),
+                "date": merged_inputs_dates_sessions.filter(regex=r"(date)_(\d+)_label")
+                .to_numpy()
+                .flatten(),
+            }
         )
         power_df_from_samples = pd.concat(
             [inputs_power_df_from_samples, labels_power_df_from_samples]

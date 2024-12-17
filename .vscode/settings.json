@@ -4,8 +4,12 @@
         "dataframe",
         "dataframes",
         "dcos",
+        "downsample",
         "EVSE",
-        "slrp"
+        "nlags",
+        "PACF",
+        "slrp",
+        "varacf"
     ],
     "python.analysis.fixAll": [
         "source.unusedImports"
