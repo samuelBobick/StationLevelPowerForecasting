@@ -101,7 +101,9 @@ def get_pacf_values(
         )
 
     if return_confidence_interval:
-        interval = compute_confidence_interval(total_number_of_timesteps)
+        interval = compute_confidence_interval(
+            total_number_of_timesteps / 4 / downsample_hours
+        )
         return average_pacf, interval
 
     return average_pacf
