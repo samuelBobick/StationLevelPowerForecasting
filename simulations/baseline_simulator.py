@@ -100,6 +100,7 @@ class BaselineSimulator:
         return cp.Constant(self.cost_dc) * cp.maximum(
             current_daily_peak - running_monthly_peak, 0
         )
+    
 
     def get_J(
         self,
@@ -192,18 +193,8 @@ class BaselineSimulator:
         )
         new_leave_obj = 0
 
-        current_peak_sch = self.get_current_peak_sch(num_reg_user, sch_power_sum_profile)
-        # add the + 1 because we imagine that the new user is regular here
-        # the second term is basically the max power from the current scheduled users
-        # (without considering that the new user is scheduled)
-        current_peak_reg = self.power_rate * (num_reg_user + 1) + cp.max(
-            cp.sum(
-                cp.reshape(
-                    u[self.var_dim_constant :], (self.var_dim_constant, num_sch_user)
-                ).T,
-                axis=0,
-            )
-        )
+        current_peak_sch = self.get_current_peak_sch(num_reg_user, num_sch_user, u)
+        current_peak_reg = self.get_current_peak_reg(num_reg_user, num_sch_user, u)
 
         J_scheduled = (
             (new_sch_obj + existing_sch_obj + existing_reg_obj)
@@ -242,18 +233,57 @@ class BaselineSimulator:
             current_peak_reg,
         )
 
-    def get_current_peak_sch(self, num_reg_user, sch_power_sum_profile) -> cp.Expression:
+    def get_current_peak_sch(self, num_reg_user, num_sch_user, u, time=None) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
+
+            add the + 1 because we imagine that the new user is regular here
+            the second term is basically the max power from the current scheduled users
+            (without considering that the new user is scheduled)
 
         Args:
             num_reg_user (int): number of regular users
-            sch_power_sum_profile (cp.Variable): contains scheduled power profiles to optimize 
+            num_reg_user (int): number of scheduled users
+            u (cp.Variable): scheduled power profile
+            time (pd.datetime): timf of optimization
 
         Returns:
             cp.Expression: current scheduled peak
         """
+        sch_power_sum_profile = cp.reshape(
+            u, (self.var_dim_constant, num_sch_user + 1)
+        ).T  # Shape: (num_sch_user + 1, self.var_dim_constant)
+        sch_power_sum_profile = cp.sum(
+            sch_power_sum_profile, axis=0
+        )  # Shape: (self.var_dim_constant,)
+
+
         return self.power_rate * num_reg_user + cp.max(
             sch_power_sum_profile
+        )
+    
+    def get_current_peak_reg(self, num_reg_user, num_sch_user, u, time=None) -> cp.Expression:
+        """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
+
+            add the + 1 because we imagine that the new user is regular here
+            the second term is basically the max power from the current scheduled users
+            (without considering that the new user is scheduled)
+
+        Args:
+            num_reg_user (int): number of regular users
+            num_reg_user (int): number of scheduled users
+            u (cp.Variable): scheduled power profile
+            time (pd.datetime): timf of optimization
+
+        Returns:
+            cp.Expression: current scheduled peak
+        """
+        return self.power_rate * (num_reg_user + 1) + cp.max(
+            cp.sum(
+                cp.reshape(
+                    u[self.var_dim_constant :], (self.var_dim_constant, num_sch_user)
+                ).T,
+                axis=0,
+            )
         )
 
 
