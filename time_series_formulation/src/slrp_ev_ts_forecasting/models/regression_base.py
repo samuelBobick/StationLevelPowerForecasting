@@ -166,8 +166,12 @@ class RegressionBaseModel(Base):
         losses = compute_losses(forecast, real, self.alpha)
 
         if not self.peak_prediction:
-            real = None
-        df_predictions = self.prepare_df_predictions(forecasts, y_dates, real)
+            reals = None
+        else:
+            reals = y_test.to_numpy()
+        df_predictions = self.prepare_df_predictions(
+            np.array(forecasts), y_dates, reals
+        )
         return losses, df_predictions
 
     def predict_model(self, model, X_test: pd.DataFrame):
@@ -193,7 +197,6 @@ class RegressionBaseModel(Base):
             overlapping_windows = True
 
         if self.optimize_lags:
-            # TODO: Fix optimize lags for missing data
             input_width = self.index_farthest_lag
         else:
             input_width = self.x_dim
