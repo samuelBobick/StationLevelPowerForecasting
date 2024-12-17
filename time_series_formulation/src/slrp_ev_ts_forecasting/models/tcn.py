@@ -165,7 +165,7 @@ class TCN(TorchBaseModel):
         data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> TFToTorchDataset | tuple[TFToTorchDataset, torch.Tensor]:
+    ) -> TFToTorchDataset | tuple[TFToTorchDataset, pd.DataFrame]:
         """Generates the dataset and features based on the input DataFrame."""
         label_width = self.lookahead
         if not self.use_decoder:
@@ -201,14 +201,14 @@ class TCN(TorchBaseModel):
         )
 
         if return_y_date:
-            # x_dates, y_dates = W.flatten_dataset(
-            #     window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            # )
-            x_dates, y_dates = W.convert_to_torch_dataset(
-                window_data,
-                cols_to_keep_as_features=["date"],
-                cols_to_keep_as_labels=["date"],
-            ).get_full_data()
+            x_dates, y_dates = W.flatten_dataset(
+                window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
+            )
+            # x_dates, y_dates = W.convert_to_torch_dataset(
+            #     window_data,
+            #     cols_to_keep_as_features=["date"],
+            #     cols_to_keep_as_labels=["date"],
+            # ).get_full_data()
             return dataset, y_dates
         else:
             return dataset

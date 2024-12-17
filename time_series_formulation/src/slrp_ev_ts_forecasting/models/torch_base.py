@@ -393,9 +393,8 @@ class TorchBaseModel(Base):
 
         # Flatten the lists to 1D
         y_pred_test_flat = y_pred_test_tensor.flatten().cpu().numpy()
-        y_dates = y_dates.squeeze(-1)[:, self.first_prediction_index :]
         forecast_dates = (
-            y_dates[:, self.first_prediction_index :].flatten().cpu().numpy()
+            y_dates.iloc[:, self.first_prediction_index :].to_numpy().flatten()
         )
 
         return losses, y_pred_test_flat, forecast_dates
@@ -413,7 +412,8 @@ class TorchBaseModel(Base):
         print(
             "Model size",
             f"    Size of train set: {len(train_loader)} batches of size {self.batch_size}"
-            f" (there are {(len(train_loader) * self.batch_size):,} training samples)",
+            f" (there are around {(len(train_loader) * self.batch_size):,} training samples)",
+            # actually we have slightly less samples because the last batch is smaller
             f"    therefore, we have {len(train_loader)} steps at each of the {self.epochs} epochs.",
             f"    Train input shape: {inputs.shape}",
             f"    Train label shape: {labels.shape}",
@@ -446,7 +446,7 @@ class TorchBaseModel(Base):
         data_type: Literal["train", "val", "test"],
         return_y_date: bool = False,
         overlapping_windows: bool = False,
-    ) -> Dataset | tuple[Dataset, torch.Tensor]:
+    ) -> Dataset | tuple[Dataset, pd.DataFrame]:
         raise NotImplementedError("This method must be implemented in the child class.")
 
     def initialize_model(self) -> None:
