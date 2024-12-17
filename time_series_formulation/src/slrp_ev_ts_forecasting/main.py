@@ -24,7 +24,3 @@ if __name__ == "__main__":
                                 save_results_filename="results_pacf_fix",
                                 dataset=dataset,
                             )
-
-                            list_model_choices: list[TypeModelChoice] = [
-                                "LinearRegression"
-                            ]
