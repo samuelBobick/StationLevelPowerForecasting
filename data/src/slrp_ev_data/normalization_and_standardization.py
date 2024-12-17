@@ -79,6 +79,18 @@ def reverse_standardize_data(
 def get_train_min_and_max(
     df_train: pd.DataFrame, dataset_name: Optional[str] = None
 ) -> tuple[pd.Series, pd.Series]:
+    """Get the min and max of the training data, used to normalize 
+    the rest of the data.
+
+    Args:
+        df_train (pd.DataFrame): Train dataframe, should be in the format of the DataSchema.
+        dataset_name (Optional[str]): Name of the dataset, used to save the \
+            normalization parameters in a csv. \
+            If None, the parameters are not saved.
+
+    Returns:
+        tuple[pd.Series, pd.Series]: training data min, training data max
+    """
     DataSchema.validate(df_train)
 
     train_min = df_train[COLS_TO_NORMALIZE].min()

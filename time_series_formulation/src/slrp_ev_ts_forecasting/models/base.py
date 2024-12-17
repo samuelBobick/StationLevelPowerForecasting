@@ -171,11 +171,20 @@ class Base:
 
         return W, window_data
 
-    def prepare_df_predictions(self, forecasts: list, y_dates) -> pd.DataFrame:
+    def prepare_df_predictions(
+        self, forecasts: list, y_dates, real: Optional[np.ndarray] = None
+    ) -> pd.DataFrame:
         # TODO: use it in all the other predict functions
-        predictions_array = np.stack(
-            (y_dates.to_numpy(), np.array(forecasts).squeeze()), axis=-1
-        )
+        add_real = real is not None
+        if add_real:
+            predictions_array = np.stack(
+                (y_dates.to_numpy(), np.array(forecasts).squeeze(), real),
+                axis=-1,
+            )
+        else:
+            predictions_array = np.stack(
+                (y_dates.to_numpy(), np.array(forecasts).squeeze()), axis=-1
+            )
         # Reshape to add a 3rd dimension in case we predict only the peak
         if len(predictions_array.shape) == 2:
             predictions_array = np.expand_dims(predictions_array, axis=1)
@@ -188,6 +197,8 @@ class Base:
                     "power_0": predictions_array[i, :, 1],
                 }
             )
+            if add_real:
+                df_single_prediction["real_power"] = predictions_array[i, :, 2]
 
             if df_single_prediction["date"].isin(df_predictions["date"]).any():
                 # if we already have prediction data for these timesteps, we need to iterate
@@ -197,6 +208,8 @@ class Base:
                     df_predictions["date"].isin(df_single_prediction["date"])
                 ]
                 next_power_column_number = len(df_predictions.columns) - 1
+                if add_real:
+                    next_power_column_number -= 1
                 # by default we add the data to a new column
                 df_single_prediction = df_single_prediction.rename(
                     columns={"power_0": f"power_{next_power_column_number}"}

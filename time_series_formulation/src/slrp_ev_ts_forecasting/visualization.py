@@ -40,6 +40,18 @@ def visualize_forecast(
         df_predictions = add_missing_timesteps(df_predictions)
 
     next_power_column_number = len(df_predictions.columns) - 1
+    if "real_power" in df_predictions.columns:
+        next_power_column_number -= 1
+        fig.add_trace(
+            go.Scatter(
+                x=df_predictions["date"],
+                y=df_predictions["real_power"],
+                mode="markers",
+                name="Real Power",
+                marker=dict(symbol="diamond"),
+            )
+        )
+
     for i in range(next_power_column_number):
         fig.add_trace(
             go.Scatter(

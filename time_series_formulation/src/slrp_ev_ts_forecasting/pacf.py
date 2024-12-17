@@ -317,7 +317,7 @@ def get_df_complete_intervals(
 
     # define start and end dates of missing intervals
     for i in range(df_complete_intervals.shape[0]):
-        index = df_complete_intervals.iloc[i].name
+        index = df_complete_intervals.index[i]
         df_complete_intervals.loc[index, "end_complete"] = (
             df_complete_intervals.loc[index, date_column]
             - df_complete_intervals.loc[index, "diff"]
