@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Optional
 
 import cvxpy as cp
 import matplotlib.pyplot as plt
@@ -14,6 +14,7 @@ from utils import (
     get_new_reg_obj,
     get_new_sch_obj,
     get_timestep_info,
+    round_up_to_nearest_timestep,
 )
 
 
@@ -84,7 +85,15 @@ class BaselineSimulator:
         self.monte_carlo = monte_carlo
         self.verbose = verbose
 
-        self.aggregate_power_profile = pd.DataFrame(columns=['date', 'power'])
+        start_date = min(pd.to_datetime(self.test_df['startChargeTime']))
+        end_date = max(pd.to_datetime(self.test_df['startChargeTime']))
+        start_of_first_month = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end_of_last_month = (end_date + pd.offsets.MonthEnd(1)).replace(hour=23, minute=59, second=59)
+        intervals = pd.date_range(start=start_of_first_month, end=end_of_last_month, freq="15min")
+        self.aggregate_power_profile = pd.DataFrame({
+            'date': intervals,
+            'power': 0
+        })
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
         # having to use cp.maximum is much slower than putting this max into inequality constraints
@@ -359,6 +368,43 @@ class BaselineSimulator:
             }
 
         return grid_search_results, sub_df
+    
+    def update_aggregate_power_profile(self, previousStartChargeTime, startChargeTime, active_sessions, power_profiles):
+        """_summary_
+
+        Args:
+            previousStartChargeTime (_type_): _description_
+            startChargeTime (_type_): _description_
+            active_sessions (_type_): _description_
+            power_profiles (_type_): _description_
+        """
+        for row in active_sessions:
+            power_profile = power_profiles[row['dcosId']]
+            power_profile_start_time = round_up_to_nearest_timestep(pd.to_datetime(row['startChargeTime']), self.delta_t)
+            power_profile_df = pd.DataFrame({
+                'date' : pd.date_range(start=power_profile_start_time, periods = len(power_profile), freq="15min"),
+                'power' : power_profile
+            })
+
+            end_charge_time = (
+                pd.to_datetime(row['startChargeTime'])
+                + pd.to_timedelta(row["DurationHrs"], unit="h")
+                - pd.Timedelta(minutes=15)
+            ).floor("15min")
+
+            rounded_prev_time = round_up_to_nearest_timestep(previousStartChargeTime, self.delta_t)
+            rounded_current_time = round_up_to_nearest_timestep(startChargeTime, self.delta_t)
+
+            filtered_power_profile_df = power_profile_df[(power_profile_df['date'] >= rounded_prev_time) & (power_profile_df['date'] < rounded_current_time)]
+            self.aggregate_power_profile.loc[self.aggregate_power_profile['date'].isin(filtered_power_profile_df['date']), 'power'] += filtered_power_profile_df['power'].values
+
+            if end_charge_time < startChargeTime:
+                active_sessions = [a for a in active_sessions if a['dcosId'] != row['dcosId']]
+
+        new_session = self.test_df[pd.to_datetime(self.test_df['startChargeTime']) == startChargeTime].iloc[0]
+        active_sessions.append(new_session)
+
+        return active_sessions
 
     def simulate(self) -> tuple[dict, dict, dict]:
         """
@@ -369,12 +415,14 @@ class BaselineSimulator:
         hourly_prices = {c: () for c in self.test_df["dcosId"]}
         running_peak = 0
         # active_sessions = [{dcosId : start_time},......] TODO
+        active_sessions = []
 
+        previousStartChargeTime = None
         for startChargeTime in tqdm(
             pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
         ):
             # TODO look at ongoing sessions, and add the chunk that occurred since the last optimization @Sam
-            # update_aggregate_power_profile(previousStartChargeTime, startChargeTime, power_profiles)
+            active_sessions = self.update_aggregate_power_profile(previousStartChargeTime, startChargeTime, active_sessions, power_profiles)
 
             grid_search_results, sub_df = self.grid_search(
                 startChargeTime, running_peak, power_profiles, prices
@@ -386,7 +434,7 @@ class BaselineSimulator:
             min_J = grid_search_results[optimal_prices]["J"]
             min_J_arr = grid_search_results[optimal_prices]["J_arr"]
             u = grid_search_results[optimal_prices]["u"]
-            v = grid_search_results[optimal_prices]["v"]
+            grid_search_results[optimal_prices]["v"]
             current_peak_sch = grid_search_results[optimal_prices][
                 "current_peak_sch"
             ].item()
@@ -457,7 +505,7 @@ class BaselineSimulator:
                 N_reg = (
                     e_need / self.power_rate / self.delta_t
                 )  # how many time steps would it take the user to charge if they chose regular?
-                N_reg_remainder = (
+                (
                     N_reg % 1
                 )  # for that last timestep, what fraction of a timestep is charging needed to satisfy demand?
                 N_reg = int(N_reg)
@@ -465,6 +513,8 @@ class BaselineSimulator:
                 power_profiles[last_row["dcosId"]][:N_reg] = np.array(
                     [self.power_rate] * N_reg
                 )
+
+            previousStartChargeTime = startChargeTime
 
             if self.verbose:
                 print(

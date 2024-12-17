@@ -293,3 +293,16 @@ def get_session_power_profile(row) -> pd.DataFrame:
 
     df_power["timestamp"] = pd.to_datetime(df_power["timestamp"], unit="s")
     return df_power
+
+
+def round_up_to_nearest_timestep(ts, delta_t):
+    """
+    Round pd.datetime object forward in time to the next 15-minute interval
+    """
+    round_interval = 60 * delta_t
+    # Find the number of seconds since the last 15-minute interval
+    seconds_to_next = (round_interval * 60) - (ts.minute % round_interval * 60 + ts.second)
+    
+    # Add the remaining seconds to the original timestamp
+    rounded_ts = ts + pd.Timedelta(seconds=seconds_to_next)
+    return rounded_ts.replace(second=0, microsecond=0)
