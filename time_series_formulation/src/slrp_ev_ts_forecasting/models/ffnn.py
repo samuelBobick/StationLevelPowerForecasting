@@ -33,6 +33,8 @@ class FFNN(TorchBaseModel):
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+        session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
+        peak_prediction: bool = default_parameters.PEAK_PREDICTION,
     ):
         """TODO"""
 
@@ -48,6 +50,8 @@ class FFNN(TorchBaseModel):
 
         # Regression specific parameters
         self.optimize_lags = optimize_lags
+        self.session_based_mode = session_based_mode
+        self.peak_prediction = peak_prediction
 
         # Other parameters
         self.alpha = alpha
@@ -68,6 +72,7 @@ class FFNN(TorchBaseModel):
             lookahead=lookahead,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
             optimize_lags=optimize_lags,
+            peak_prediction=peak_prediction,
         )
 
         # Determine input size based on time_mode
@@ -113,6 +118,15 @@ class FFNN(TorchBaseModel):
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ) -> Dataset | tuple[Dataset, pd.DataFrame]:
+        if self.peak_prediction and not self.session_based_mode:
+            raise ValueError(
+                "self.peak_prediction can only be True if self.session_based_mode is True"
+            )
+        if self.session_based_mode:
+            # if self.session_based_mode is True, we do session forecasting, and
+            # we will look for the sessions in all of the windows,
+            # so we need overlapping_windows to be True
+            overlapping_windows = True
 
         if self.optimize_lags:
             input_width = self.index_farthest_lag
@@ -170,6 +184,9 @@ class FFNN(TorchBaseModel):
         flat_inputs = flat_inputs[~mask_nan]
         flat_labels = flat_labels[~mask_nan]
         dataset = TensorDataset(flat_inputs, flat_labels)
+
+        if self.session_based_mode:
+            raise NotImplementedError("Session based mode is not yet implemented")
 
         if return_y_date:
             x_dates, y_dates = W.flatten_dataset(

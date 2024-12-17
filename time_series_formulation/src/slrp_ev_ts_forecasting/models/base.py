@@ -172,18 +172,18 @@ class Base:
         return W, window_data
 
     def prepare_df_predictions(
-        self, forecasts: list, y_dates, real: Optional[np.ndarray] = None
+        self, forecasts: np.ndarray, y_dates, reals: Optional[np.ndarray] = None
     ) -> pd.DataFrame:
         # TODO: use it in all the other predict functions
-        add_real = real is not None
+        add_real = reals is not None
         if add_real:
             predictions_array = np.stack(
-                (y_dates.to_numpy(), np.array(forecasts).squeeze(), real),
+                (y_dates.to_numpy(), forecasts.squeeze(), reals),
                 axis=-1,
             )
         else:
             predictions_array = np.stack(
-                (y_dates.to_numpy(), np.array(forecasts).squeeze()), axis=-1
+                (y_dates.to_numpy(), forecasts.squeeze()), axis=-1
             )
         # Reshape to add a 3rd dimension in case we predict only the peak
         if len(predictions_array.shape) == 2:
@@ -240,4 +240,6 @@ class Base:
 
     @property
     def model_str_name(self) -> str:
-        raise NotImplementedError
+        raise NotImplementedError(
+            "This method should be implemented by the child class"
+        )

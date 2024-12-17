@@ -45,6 +45,7 @@ class TorchBaseModel(Base):
         get_val_data_from_shuffled_train: bool,
         warmup_base_learning_rate: float = 1e-6,
         optimize_lags: TypeOptimizeLags = None,
+        peak_prediction: bool = False,
     ):
         super().__init__(
             x_dim=x_dim,
@@ -96,6 +97,7 @@ class TorchBaseModel(Base):
 
         # Parameters for optimize lags for regression models (e.g. FFNN)
         self.optimize_lags = optimize_lags
+        self.peak_prediction = peak_prediction
 
     def initialize_optimizer_scheduler(self):
         """Initialize the optimizer and learning rate scheduler.
@@ -366,7 +368,7 @@ class TorchBaseModel(Base):
         # all layers have the same lr so we can just return the lr of the first layer
         return self.optimizer.param_groups[0]["lr"]  # type: ignore
 
-    def predict(self, test: pd.DataFrame) -> tuple[Losses, np.ndarray, np.ndarray]:
+    def predict(self, test: pd.DataFrame) -> tuple[Losses, pd.DataFrame]:
         """Given a pandas DataFrame test, returns error metrics and list of predictions."""
         dataset, y_dates = self.get_dataset(
             test, data_type="test", return_y_date=True, overlapping_windows=False
@@ -398,7 +400,15 @@ class TorchBaseModel(Base):
             y_dates.iloc[:, self.first_prediction_index :].to_numpy().flatten()
         )
 
-        return losses, y_pred_test_flat, forecast_dates
+        forecasts = y_pred_test_tensor.cpu().numpy()
+        reals = y_test_tensor.cpu().numpy()
+        y_dates = y_dates.iloc[:, self.first_prediction_index :]
+        if not self.peak_prediction:
+            reals = None
+
+        df_predictions = self.prepare_df_predictions(forecasts, y_dates, reals)
+
+        return losses, df_predictions
 
     def add_model_to_board(self, train_loader: DataLoader) -> None:
         if self.model is None:
@@ -407,8 +417,8 @@ class TorchBaseModel(Base):
             )
 
         writer = SummaryWriter(self.tensorboard_path / f"{self.model_str_name}_schema")
-        dataiter = iter(train_loader)
-        inputs, labels = next(dataiter)
+        data_iter = iter(train_loader)
+        inputs, labels = next(data_iter)
 
         print(
             "Model size",
