@@ -4,7 +4,8 @@
         "dataframe",
         "dataframes",
         "dcos",
-        "EVSE"
+        "EVSE",
+        "slrp"
     ],
     "python.analysis.fixAll": [
         "source.unusedImports"

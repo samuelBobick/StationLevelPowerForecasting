@@ -16,9 +16,10 @@ BATCH_NORM: bool = True
 
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = (
-    None  # for regression models, such as Basic_NN or XGBoost
+    "short_opt"  # for regression models, such as Basic_NN or XGBoost
 )
-NUMBER_OF_DAYS_FOR_PACF = 70
+NUMBER_OF_DAYS_FOR_PACF = 35  # 70 was the old parameter, but it is too big for
+# datasets with missing data
 
 RESULTS_PATH = Path(__file__).parent / "results"
 DEFAULT_RESULTS_FILENAME = "results"

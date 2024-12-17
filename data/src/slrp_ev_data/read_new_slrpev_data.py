@@ -18,11 +18,9 @@ def read_new_slrpev_data(keep_all_columns=False) -> pd.DataFrame:
     )
 
     # convert date and remove timezone
-    data["recordTimestamp"] = data["recordTimestamp"] = pd.to_datetime(
-        data["recordTimestamp"]
-    )
+    data["recordTimestamp"] = pd.to_datetime(data["recordTimestamp"])
 
-    data["workday"] = (data["isWeekend"] == False).astype("int64")
+    data["workday"] = (~data["isWeekend"]).astype("int64")
 
     data = data.rename(columns={"recordTimestamp": "date", "totalPower": "power"})
 
