@@ -2,7 +2,8 @@
     "cSpell.words": [
         "argmin",
         "dataframe",
-        "dcos"
+        "dcos",
+        "slrp"
     ],
     "python.analysis.fixAll": [
         "source.unusedImports"

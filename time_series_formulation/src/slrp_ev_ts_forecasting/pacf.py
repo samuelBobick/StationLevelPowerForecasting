@@ -6,6 +6,7 @@ import pandas as pd
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 from scipy import stats
+from slrp_ev_data.feature_engineering import get_data_frequency
 from statsmodels.tsa.stattools import pacf
 
 
@@ -42,6 +43,79 @@ def get_pacf_values(
                 nb_of_steps_to_predict=96,
             )
     """
+    data = data.copy()
+    data = data.dropna(subset=["power"])
+    # TODO: use data frequency instead of hardcoded 96, 4 and 15
+    data_frequency = get_data_frequency(data)
+    # TODO: change below with function from feature engineering
+    data["date"] = pd.to_datetime(data["date"], unit="s")
+    df_complete_intervals = get_df_complete_intervals(data, "date", data_frequency)
+
+    total_number_of_timesteps = 0
+    number_of_timesteps_with_enough_data = 0
+    minimum_number_timesteps_covered_if_using_pacf = 0
+    average_pacf = pd.DataFrame()
+    for complete_interval in df_complete_intervals.itertuples():
+        filtered_df = data.query(
+            f"date >= '{complete_interval.start_complete}' and date <= '{complete_interval.end_complete}'"
+        )
+        length_data = filtered_df.shape[0]
+        total_number_of_timesteps += length_data
+        # TODO: replace this hardcoded 4 once we have the frequency
+
+        if length_data < nb_of_days_for_pacf * 24 * 4 * 4:
+            # the second 4 is a recommendation of the minimum number of timesteps to have
+            # to have accurate PACF values for further lags
+            # see here: https://stackoverflow.com/questions/55252492/pacf-function-in-statsmodels-tsa-stattools-gives-numbers-greater-than-1-when-usi
+            # Skipping interval because not enough data points to compute pacf
+            continue
+        number_of_timesteps_with_enough_data += length_data
+        minimum_number_timesteps_covered_if_using_pacf += (
+            length_data - nb_of_days_for_pacf * 24 * 4
+        )
+
+        pacf_df = get_pacf_values_complete_interval(
+            downsample_hours,
+            filtered_df,
+            nb_of_days_for_pacf,
+            nb_of_steps_to_predict,
+            False,
+        )
+        pacf_df = pacf_df * length_data  # for weighted average
+
+        average_pacf = pd.concat([average_pacf, pacf_df], axis=1)  # type: ignore
+
+    average_pacf = (
+        pd.DataFrame({"PACF": average_pacf.sum(axis=1)})
+        / number_of_timesteps_with_enough_data
+    )
+    minimum_coverage = (
+        minimum_number_timesteps_covered_if_using_pacf / total_number_of_timesteps
+    )
+    if minimum_coverage < 0.5:
+        print(
+            f"WARNING: The minimum coverage of the data is {minimum_coverage*100:.0f}%. "
+            "This means that the optimized lags reduce by a lot the "
+            "number of samples to train the model. Please consider "
+            f"decreasing nb_of_days_for_pacf (currently set to {nb_of_days_for_pacf})."
+        )
+
+    if return_confidence_interval:
+        interval = compute_confidence_interval(
+            total_number_of_timesteps / 4 / downsample_hours
+        )
+        return average_pacf, interval
+
+    return average_pacf
+
+
+def get_pacf_values_complete_interval(
+    downsample_hours: float,
+    data: pd.DataFrame,
+    nb_of_days_for_pacf: int,
+    nb_of_steps_to_predict: int = 1,
+    return_confidence_interval: bool = False,
+):
     df = data.copy()
 
     # parse date and set it as index to be able to resample data
@@ -80,16 +154,20 @@ def get_pacf_values(
     pacf_df["PACF"] = new_pacf
 
     if return_confidence_interval:
-        # compute confidence interval (taken from the source code of statsmodels.tsa.stattools.pacf)
-        # see also: https://en.wikipedia.org/wiki/Partial_autocorrelation_function#Autoregressive_model_identification
-        varacf = 1.0 / df.shape[0]  # for all lags >=1
-        confidence_level = 0.05
-        interval = stats.norm.ppf(1.0 - confidence_level / 2.0) * np.sqrt(varacf)
-        # for a 95% confidence interval (confidence_level = 0.05),
-        # the interval is 1.96 * sqrt(varacf)
+        interval = compute_confidence_interval(df.shape[0])
         return pacf_df, interval
-
     return pacf_df
+
+
+def compute_confidence_interval(len_df: float) -> float:
+    # compute confidence interval (taken from the source code of statsmodels.tsa.stattools.pacf)
+    # see also: https://en.wikipedia.org/wiki/Partial_autocorrelation_function#Autoregressive_model_identification
+    varacf = 1.0 / len_df  # for all lags >=1
+    confidence_level = 0.05
+    interval = stats.norm.ppf(1.0 - confidence_level / 2.0) * np.sqrt(varacf)
+    # for a 95% confidence interval (confidence_level = 0.05),
+    # the interval is 1.96 * sqrt(varacf)
+    return interval
 
 
 @lru_cache
@@ -126,7 +204,7 @@ def get_threshold(
             pacf_df, number_of_lags_to_keep=number_of_lags_to_keep, interval=interval
         )
 
-        if threshold_value < interval:
+        if interval and threshold_value < interval:
             print(
                 f"WARNING: The threshold value is {threshold_value['PACF']:.2f}, "
                 f"which is below the confidence interval ({interval:.2f}). "
@@ -210,3 +288,55 @@ def plot_df_pacf(
         fig.update_xaxes(title_text="Lag", row=2, col=1)
 
         fig.show()
+
+
+def get_df_complete_intervals(
+    df: pd.DataFrame,
+    date_column: str,
+    frequency: str,
+) -> pd.DataFrame:
+    """Returns the complete intervals. there is data for the specified start_complete \
+        and end_complete dates (so use >= and <=)"""
+    df_complete_intervals = df.copy()
+    # find the difference between two data points
+    df_complete_intervals["diff"] = df_complete_intervals[date_column].diff()
+
+    # dates are missing if the difference is not the frequency
+    df_complete_intervals = df_complete_intervals[
+        df_complete_intervals["diff"] > pd.Timedelta(frequency)
+    ]
+    if df_complete_intervals.empty:
+        # Then we have no missing interval!
+        return pd.DataFrame(
+            {
+                "start_complete": (df[date_column].min()),
+                "end_complete": df[date_column].max(),
+            },
+            index=[0],
+        )
+
+    # define start and end dates of missing intervals
+    for i in range(df_complete_intervals.shape[0]):
+        index = df_complete_intervals.iloc[i].name
+        df_complete_intervals.loc[index, "end_complete"] = (
+            df_complete_intervals.loc[index, date_column]
+            - df_complete_intervals.loc[index, "diff"]
+        )
+        if i == 0:
+            df_complete_intervals.loc[index, "start_complete"] = df.iloc[0][date_column]
+        else:
+            df_complete_intervals.loc[index, "start_complete"] = (
+                df_complete_intervals.iloc[i - 1][date_column]
+            )
+
+    # add the last missing interval
+    last_row = pd.DataFrame(
+        {
+            "start_complete": (df_complete_intervals.iloc[-1][date_column]),
+            "end_complete": df.iloc[-1][date_column],
+        },
+        index=[df_complete_intervals.index[-1] + 1],
+    )
+    df_complete_intervals = pd.concat([df_complete_intervals, last_row], axis=0)
+
+    return df_complete_intervals
