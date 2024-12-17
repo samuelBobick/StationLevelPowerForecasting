@@ -442,7 +442,7 @@ class RegressionBaseModel(Base):
         )
 
         flat_inputs = merged_inputs_dates_sessions[
-            list(flat_inputs.columns[~flat_inputs.columns.str.contains(r"date_*+")])
+            list(flat_inputs.columns[~flat_inputs.columns.str.contains(r"date")])
             + [f"u_{i+1}" for i in range(max_timesteps_per_session)]
         ]
 
