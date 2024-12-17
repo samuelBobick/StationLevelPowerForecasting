@@ -1,10 +1,10 @@
 from slrp_ev_ts_forecasting.default_parameters import TypeDataSet, TypeModelChoice
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
-list_model_choices: list[TypeModelChoice] = ["LSTM"]
+list_model_choices: list[TypeModelChoice] = ["LinearRegression"]
 number_of_models_per_config = 1
-dataset: TypeDataSet = "slrp-ev_new"
-list_optimize_lags = [None]  # , "short_opt", "long_opt"]
+dataset: TypeDataSet = "slrp-ev_old"
+list_optimize_lags = ["short_opt", None, "long_opt"]
 
 if __name__ == "__main__":
     for model_choice in list_model_choices:
@@ -16,7 +16,7 @@ if __name__ == "__main__":
                             run_one_model(
                                 model_choice=model_choice,
                                 model_parameters={
-                                    # "optimize_lags": optimize_lags,
+                                    "optimize_lags": optimize_lags,
                                     # "dropout": dropout,
                                     # "get_val_data_from_shuffled_train": get_val_data_from_shuffled_train,
                                     # "batch_norm": batch_norm,
@@ -24,3 +24,7 @@ if __name__ == "__main__":
                                 save_results_filename="results_pacf_fix",
                                 dataset=dataset,
                             )
+
+                            list_model_choices: list[TypeModelChoice] = [
+                                "LinearRegression"
+                            ]
