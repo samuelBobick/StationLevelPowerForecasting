@@ -9,7 +9,11 @@ import torch
 from plotly import graph_objects as go
 from torch.utils.data import Dataset
 
-from .feature_engineering import reverse_feature_engineering
+from slrp_ev_data.feature_engineering import (
+    convert_data_freq_to_minutes,
+    get_data_frequency,
+    reverse_feature_engineering,
+)
 
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
 
@@ -155,7 +159,8 @@ class WindowGenerator:
         self.get_val_from_shuffled_train = get_val_from_shuffled_train
         self.test_df = test_df
 
-        self.data_freq = self._get_data_frequency(train_df)
+        self.data_freq = get_data_frequency(train_df)
+        self.data_freq_minutes = convert_data_freq_to_minutes(self.data_freq)
 
         # Work out the label column indices.
         self.label_columns = label_columns
@@ -194,39 +199,6 @@ class WindowGenerator:
             ]
         )
 
-    def _get_data_frequency(self, df) -> str:
-        """Get the data frequency from the DataFrame."""
-        _data_size_for_freq_lookup = getattr(
-            self, "_data_size_for_freq_lookup", df.shape[0]
-        )
-        if isinstance(df["date"].iloc[0], pd.Timestamp):
-            data_freq = pd.infer_freq(df["date"].iloc[-_data_size_for_freq_lookup:])
-        else:
-            data_freq = pd.infer_freq(
-                pd.to_datetime(df["date"].iloc[-_data_size_for_freq_lookup:], unit="s")
-            )
-
-        # if the data frequency is not found, it might be because we have gaps.
-        # Then, we recursively call the function with a smaller
-        # data size lookup
-        if not data_freq:
-            if _data_size_for_freq_lookup < 100:
-                raise ValueError("The data frequency could not be inferred.")
-            else:
-                self._data_size_for_freq_lookup = int(_data_size_for_freq_lookup / 2)
-                return self._get_data_frequency(df)
-        return data_freq
-
-    @property
-    def data_freq_minutes(self) -> int:
-        try:
-            return int(self.data_freq.split("min")[0])  #
-        except ValueError:
-            raise ValueError(
-                "The data frequency is not in minutes. "
-                "Please edit this function to handle other frequencies."
-            )
-
     def split_window(self, features):
         # shape of features is (batch_size, total_window_size, num_features)
         # Here, we filter out the windows that have a gap in the data
@@ -248,9 +220,6 @@ class WindowGenerator:
         )
         # We count the number of gaps in the window
         continuous_features = tf.boolean_mask(features, continuous_mask)
-
-        # TO TEST ONLY
-        # continuous_features = features
 
         inputs = continuous_features[:, self.input_slice, :]
         labels = continuous_features[:, self.labels_slice, :]
@@ -278,8 +247,8 @@ class WindowGenerator:
         )
         if self.verbose:
             print(
-                f"Data length: {data.shape[0]}. "
-                f"We should have {max_number_of_samples} samples"
+                f"Data length: {data.shape[0]:.0f}. "
+                f"We should have {max_number_of_samples:.0f} samples"
             )
 
         ds = tf.keras.utils.timeseries_dataset_from_array(  # type: ignore
@@ -298,10 +267,17 @@ class WindowGenerator:
                 max_number_of_samples - number_of_samples
             )  # counter for the number of gaps in the data
             if gaps > 0:
+                percentage_gaps = gaps / max_number_of_samples
                 print(
                     f"WARNING: Number of gaps (=number of windows dropped) found "
-                    f"when making windows: {gaps}"
+                    f"when making windows: {gaps:.0f} ({percentage_gaps:.2%}% of the data)"
                 )
+                if percentage_gaps > 0.6:
+                    raise ValueError(
+                        "The number of gaps is too high. "
+                        "Please reduce the amount of missing the values "
+                        "or the size of the windows."
+                    )
 
         # return dataset as eager tensor
         return list(ds)
@@ -409,7 +385,8 @@ class WindowGenerator:
         ]
         if columns_not_selected:
             print(
-                f"WARNING: The following columns will be dropped when flattening inputs: {columns_not_selected}"
+                "INFO: The following columns will be dropped when "
+                f"flattening the inputs: {columns_not_selected}"
             )
         no_user_last_keep_value = False
         if not cols_keep_last_value:

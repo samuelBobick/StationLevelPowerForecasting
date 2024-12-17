@@ -28,6 +28,7 @@ def convert_date_from_datetime_to_int(date_column: pd.Series) -> pd.Series:
 
 def feature_engineering(
     data_input: pd.DataFrame,
+    add_nans_for_missing_data: bool,
     standardize_parameters: tuple[pd.Series, pd.Series] | None = None,
     normalize_parameters: tuple[pd.Series, pd.Series] | None = None,
 ) -> pd.DataFrame:
@@ -42,14 +43,13 @@ def feature_engineering(
 
     Args:
         data (pd.DataFrame): Data to be transformed and fed into the models (e.g. for the window generator).
-        train_mean (pd.Series): Mean of the training data, used to normalize the data.
+        add_nans_for_missing_data (bool): If True, adds the missing timesteps, and set their features to NaNs. \
+            If False, there won't be any NaNs in the data, but some timesteps might be missing.
+        standardize_parameters (tuple[pd.Series, pd.Series]): Mean and standard deviation \
+            of the training data, used to standardize the data. \
             Should come from get_train_mean_and_std.
-        train_std (pd.Series): Standard deviation of the training data, used to normalize the data.
-            Should come from get_train_mean_and_std.
-        standardize_parameters (tuple[pd.Series, pd.Series]): Mean and standard deviation of the training data, used to standardize the data.
-            Should come from get_train_mean_and_std.
-        normalize_parameters (tuple[pd.Series, pd.Series]): Min and max of the training data, used to normalize the data.
-            Should come from get_train_min_and_max.
+        normalize_parameters (tuple[pd.Series, pd.Series]): Min and max of the training data, \
+            used to normalize the data. Should come from get_train_min_and_max.
     Returns:
         pd.DataFrame: Data ready to be used in the models and tensorflow.
     """
@@ -74,6 +74,11 @@ def feature_engineering(
             data[COLS_TO_NORMALIZE], train_min, train_max
         )
 
+    if add_nans_for_missing_data:
+        data = add_missing_timesteps(data)
+
+    data["workday"] = (data["date"].dt.dayofweek < 5).astype(int)
+
     # Add the 4 hour time window
     data["time_window"] = data["date"].dt.hour // 4
 
@@ -93,6 +98,7 @@ def feature_engineering(
     data["Year cos"] = np.cos(data["date"] * (2 * np.pi / s_in_year))
 
     FeaturedEngineeredSchema.validate(data)
+
     return data
 
 
@@ -201,3 +207,45 @@ def one_hot_encoding(
 
     data_encoded = pd.get_dummies(data_input, columns=cols_to_encode, dtype=int)
     return data_encoded
+
+
+def get_data_frequency(df, _data_size_for_freq_lookup=None) -> str:
+    """Get the data frequency from the DataFrame.
+    Leave _data_size_for_freq_lookup to None, it is used for recursion."""
+    if _data_size_for_freq_lookup is None:
+        _data_size_for_freq_lookup = df.shape[0]
+
+    if isinstance(df["date"].iloc[0], pd.Timestamp):
+        data_freq = pd.infer_freq(df["date"].iloc[-_data_size_for_freq_lookup:])
+    else:
+        data_freq = pd.infer_freq(
+            pd.to_datetime(df["date"].iloc[-_data_size_for_freq_lookup:], unit="s")
+        )
+
+    # if the data frequency is not found, it might be because we have gaps.
+    # Then, we recursively call the function with a smaller
+    # data size lookup
+    if not data_freq:
+        if _data_size_for_freq_lookup < 100:
+            raise ValueError("The data frequency could not be inferred.")
+        else:
+            _data_size_for_freq_lookup = int(_data_size_for_freq_lookup / 2)
+            return get_data_frequency(df, _data_size_for_freq_lookup)
+    return data_freq
+
+
+def convert_data_freq_to_minutes(data_freq) -> int:
+    try:
+        return int(data_freq.split("min")[0])  #
+    except ValueError:
+        raise ValueError(
+            "The data frequency is not in minutes. "
+            "Please edit this function to handle other frequencies."
+        )
+
+
+def add_missing_timesteps(data) -> pd.DataFrame:
+    # make sure that date is a datetime before calling that function
+    return (
+        data.set_index("date").resample(get_data_frequency(data)).mean().reset_index()
+    )
