@@ -6,7 +6,7 @@ number_of_models_per_config = 1
 dataset: TypeDataSet = "slrp-ev_new"
 session_based_mode = True
 peak_prediction = True
-list_optimize_lags = ["short_opt", None, "long_opt"]
+list_optimize_lags = [None] #["short_opt", None, "long_opt"]
 
 if __name__ == "__main__":
     for model_choice in list_model_choices:
