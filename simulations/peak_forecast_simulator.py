@@ -12,9 +12,7 @@ from slrp_ev_data.normalization_and_standardization import (
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
-
-from simulations.utils import round_up_to_nearest_timestep
-
+from utils import round_up_to_nearest_timestep
 
 class PeakForecastSimulator(BaselineSimulator):
     def __init__(
@@ -119,7 +117,7 @@ class PeakForecastSimulator(BaselineSimulator):
         coefficients = model["coefficients"].squeeze()
         intercept = model["intercept"][0]
 
-        prediction = np.dot(normalized_features, coefficients) + intercept
+        prediction = (normalized_features @ coefficients) + intercept
 
         reversed_prediction = (
             prediction
@@ -178,7 +176,7 @@ class PeakForecastSimulator(BaselineSimulator):
         s_in_day = 24 * 60 * 60  # number of seconds in a day
         s_in_week = 7 * s_in_day
         s_in_year = (365.2425) * s_in_day
-        unix_time = time.timestamp
+        unix_time = time.timestamp()
         time_features = np.array([
             np.sin(unix_time * (2 * np.pi / s_in_day)),
             np.cos(unix_time * (2 * np.pi / s_in_day)),
@@ -188,8 +186,8 @@ class PeakForecastSimulator(BaselineSimulator):
             np.cos(unix_time * (2 * np.pi / s_in_year))
         ])
        
-        features = cp.hstack([historical_power_profile, time_features, u[:96]])
-        workday = (time.dayofweek < 5).astype(int)
+        features = cp.hstack([historical_power_profile, time_features, cp.reshape(u[:96], (96,))])
+        workday = int(time.dayofweek < 5)
 
         return self.make_prediction(features, workday)
 

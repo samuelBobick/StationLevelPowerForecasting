@@ -193,8 +193,8 @@ class BaselineSimulator:
         )
         new_leave_obj = 0
 
-        current_peak_sch = self.get_current_peak_sch(num_reg_user, num_sch_user, u)
-        current_peak_reg = self.get_current_peak_reg(num_reg_user, num_sch_user, u)
+        current_peak_sch = self.get_current_peak_sch(num_reg_user, num_sch_user, u, current_time)
+        current_peak_reg = self.get_current_peak_reg(num_reg_user, num_sch_user, u, current_time)
 
         J_scheduled = (
             (new_sch_obj + existing_sch_obj + existing_reg_obj)
