@@ -10,9 +10,9 @@ from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
 from scipy.special import softmax
 from tqdm.auto import tqdm
 from utils import (
-    get_e_need,
     get_new_reg_obj,
     get_new_sch_obj,
+    get_remaining_e_need,
     get_timestep_info,
     round_up_to_nearest_timestep,
 )
@@ -199,7 +199,7 @@ class BaselineSimulator:
             num_reg_user, num_sch_user, u, current_time
         )
         current_peak_reg = self.get_current_peak_reg(
-            num_reg_user, num_sch_user, u, current_time
+            num_reg_user, num_sch_user, u, current_time, last_row
         )
 
         J_scheduled = (
@@ -240,9 +240,9 @@ class BaselineSimulator:
         )
 
     def get_current_peak_sch(
-        self, num_reg_user, num_sch_user, u, time=None
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None
     ) -> cp.Expression:
-        """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
+        """Helper function to get the peak, accounting for the optimized scheduled power profiles
 
             add the + 1 because we imagine that the new user is regular here
             the second term is basically the max power from the current scheduled users
@@ -252,7 +252,6 @@ class BaselineSimulator:
             num_reg_user (int): number of regular users
             num_reg_user (int): number of scheduled users
             u (cp.Variable): scheduled power profile
-            time (pd.datetime): timf of optimization
 
         Returns:
             cp.Expression: current scheduled peak
@@ -267,9 +266,9 @@ class BaselineSimulator:
         return self.power_rate * num_reg_user + cp.max(sch_power_sum_profile)
 
     def get_current_peak_reg(
-        self, num_reg_user, num_sch_user, u, time=None
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None, row=None
     ) -> cp.Expression:
-        """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
+        """Helper function to get the peak, accounting for the optimized scheduled power profiles
 
             add the + 1 because we imagine that the new user is regular here
             the second term is basically the max power from the current scheduled users
@@ -279,7 +278,6 @@ class BaselineSimulator:
             num_reg_user (int): number of regular users
             num_reg_user (int): number of scheduled users
             u (cp.Variable): scheduled power profile
-            time (pd.datetime): timf of optimization
 
         Returns:
             cp.Expression: current scheduled peak
@@ -653,6 +651,11 @@ class BaselineSimulator:
                 print("existing_reg_obj", min_J_arr[6])
                 print("Total daily profit so far", min_J)
 
+                # visualize the predictions for peak_simulator
+                self.get_current_peak(
+                    power_profiles[last_row["dcosId"]], startChargeTime, verbose=True
+                )
+
                 # TODO: put this in a separate function? (e.g. `plot_prices_grid_profit_heatmap`)
                 # Collect the data
                 data = []
@@ -710,7 +713,7 @@ class BaselineSimulator:
         TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
             last_row, current_time, self.delta_t
         )
-        e_need = get_e_need(
+        e_need = get_remaining_e_need(
             last_row,
             current_time,
             power_profiles,
@@ -727,7 +730,7 @@ class BaselineSimulator:
             TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
                 row, current_time, self.delta_t
             )
-            e_need = get_e_need(
+            e_need = get_remaining_e_need(
                 row,
                 current_time,
                 power_profiles,
@@ -797,3 +800,7 @@ class BaselineSimulator:
             current_peak_reg,
             constraints,
         )
+
+    def get_current_peak(self, u, time, verbose):
+        # This function is not implemented in the baseline simulator
+        pass

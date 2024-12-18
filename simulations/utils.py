@@ -62,12 +62,7 @@ def get_new_reg_obj(row, z, delta_t, TOU, power_rate, flexibility_constant):
         row, pd.to_datetime(row["startChargeTime"]), delta_t
     )
 
-    if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
-        e_need = row["energyReq_Wh"] / 1000 / delta_t
-    elif row["choice"] == "SCHEDULED":
-        e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
-    else:
-        e_need = row["cumEnergy_Wh"] / 1000 / delta_t
+    e_need = get_total_e_need(row, delta_t, flexibility_constant)
 
     N_reg = int(
         e_need // power_rate
@@ -93,7 +88,7 @@ def get_power_profile_idx(row, current_time, delta_t):
     return power_profile_current_idx
 
 
-def get_e_need(
+def get_remaining_e_need(
     row, current_time, power_profiles, delta_t, power_rate, flexibility_constant
 ):
     """
@@ -106,16 +101,7 @@ def get_e_need(
         power_rate: max power of a single EV charger, in kW
         flexibility_constant: proportion of regular demand that a user would have demanded if they chose scheduled
     """
-    if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
-        # Case where the session was really scheduled and we have the energy needed
-        # for the session given by the user
-        e_need = row["energyReq_Wh"] / 1000 / delta_t
-    elif row["choice"] == "SCHEDULED":
-        # case for when we consider the session scheduled but the real one was regular
-        # so we have to estimate the energy needed
-        e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
-    else:
-        e_need = row["cumEnergy_Wh"] / 1000 / delta_t
+    e_need = get_total_e_need(row, delta_t, flexibility_constant)
 
     power_profile_current_idx = get_power_profile_idx(row, current_time, delta_t)
     TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
@@ -133,6 +119,20 @@ def get_e_need(
     if e_need > N_remain * power_rate:  # if user requests an infeasible amount of power
         e_need = N_remain * power_rate
 
+    return e_need
+
+
+def get_total_e_need(row, delta_t, flexibility_constant):
+    if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
+        # Case where the session was really scheduled and we have the energy needed
+        # for the session given by the user
+        e_need = row["energyReq_Wh"] / 1000 / delta_t
+    elif row["choice"] == "SCHEDULED":
+        # case for when we consider the session scheduled but the real one was regular
+        # so we have to estimate the energy needed
+        e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
+    else:
+        e_need = row["cumEnergy_Wh"] / 1000 / delta_t
     return e_need
 
 
