@@ -56,14 +56,22 @@ class LinearModel(RegressionBaseModel):
         val_mask: pd.Series,
     ):
 
-        X_input = X_train[train_mask].drop(
-            self.cols_to_drop_for_model,
-            # [col for col in X_train.columns if not col.startswith("power")],
-            axis=1,
+        X_input = pd.concat(
+            [
+                X_train[train_mask].drop(
+                    self.cols_to_drop_for_model,
+                    axis=1,
+                ),
+                X_val[val_mask].drop(
+                    self.cols_to_drop_for_model,
+                    axis=1,
+                ),
+            ],
+            axis=0,
         )
         self.feature_names = list(X_input.columns)
 
-        y_input = y_train[train_mask]
+        y_input = pd.concat([y_train[train_mask], y_val[val_mask]], axis=0)
         self.label_names = list(y_input.columns)
 
         lm = linear_model.LinearRegression()

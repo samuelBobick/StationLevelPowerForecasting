@@ -57,8 +57,6 @@ def feature_engineering(
     # Check that the data is in the correct format
     DataSchema.validate(data)
 
-    data = data.loc[data["date"] >= "2021-03-01"]
-
     if normalize_parameters and standardize_parameters:
         raise ValueError(
             "Cannot normalize and standardize at the same time. Please pass normalize_parameters OR standardize_parameters"
