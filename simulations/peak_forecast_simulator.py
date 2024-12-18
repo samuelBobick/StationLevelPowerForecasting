@@ -1,18 +1,20 @@
 import json
 from typing import Optional
 
-import numpy as np
 import cvxpy as cp
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
+from cvxpy.atoms.affine.hstack import Hstack
 from slrp_ev_data.normalization_and_standardization import (
     SINGLE_EVSE_NORMALIZATION_PARAM,
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
 from utils import round_up_to_nearest_timestep
+
 
 class PeakForecastSimulator(BaselineSimulator):
     def __init__(
@@ -96,7 +98,9 @@ class PeakForecastSimulator(BaselineSimulator):
         self.labels_norm_parameters_min = np.array(labels_norm_parameters_min)
         self.labels_norm_parameters_max = np.array(labels_norm_parameters_max)
 
-    def make_prediction(self, features: np.ndarray, workday: int) -> np.ndarray:
+    def make_prediction(
+        self, features: np.ndarray | Hstack, workday: int
+    ) -> cp.Expression:
         """Make a prediction using the linear model
 
         Args:
@@ -126,8 +130,10 @@ class PeakForecastSimulator(BaselineSimulator):
         )
 
         return reversed_prediction
-    
-    def get_current_peak_sch(self, num_reg_user, num_sch_user, u, time) -> cp.Expression:
+
+    def get_current_peak_sch(
+        self, num_reg_user, num_sch_user, u, time
+    ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
         Args:
@@ -140,8 +146,10 @@ class PeakForecastSimulator(BaselineSimulator):
             cp.Expression: current scheduled peak
         """
         return self.get_current_peak(u, time)
-    
-    def get_current_peak_reg(self, num_reg_user, num_sch_user, u, time) -> cp.Expression:
+
+    def get_current_peak_reg(
+        self, num_reg_user, num_sch_user, u, time
+    ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
             add the + 1 because we imagine that the new user is regular here
@@ -158,7 +166,7 @@ class PeakForecastSimulator(BaselineSimulator):
             cp.Expression: current scheduled peak
         """
         return self.get_current_peak(u, time)
-    
+
     def get_current_peak(self, u, time):
         """Make a forecast for the peak given the optimized power profile
 
@@ -167,30 +175,39 @@ class PeakForecastSimulator(BaselineSimulator):
             time (pd.datetime): timf of optimization
 
         Returns:
-            prediction of current peak given time, past power profile, and scheduled power_profile 
+            prediction of current peak given time, past power profile, and scheduled power_profile
         """
         rounded_current_time = round_up_to_nearest_timestep(time, self.delta_t)
-        timesteps = pd.date_range(end=rounded_current_time - pd.Timedelta(minutes=15), periods = 96, freq="15min")
-        historical_power_profile = self.aggregate_power_profile[self.aggregate_power_profile['date'].isin(timesteps)]['power'].values
+        timesteps = pd.date_range(
+            end=rounded_current_time - pd.Timedelta(minutes=15),
+            periods=96,
+            freq="15min",
+        )
+        historical_power_profile = self.aggregate_power_profile[
+            self.aggregate_power_profile["date"].isin(timesteps)
+        ]["power"].values
 
         s_in_day = 24 * 60 * 60  # number of seconds in a day
         s_in_week = 7 * s_in_day
         s_in_year = (365.2425) * s_in_day
         unix_time = time.timestamp()
-        time_features = np.array([
-            np.sin(unix_time * (2 * np.pi / s_in_day)),
-            np.cos(unix_time * (2 * np.pi / s_in_day)),
-            np.sin(unix_time * (2 * np.pi / s_in_week)),
-            np.cos(unix_time * (2 * np.pi / s_in_week)),
-            np.sin(unix_time * (2 * np.pi / s_in_year)),
-            np.cos(unix_time * (2 * np.pi / s_in_year))
-        ])
-       
-        features = cp.hstack([historical_power_profile, time_features, cp.reshape(u[:96], (96,))])
+        time_features = np.array(
+            [
+                np.sin(unix_time * (2 * np.pi / s_in_day)),
+                np.cos(unix_time * (2 * np.pi / s_in_day)),
+                np.sin(unix_time * (2 * np.pi / s_in_week)),
+                np.cos(unix_time * (2 * np.pi / s_in_week)),
+                np.sin(unix_time * (2 * np.pi / s_in_year)),
+                np.cos(unix_time * (2 * np.pi / s_in_year)),
+            ]
+        )
+
+        features = cp.hstack(
+            [historical_power_profile, time_features, cp.reshape(u[:96], (96,))]
+        )
         workday = int(time.dayofweek < 5)
 
         return self.make_prediction(features, workday)
-
 
     def visualize_samples(
         self, sample: np.ndarray, prediction: Optional[np.ndarray] = None

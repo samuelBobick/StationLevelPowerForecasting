@@ -301,8 +301,10 @@ def round_up_to_nearest_timestep(ts, delta_t):
     """
     round_interval = 60 * delta_t
     # Find the number of seconds since the last 15-minute interval
-    seconds_to_next = (round_interval * 60) - (ts.minute % round_interval * 60 + ts.second)
-    
+    seconds_to_next = (round_interval * 60) - (
+        ts.minute % round_interval * 60 + ts.second
+    )
+
     # Add the remaining seconds to the original timestamp
     rounded_ts = ts + pd.Timedelta(seconds=seconds_to_next)
     return rounded_ts.replace(second=0, microsecond=0)
