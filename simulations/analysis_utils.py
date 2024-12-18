@@ -4,12 +4,13 @@ from typing import Literal, Optional
 import pandas as pd
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
+from peak_forecast_simulator import PeakForecastSimulator
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
 from utils import aggregate_power_profiles, get_profit, get_session_results
 
 TypeScenario = Literal[
-    "all_scheduled", "all_regular", "standard", "smooth_dc_penalty", "threshold"
+    "all_scheduled", "all_regular", "standard", "smooth_dc_penalty", "threshold", "peak_forecast"
 ]
 
 
@@ -99,6 +100,18 @@ def get_simulator(
             monte_carlo,
             verbose,
             step,
+        )
+    elif scenario == "peak_forecast":
+        return PeakForecastSimulator(
+            data,
+            var_dim_constant,
+            delta_t,
+            power_rate,
+            flexibility_constant,
+            tariff_name,
+            custom_cost_dc,
+            monte_carlo,
+            verbose,
         )
     else:
         raise ValueError(
