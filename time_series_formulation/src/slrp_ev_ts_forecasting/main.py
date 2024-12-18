@@ -1,7 +1,7 @@
 from slrp_ev_ts_forecasting.default_parameters import TypeDataSet, TypeModelChoice
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
-list_model_choices: list[TypeModelChoice] = ["LinearRegression"]
+list_model_choices: list[TypeModelChoice] = ["PeakPersistence"]
 number_of_models_per_config = 1
 dataset: TypeDataSet = "slrp-ev_new"
 session_based_mode = True
