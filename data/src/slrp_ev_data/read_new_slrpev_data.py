@@ -28,4 +28,7 @@ def read_new_slrpev_data(keep_all_columns=False) -> pd.DataFrame:
         data = data[["date", "power", "workday"]]
     data = data.dropna(subset=["power"])
 
+    # remove data from the beginning because it is not very representative
+    data = data.loc[data["date"] >= "2021-03-01"]
+
     return data
