@@ -10,7 +10,12 @@ from threshold_simulator import ThresholdSimulator
 from utils import aggregate_power_profiles, get_profit, get_session_results
 
 TypeScenario = Literal[
-    "all_scheduled", "all_regular", "standard", "smooth_dc_penalty", "threshold", "peak_forecast"
+    "all_scheduled",
+    "all_regular",
+    "standard",
+    "smooth_dc_penalty",
+    "threshold",
+    "peak_forecast",
 ]
 
 
