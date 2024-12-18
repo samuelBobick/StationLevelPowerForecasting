@@ -13,7 +13,7 @@ from slrp_ev_data.normalization_and_standardization import (
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
-from utils import round_up_to_nearest_timestep
+from utils import get_total_e_need, round_up_to_nearest_timestep
 
 
 class PeakForecastSimulator(BaselineSimulator):
@@ -145,10 +145,11 @@ class PeakForecastSimulator(BaselineSimulator):
         Returns:
             cp.Expression: current scheduled peak
         """
-        return self.get_current_peak(u, time)
+        next_session_profile = cp.reshape(u[:96], (96,))
+        return self.get_current_peak(next_session_profile, time)
 
     def get_current_peak_reg(
-        self, num_reg_user, num_sch_user, u, time
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
     ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
@@ -165,9 +166,18 @@ class PeakForecastSimulator(BaselineSimulator):
         Returns:
             cp.Expression: current scheduled peak
         """
-        return self.get_current_peak(u, time)
+        e_need = get_total_e_need(row, self.delta_t, self.flexibility_constant)
 
-    def get_current_peak(self, u, time):
+        N_reg = int(
+            e_need // self.power_rate
+        )  # how many time steps would it take the user to charge if they chose regular?
+        next_session_profile = np.array([self.power_rate] * N_reg + [0] * (96 - N_reg))
+        # TODO: remove assert
+        return self.get_current_peak(next_session_profile, time)
+
+    def get_current_peak(
+        self, next_session_profile, time, verbose=False
+    ) -> cp.Expression:
         """Make a forecast for the peak given the optimized power profile
 
         Args:
@@ -203,11 +213,20 @@ class PeakForecastSimulator(BaselineSimulator):
         )
 
         features = cp.hstack(
-            [historical_power_profile, time_features, cp.reshape(u[:96], (96,))]
+            [
+                historical_power_profile * 1000,
+                time_features,
+                next_session_profile * 1000,
+            ]
         )
         workday = int(time.dayofweek < 5)
 
-        return self.make_prediction(features, workday)
+        prediction = self.make_prediction(features, workday)
+
+        if verbose:
+            self.visualize_samples(features.value, prediction.value)  # type: ignore
+
+        return prediction
 
     def visualize_samples(
         self, sample: np.ndarray, prediction: Optional[np.ndarray] = None
