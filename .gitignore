@@ -7,6 +7,10 @@ data/src/slrp_ev_data/data/power_df_2008-2406_v241209_15min.csv
 data/src/slrp_ev_data/data/power_df_2008-2406_v241209.csv
 data/src/slrp_ev_data/saved_normalization_parameters/**
 
+# simulations package
+simulations/results/*/*/*.csv
+!simulations/results/*/*/summary.csv
+
 # time series formulation package
 time_series_formulation/src/slrp_ev_ts_forecasting/runs/**
 time_series_formulation/src/slrp_ev_ts_forecasting/models/**/*.pt
