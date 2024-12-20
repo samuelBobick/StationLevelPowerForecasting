@@ -156,13 +156,13 @@ def generate_session_results(
     energy_delivered = round(sum(session_results["energy_delivered"]), 2)
 
     row_data = {
-        "Month": [month],
-        "Total Profit (cents)": [total_profit],
-        "Charging Revenue (cents)": [charging_revenue],
-        "TOU Cost (cents)": [TOU_cost],
-        "Demand Charge (cents)": [demand_charge_cents],
-        "Peak Power (kW)": [demand_charge_kw],
-        "Energy Delivered (kWh)": [energy_delivered]
+        "Month": month,
+        "Total Profit (cents)": total_profit,
+        "Charging Revenue (cents)": charging_revenue,
+        "TOU Cost (cents)": TOU_cost,
+        "Demand Charge (cents)": demand_charge_cents,
+        "Peak Power (kW)": demand_charge_kw,
+        "Energy Delivered (kWh)": energy_delivered
     }
 
     if os.path.exists(summary_file_name):
