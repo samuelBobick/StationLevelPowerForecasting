@@ -86,15 +86,14 @@ class BaselineSimulator:
         self.verbose = verbose
 
         start_date = min(pd.to_datetime(self.test_df["startChargeTime"]))
-        end_date = max(pd.to_datetime(self.test_df["startChargeTime"]))
-        start_of_first_month = start_date.replace(
+        start_of_month = start_date.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
-        end_of_last_month = (end_date + pd.offsets.MonthEnd(1)).replace(
+        end_of_month = (start_date + pd.offsets.MonthEnd(1)).replace(
             hour=23, minute=59, second=59
         )
         intervals = pd.date_range(
-            start=start_of_first_month, end=end_of_last_month, freq="15min"
+            start=start_of_month, end=end_of_month, freq="15min"
         )
         self.aggregate_power_profile = pd.DataFrame({"date": intervals, "power": 0})
 
