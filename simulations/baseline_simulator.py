@@ -5,9 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from constants.dcm import get_dcm_theta
+from constants.dcm import get_dcm_theta, get_dcm_v
 from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
-from scipy.special import softmax
 from tqdm.auto import tqdm
 from utils import (
     get_new_reg_obj,
@@ -76,7 +75,24 @@ class BaselineSimulator:
         #     'tariff_grid',
         #     [(z_sch, z_reg) for z_reg in prices for z_sch in prices if z_sch < z_reg]
         # )
-        self.tariff_grid = [(i, 30) for i in np.arange(10, 30, 2.5)]
+        # max price currently for fast charging, we would only be competitive if we are much lower than that
+        self.max_price_per_kwh = 70  # cents/kWh
+        # min price for home charging is around 15 cents/kWh.
+        # This price would be very competitive for public level 2 charging
+        # source: https://www.caranddriver.com/news/a45036169/electric-vehicle-ev-cost-to-charge/
+        self.min_price_per_kwh = 15  # cents/kWh
+        prices_kwh_regular = np.arange(
+            self.max_price_per_kwh - 40, self.max_price_per_kwh, 5
+        )
+        prices_kwh_scheduled = np.arange(
+            self.min_price_per_kwh, self.max_price_per_kwh, 5
+        )
+        self.tariff_grid = [
+            (p_sch, p_reg)
+            for p_reg in prices_kwh_regular
+            for p_sch in prices_kwh_scheduled
+            if p_sch < p_reg
+        ]
 
         # Default discrete choice model parameters
         self.theta = get_dcm_theta(self.power_rate)
@@ -170,18 +186,6 @@ class BaselineSimulator:
                     )
                 num_reg_user += 1
 
-        # We add the +1 here because we haven't counted the new user yet (below we imagine
-        # that the new user is scheduled)
-        # initial shape of u: (self.var_dim_constant * (num_sch_user + 1), 1). The
-        # first self.var_dim_constant elements of u are for the next session, that
-        # we are trying to optimize
-        sch_power_sum_profile = cp.reshape(
-            u, (self.var_dim_constant, num_sch_user + 1)
-        ).T  # Shape: (num_sch_user + 1, self.var_dim_constant)
-        sch_power_sum_profile = cp.sum(
-            sch_power_sum_profile, axis=0
-        )  # Shape: (self.var_dim_constant,)
-
         last_row = sub_df.iloc[-1]
         new_sch_obj = get_new_sch_obj(last_row, z, u, self.delta_t, self.TOU)
         new_reg_obj = get_new_reg_obj(
@@ -243,10 +247,6 @@ class BaselineSimulator:
     ) -> cp.Expression:
         """Helper function to get the peak, accounting for the optimized scheduled power profiles
 
-            add the + 1 because we imagine that the new user is regular here
-            the second term is basically the max power from the current scheduled users
-            (without considering that the new user is scheduled)
-
         Args:
             num_reg_user (int): number of regular users
             num_reg_user (int): number of scheduled users
@@ -255,6 +255,11 @@ class BaselineSimulator:
         Returns:
             cp.Expression: current scheduled peak
         """
+        # We add the +1 here because we haven't counted the new user yet (below we imagine
+        # that the new user is scheduled)
+        # initial shape of u: (self.var_dim_constant * (num_sch_user + 1), 1). The
+        # first self.var_dim_constant elements of u are for the next session, that
+        # we are trying to optimize
         sch_power_sum_profile = cp.reshape(
             u, (self.var_dim_constant, num_sch_user + 1)
         ).T  # Shape: (num_sch_user + 1, self.var_dim_constant)
@@ -375,9 +380,7 @@ class BaselineSimulator:
         grid_search_results = {}
         for z_sch_k, z_reg_k in self.tariff_grid:
             zk = [z_sch_k, z_reg_k, 1, 1]
-            vk = softmax(self.theta @ zk).reshape(
-                3, 1
-            )  # reshape to convert to a 3*1 matrix (initially array of 3 elements)
+            vk = get_dcm_v(zk, self.theta)
 
             (
                 uk_flex,
@@ -390,9 +393,8 @@ class BaselineSimulator:
                 zk, vk, sub_df, current_time, running_peak, power_profiles, prices
             )
             grid_search_results[(z_sch_k, z_reg_k)] = {
-                "J": J.value[
-                    0
-                ],  # value of the objective function (the array is of length 1)
+                "J": J.value[0] if isinstance(J.value, np.ndarray) else J.value,
+                # value of the objective function (the array is of length 1)
                 "J_arr": J_array,  # values of J_0=J_schedule, J_1=J_regular, J_2=J_leave, new_sch_obj, new_reg_obj, existing_sch_obj, existing_reg_obj, dc_charge_sch
                 "u": uk_flex,
                 "v": vk,  # array with probabilities of each choice [sch, reg, leave]
@@ -472,7 +474,6 @@ class BaselineSimulator:
         power_profiles = {c: np.array([]) for c in self.test_df["dcosId"]}
         prices = {c: () for c in self.test_df["dcosId"]}
         hourly_prices = {c: () for c in self.test_df["dcosId"]}
-        running_peak = 0
         # active_sessions = [{dcosId : start_time},......] TODO
         active_sessions = []
 
@@ -480,13 +481,14 @@ class BaselineSimulator:
         for startChargeTime in tqdm(
             pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
         ):
-            # TODO look at ongoing sessions, and add the chunk that occurred since the last optimization @Sam
+            # Update the aggregate power profile and the running peak
             active_sessions = self.update_aggregate_power_profile(
                 previousStartChargeTime,
                 startChargeTime,
                 active_sessions,
                 power_profiles,
             )
+            running_peak = self.aggregate_power_profile["power"].max()
 
             grid_search_results, sub_df = self.grid_search(
                 startChargeTime, running_peak, power_profiles, prices
@@ -541,7 +543,7 @@ class BaselineSimulator:
             hourly_prices[last_row["dcosId"]] = hourly_optimal_prices
 
             zk = [optimal_prices[0], optimal_prices[1], 1, 1]
-            vk = softmax(self.theta @ zk).flatten()  # .reshape(3,1)
+            vk = get_dcm_v(zk, self.theta)
             if self.monte_carlo:
                 normalized_probs = (
                     vk[:2] / vk[:2].sum()
@@ -555,13 +557,11 @@ class BaselineSimulator:
 
             previous_running_peak = running_peak
             if choice == "SCHEDULED":
-                running_peak = max(previous_running_peak, current_peak_sch)
                 power_profiles[last_row["dcosId"]] = u[
                     : self.var_dim_constant
                 ].flatten()
                 num_sch_user += 1
             else:
-                running_peak = max(previous_running_peak, current_peak_reg)
                 TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = (
                     get_timestep_info(last_row, startChargeTime, self.delta_t)
                 )
@@ -602,17 +602,12 @@ class BaselineSimulator:
                     f'kWh to session #{last_row["dcosId"]}',
                 )
                 print("Number of active sessions:", len(sub_df))
+                print("Running peak thus far", round(running_peak, 2))
                 print(
-                    "Current peak options (scheduled, regular):",
+                    "Predicted peak options (scheduled, regular):",
                     round(current_peak_sch, 2),
                     round(current_peak_reg, 2),
                 )
-                print(
-                    "Running DC options (scheduled, regular):",
-                    round(max(previous_running_peak, current_peak_sch), 2),
-                    round(max(previous_running_peak, current_peak_reg), 2),
-                )
-                print("Peak thus far", round(running_peak, 2))
                 print(
                     "Profit options (scheduled, regular, leave):",
                     min_J_arr[0].value,
@@ -648,7 +643,7 @@ class BaselineSimulator:
                     ),
                 )
                 print("existing_reg_obj", min_J_arr[6])
-                print("Total daily profit so far", min_J)
+                print("Total daily cost so far", min_J)
 
                 # visualize the predictions for peak_simulator
                 self.get_current_peak(
@@ -663,10 +658,10 @@ class BaselineSimulator:
                     data.append([z_sch, z_reg, J])
 
                 # Create a DataFrame with the correct column names
-                df = pd.DataFrame(data, columns=["z_sch", "z_reg", "Profit"])
+                df = pd.DataFrame(data, columns=["z_sch", "z_reg", "Cost"])
 
                 # Pivot the data correctly
-                pivot_table = df.pivot(index="z_sch", columns="z_reg", values="Profit")
+                pivot_table = df.pivot(index="z_sch", columns="z_reg", values="Cost")
 
                 # Plotting the heatmap
                 plt.figure(figsize=(5, 4))
@@ -675,7 +670,7 @@ class BaselineSimulator:
                     annot=True,
                     fmt=".2f",
                     cmap="YlGnBu",
-                    cbar_kws={"label": "Profit"},
+                    cbar_kws={"label": "Cost"},
                 )
                 plt.title("Profit Heatmap")
                 plt.xlabel("z_reg")

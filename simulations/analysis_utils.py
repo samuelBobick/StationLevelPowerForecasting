@@ -148,27 +148,27 @@ def generate_session_results(
         sim.test_df, power_profiles, prices, sim.delta_t, sim.TOU
     )
 
-    demand_charge_kwh = round(max(sim.aggregate_power_profile['power']), 2)
-    demand_charge_cents = round(sim.cost_dc * demand_charge_kwh, 2)
+    demand_charge_kw = round(max(sim.aggregate_power_profile['power']), 2)
+    demand_charge_cents = round(sim.cost_dc * demand_charge_kw, 2)
     total_profit = round(charging_revenue - TOU_cost - demand_charge_cents, 2)
     charging_revenue = round(charging_revenue, 2)
     TOU_cost = round(TOU_cost, 2)
     energy_delivered = round(sum(session_results["energy_delivered"]), 2)
 
-    row = [
-        month,
-        total_profit,
-        charging_revenue,
-        TOU_cost,
-        demand_charge_cents,
-        demand_charge_kwh,
-        energy_delivered,
-    ]
+    row_data = {
+        "Month": [month],
+        "Total Profit (cents)": [total_profit],
+        "Charging Revenue (cents)": [charging_revenue],
+        "TOU Cost (cents)": [TOU_cost],
+        "Demand Charge (cents)": [demand_charge_cents],
+        "Peak Power (kW)": [demand_charge_kw],
+        "Energy Delivered (kWh)": [energy_delivered]
+    }
 
     if os.path.exists(summary_file_name):
         summary_df = pd.read_csv(summary_file_name)
         summary_df = pd.concat(
-            [summary_df, pd.DataFrame([row], columns=summary_df.columns)],
+            [summary_df, pd.DataFrame(row_data)],
             ignore_index=True,
         )
     else:
@@ -180,6 +180,7 @@ def generate_session_results(
             "Demand Charge (cents)",
             "Peak Power (kW)",
             "Energy Delivered (kWh)",
+            "Aggregate Power Profile (kW)",
         ]
 
         summary_df = pd.DataFrame([row], columns=columns)
@@ -189,6 +190,9 @@ def generate_session_results(
 
     if verbose:
         print("------------------------------------------------------------")
+        for key in row_data:
+            print(f"{key}: {row_data[key]}")
+
         print("Month", month)
         print("Total Profit", total_profit)
         print("Charging Revenue", charging_revenue)
