@@ -196,7 +196,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
     """
     Aggregate the power profiles from a month-long simulation
 
-        Inputs:
+    Inputs:
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power profiles
         power_rate: max power of a single EV charger, in kW
@@ -208,7 +208,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
     filtered_power_profiles = {k: v for k, v in power_profiles.items() if len(v) > 0}
     agg_power_profile = np.zeros(int(32 * 24 / delta_t))
 
-    rows = []
+    df = pd.DataFrame()
     for dcosId, power_profile in filtered_power_profiles.items():
         matching_row = test_df.loc[test_df["dcosId"] == dcosId]
         row = matching_row.squeeze()
@@ -243,36 +243,20 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
         # convert the optimal prices from $/kWh to $/hour
         z_sch_hourly = float(z_sch * energy_delivered / (N_remain * delta_t))
         z_reg_hourly = z_reg * energy_delivered / (hours_if_reg)
-        row = [
-            dcosId,
-            z_sch,
-            z_reg,
-            round(z_sch_hourly, 2),
-            round(z_reg_hourly, 2),
-            start_time,
-            round(charging_revenue, 1),
-            round(TOU_cost, 1),
-            round(energy_delivered, 1),
-            np.round(power_profile, 2),
-        ]
-        rows.append(row)
+        row_data = {
+            "dcosId": dcosId,
+            "z_sch": z_sch,
+            "z_reg": z_reg,
+            "hourly_scheduled_price": round(z_sch_hourly, 2),
+            "hourly_regular_price": round(z_reg_hourly, 2),
+            "start_time": start_time,
+            "charging_revenue": round(charging_revenue, 1),
+            "TOU_cost": round(TOU_cost, 1),
+            "energy_delivered": round(energy_delivered, 1),
+            "power_profile": np.round(power_profile, 2),
+        }
 
-        # Column names
-        columns = [
-            "dcosId",
-            "z_sch",
-            "z_reg",
-            "hourly_scheduled_price",
-            "hourly_regular_price",
-            "start_time",
-            "charging_revenue",
-            "TOU_cost",
-            "energy_delivered",
-            "power_profile",
-        ]
-
-        # Create DataFrame
-        df = pd.DataFrame(rows, columns=columns)
+        df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
 
     return df
 

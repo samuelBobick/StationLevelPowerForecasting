@@ -146,7 +146,8 @@ class PeakForecastSimulator(BaselineSimulator):
             cp.Expression: current scheduled peak
         """
         next_session_profile = cp.reshape(u[:96], (96,))
-        return self.get_current_peak(next_session_profile, time)
+        # divide by 1000 to convert from W to kW
+        return self.get_current_peak(next_session_profile, time) / 1000
 
     def get_current_peak_reg(
         self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
@@ -172,8 +173,8 @@ class PeakForecastSimulator(BaselineSimulator):
             e_need // self.power_rate
         )  # how many time steps would it take the user to charge if they chose regular?
         next_session_profile = np.array([self.power_rate] * N_reg + [0] * (96 - N_reg))
-        # TODO: remove assert
-        return self.get_current_peak(next_session_profile, time)
+        # divide by 1000 to convert from W to kW
+        return self.get_current_peak(next_session_profile, time) / 1000
 
     def get_current_peak(
         self, next_session_profile, time, verbose=False
