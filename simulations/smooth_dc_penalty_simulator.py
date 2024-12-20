@@ -44,5 +44,6 @@ class SmoothDCPenaltySimulator(BaselineSimulator):
         # look at the sessionStartTime of the users that contribute to the peak
         # it is at those hours that we should apply the highest penalty (and
         # something closer to the standard penalty at other hours)
+        # We can also multiply by the "frequency'of the event "the peak happens after this hour"
         x = current_daily_peak - running_monthly_peak
         return cp.Constant(self.cost_dc) * cp.log_sum_exp(cp.hstack([0, x]))
