@@ -49,6 +49,7 @@ TypeModelChoice = Literal[
     "AutoARIMA",
     "ARIMA",
     "Prophet",
+    "PeakPersistence",
 ]
 
 if torch.cuda.is_available():
