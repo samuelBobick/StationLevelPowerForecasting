@@ -179,11 +179,10 @@ def generate_session_results(
             "TOU Cost (cents)",
             "Demand Charge (cents)",
             "Peak Power (kW)",
-            "Energy Delivered (kWh)",
-            "Aggregate Power Profile (kW)",
+            "Energy Delivered (kWh)"
         ]
 
-        summary_df = pd.DataFrame([row], columns=columns)
+        summary_df = pd.DataFrame([row_data], columns=columns)
 
     sim.aggregate_power_profile.to_csv(aggregate_power_profile_file_name, index=False)
     summary_df.to_csv(summary_file_name, index=False)
@@ -192,15 +191,6 @@ def generate_session_results(
         print("------------------------------------------------------------")
         for key in row_data:
             print(f"{key}: {row_data[key]}")
-
-        print("Month", month)
-        print("Total Profit", total_profit)
-        print("Charging Revenue", charging_revenue)
-        print("TOU Cost", TOU_cost)
-        print("Demand Charge Costs (cents)", demand_charge_cents)
-        print("Peak Power", demand_charge_kwh)
-        print("Energy Delivered", energy_delivered)
-    
     if visualize:
         visualize_simulation(sim.aggregate_power_profile)
 
