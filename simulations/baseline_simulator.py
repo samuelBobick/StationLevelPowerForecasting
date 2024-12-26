@@ -91,7 +91,7 @@ class BaselineSimulator:
             (p_sch, p_reg)
             for p_reg in prices_kwh_regular
             for p_sch in prices_kwh_scheduled
-            if p_sch < p_reg
+            if p_sch <= p_reg
         ]
 
         # Default discrete choice model parameters
