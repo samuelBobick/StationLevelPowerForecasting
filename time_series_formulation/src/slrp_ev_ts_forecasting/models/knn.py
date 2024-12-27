@@ -21,6 +21,9 @@ class KNN(RegressionBaseModel):
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
         session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
         peak_prediction: bool = default_parameters.PEAK_PREDICTION,
+        add_number_of_sessions: bool = default_parameters.ADD_NUMBER_OF_SESSIONS,
+        add_fraction_of_regular_sessions: bool = default_parameters.ADD_FRACTION_OF_REGULAR_SESSIONS,
+        use_all_active_sessions: bool = default_parameters.USE_ALL_ACTIVE_SESSIONS,
     ):
         """_summary_
 
@@ -40,6 +43,9 @@ class KNN(RegressionBaseModel):
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
             session_based_mode=session_based_mode,
             peak_prediction=peak_prediction,
+            add_number_of_sessions=add_number_of_sessions,
+            add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
+            use_all_active_sessions=use_all_active_sessions,
         )
         self.alpha = alpha
         self.time_mode = time_mode

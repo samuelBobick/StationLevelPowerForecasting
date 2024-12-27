@@ -2,13 +2,14 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+from slrp_ev_ts_forecasting.default_parameters import TypeDataSet
 
-from .input_data_type import DataSchema
+from slrp_ev_data.input_data_type import DataSchema
 
 COLS_TO_NORMALIZE = ["power"]
 NORM_PARAMETERS_PATH = Path(__file__).parent / "saved_normalization_parameters"
 NORM_PARAMETERS_PATH.mkdir(parents=True, exist_ok=True)
-SINGLE_EVSE_NORMALIZATION_PARAM = 6_600
+SINGLE_EVSE_NORMALIZATION_PARAM = 6_800
 
 
 def save_series_to_csv(series: pd.Series, name: str) -> None:
@@ -20,7 +21,7 @@ def load_series_from_csv(name: str):
 
 
 def get_train_mean_and_std(
-    df_train: pd.DataFrame, dataset_name: Optional[str] = None
+    df_train: pd.DataFrame, dataset_name: Optional[TypeDataSet] = None
 ) -> tuple[pd.Series, pd.Series]:
     """Get the mean and standard deviation of the training data, used to normalize the rest of the data.
 
@@ -52,7 +53,7 @@ def get_train_mean_and_std(
     return train_mean, train_std
 
 
-def retrieve_train_mean_and_std(dataset_name: str):
+def retrieve_train_mean_and_std(dataset_name: TypeDataSet):
     train_mean = load_series_from_csv(f"{dataset_name}_mean")
     train_std = load_series_from_csv(f"{dataset_name}_std")
     return train_mean, train_std
@@ -77,7 +78,7 @@ def reverse_standardize_data(
 
 
 def get_train_min_and_max(
-    df_train: pd.DataFrame, dataset_name: Optional[str] = None
+    df_train: pd.DataFrame, dataset_name: Optional[TypeDataSet] = None
 ) -> tuple[pd.Series, pd.Series]:
     """Get the min and max of the training data, used to normalize 
     the rest of the data.
@@ -106,7 +107,7 @@ def get_train_min_and_max(
     return train_min, train_max
 
 
-def retrieve_train_min_and_max(dataset_name: str):
+def retrieve_train_min_and_max(dataset_name: TypeDataSet):
     train_min = load_series_from_csv(f"{dataset_name}_min")
     train_max = load_series_from_csv(f"{dataset_name}_max")
     return train_min, train_max
