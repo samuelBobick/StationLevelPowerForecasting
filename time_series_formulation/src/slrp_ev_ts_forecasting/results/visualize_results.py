@@ -175,4 +175,4 @@ if __name__ == "__main__":
     #     filename="results_ucsd_val_shuffle",
     #     # y_limits=[5400, 6000],
     # )
-    visualize_results("rmse", filename="session_based_ffnn")
+    visualize_results("rmse", filename="improve_peak_forecasting")
