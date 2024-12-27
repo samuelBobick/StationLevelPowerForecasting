@@ -1,11 +1,11 @@
 from slrp_ev_ts_forecasting.default_parameters import TypeDataSet, TypeModelChoice
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
-list_model_choices: list[TypeModelChoice] = ["PeakPersistence"]
+list_model_choices: list[TypeModelChoice] = ["LinearRegression", "XGBoost"]
 number_of_models_per_config = 1
 dataset: TypeDataSet = "slrp-ev_new"
 session_based_mode = True
-peak_prediction = True
+peak_prediction = False
 list_optimize_lags = [None]  # ["short_opt", None, "long_opt"]
 
 if __name__ == "__main__":
@@ -25,6 +25,6 @@ if __name__ == "__main__":
                                     "session_based_mode": session_based_mode,
                                     "peak_prediction": peak_prediction,
                                 },
-                                save_results_filename="results_linear_model",
+                                save_results_filename="session_based_ffnn",
                                 dataset=dataset,
                             )
