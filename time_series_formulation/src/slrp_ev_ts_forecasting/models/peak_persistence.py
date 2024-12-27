@@ -4,6 +4,7 @@ import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 from slrp_ev_data.normalization_and_standardization import (
     SINGLE_EVSE_NORMALIZATION_PARAM,
+    retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 
@@ -20,6 +21,9 @@ class PeakPersistence(RegressionBaseModel):
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
         session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
         peak_prediction: bool = default_parameters.PEAK_PREDICTION,
+        add_number_of_sessions: bool = default_parameters.ADD_NUMBER_OF_SESSIONS,
+        add_fraction_of_regular_sessions: bool = default_parameters.ADD_FRACTION_OF_REGULAR_SESSIONS,
+        use_all_active_sessions: bool = default_parameters.USE_ALL_ACTIVE_SESSIONS,
     ):
         """_summary_
 
@@ -37,6 +41,9 @@ class PeakPersistence(RegressionBaseModel):
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
             session_based_mode=session_based_mode,
             peak_prediction=peak_prediction,
+            add_number_of_sessions=add_number_of_sessions,
+            add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
+            use_all_active_sessions=use_all_active_sessions,
         )
         self.alpha = alpha
         self.time_mode = time_mode
@@ -78,10 +85,18 @@ class PeakPersistence(RegressionBaseModel):
         # Therefore, we predict that the max after now is going to be
         # the load of the last known timestep + the max of the next session profile
         # We have to pu the max of the next session profile in the same scale as the load
+        max_after_current_time = X_test.filter(regex=r"u_").max(axis=1).iloc[0]
+
+        scale_factor = 8
+        if not self.use_all_active_sessions:
+            max_after_current_time += X_test[f"power_{self.x_dim - 1}"].iloc[0]
+            scale_factor = 1
+
+        _, train_max = retrieve_train_min_and_max("slrp-ev_new")
         max_after_current_time = (
-            X_test[f"power_{self.x_dim - 1}"].iloc[0]
-            + X_test.filter(regex=r"u_").max(axis=1).iloc[0]
+            max_after_current_time
             * SINGLE_EVSE_NORMALIZATION_PARAM
-            / 50_000
+            * scale_factor
+            / train_max.iloc[0]
         )
         return max(max_before_current_time, max_after_current_time)

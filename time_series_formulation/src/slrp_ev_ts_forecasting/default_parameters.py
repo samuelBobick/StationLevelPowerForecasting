@@ -7,7 +7,7 @@ NUMBER_OF_INITIAL_MODELS = 1
 X_DIM = 96
 LOOKAHEAD = 96
 EPOCHS = 5
-TIME_MODE: Literal["cyclical", "window"] = "cyclical"
+TIME_MODE: Literal["window", "cyclical"] = "cyclical"
 ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 BATCH_SIZE = 32
@@ -35,6 +35,9 @@ GET_VAL_DATA_FROM_SHUFFLED_TRAIN = False
 
 SESSION_BASED_MODE = True
 PEAK_PREDICTION = True
+ADD_NUMBER_OF_SESSIONS = True
+ADD_FRACTION_OF_REGULAR_SESSIONS = True
+USE_ALL_ACTIVE_SESSIONS = True
 
 TypeModelChoice = Literal[
     "LinearRegression",

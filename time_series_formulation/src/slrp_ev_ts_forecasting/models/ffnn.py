@@ -4,7 +4,6 @@ import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
-from slrp_ev_data.feature_engineering import one_hot_encoding
 from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 from torch.utils.data import Dataset
 
@@ -35,6 +34,9 @@ class FFNN(TorchBaseModel):
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
         session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
         peak_prediction: bool = default_parameters.PEAK_PREDICTION,
+        add_number_of_sessions: bool = default_parameters.ADD_NUMBER_OF_SESSIONS,
+        add_fraction_of_regular_sessions: bool = default_parameters.ADD_FRACTION_OF_REGULAR_SESSIONS,
+        use_all_active_sessions: bool = default_parameters.USE_ALL_ACTIVE_SESSIONS,
     ):
         """TODO"""
 
@@ -55,7 +57,7 @@ class FFNN(TorchBaseModel):
 
         # Other parameters
         self.alpha = alpha
-        self.time_mode = time_mode
+        self.time_mode: Literal["window", "cyclical"] = time_mode
 
         # Initialize the BaseModel with relevant parameters
         super().__init__(
@@ -72,7 +74,11 @@ class FFNN(TorchBaseModel):
             lookahead=lookahead,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
             optimize_lags=optimize_lags,
+            session_based_mode=session_based_mode,
             peak_prediction=peak_prediction,
+            add_number_of_sessions=add_number_of_sessions,
+            add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
+            use_all_active_sessions=use_all_active_sessions,
         )
 
         # Determine input size based on time_mode
@@ -87,23 +93,35 @@ class FFNN(TorchBaseModel):
             + ("Long" if self.optimize_lags == "long_opt" else "")
             + f"_dropout{self.dropout}"
             + ("_withBatchNorm" if self.batch_norm else "")
+            + ("_SessionBased" if self.session_based_mode else "")
+            + ("_PeakPrediction" if self.peak_prediction else "")
+            + ("_WithNbSessions" if self.add_number_of_sessions else "")
+            + ("_WithFracReg" if self.add_fraction_of_regular_sessions else "")
+            + ("_WithAllActiveSessions" if self.use_all_active_sessions else "")
         )
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
+        input_size = self.x_dim
+        if self.session_based_mode:
+            input_size += self.lookahead
+
         if self.time_mode == "window":
-            return self.x_dim + 6 + 1  # 6 for time one-hot encoding, 1 for workday
+            return input_size + 6 + 1  # 6 for time one-hot encoding, 1 for workday
         elif self.time_mode == "cyclical":
-            return self.x_dim + 6  #  6 for sin/cos encoding (day, week, year)
+            return input_size + 6  #  6 for sin/cos encoding (day, week, year)
         else:
             raise ValueError(f"Invalid time_mode: {self.time_mode}")
 
     def initialize_model(self) -> None:
         """Initializes the FFNN model based on the current configuration."""
+        output_size = self.output_size
+        if self.peak_prediction:
+            output_size = 1
         self.model = FFNN_model(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
-            output_size=self.output_size,
+            output_size=output_size,
             num_hidden_layers=self.num_hidden_layers,
             activation=self.activation,
             dropout=self.dropout,
@@ -118,82 +136,20 @@ class FFNN(TorchBaseModel):
         return_y_date: bool = False,
         overlapping_windows: bool = False,
     ) -> Dataset | tuple[Dataset, pd.DataFrame]:
-        if self.peak_prediction and not self.session_based_mode:
-            raise ValueError(
-                "self.peak_prediction can only be True if self.session_based_mode is True"
-            )
-        if self.session_based_mode:
-            # if self.session_based_mode is True, we do session forecasting, and
-            # we will look for the sessions in all of the windows,
-            # so we need overlapping_windows to be True
-            overlapping_windows = True
 
-        if self.optimize_lags:
-            input_width = self.index_farthest_lag
-        else:
-            input_width = self.x_dim
-
-        if df is not None:
-            df = df.copy()
-            df_padded = self.pad_with_seen_data(df, input_width)
-        else:
-            df_padded = None
-
-        W, window_data = self.get_window_data(
-            df_padded, input_width, self.lookahead, overlapping_windows, data_type
+        flat_inputs, flat_labels, y_dates = self.get_X_y(  # type: ignore
+            df=df,
+            time_mode=self.time_mode,
+            data_type=data_type,
+            return_y_date=True,
+            overlapping_windows=overlapping_windows,
+            multi_model_mode=False,
         )
 
-        cols_keep_last_value = []
-        if self.time_mode == "cyclical":
-            cols_keep_last_value += [
-                "Day sin",
-                "Day cos",
-                "Week sin",
-                "Week cos",
-                "Year sin",
-                "Year cos",
-            ]
-        elif self.time_mode == "window":
-            cols_keep_last_value += ["time_window", "workday"]
-
-        if self.optimize_lags:
-            flat_inputs, flat_labels = W.flatten_dataset(
-                window_data,
-                cols_keep_last_value=cols_keep_last_value,
-                cols_keep_some_values=[
-                    {
-                        "col_name": "power",
-                        "indexes_to_keep": input_width
-                        - self.pacf_top_values.index.to_numpy(),
-                    }
-                ],
-                label_cols_to_flatten=["power"],
-            )
-        else:
-            flat_inputs, flat_labels = W.flatten_dataset(
-                window_data,
-                cols_to_flatten=["power"],
-                cols_keep_last_value=cols_keep_last_value,
-                label_cols_to_flatten=["power"],
-            )
-
-        if self.time_mode == "window":
-            flat_inputs = one_hot_encoding(flat_inputs, ["time_window"])
-
-        mask_nan = flat_inputs.isna().any(axis=1) | flat_labels.isna().any(axis=1)
-        flat_inputs = flat_inputs[~mask_nan]
-        flat_labels = flat_labels[~mask_nan]
         dataset = TensorDataset(flat_inputs, flat_labels)
-
-        if self.session_based_mode:
-            raise NotImplementedError("Session based mode is not yet implemented")
-
         if return_y_date:
-            x_dates, y_dates = W.flatten_dataset(
-                window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            )
-            y_dates = y_dates[~mask_nan]
-            return dataset, y_dates
+
+            return dataset, y_dates  # type: ignore
         else:
             return dataset
 

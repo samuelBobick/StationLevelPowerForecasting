@@ -99,7 +99,13 @@ class TCN(TorchBaseModel):
             error_metric=error_metric,
             x_dim=x_dim,
             lookahead=lookahead,
+            optimize_lags=None,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            session_based_mode=False,
+            peak_prediction=False,
+            add_number_of_sessions=False,
+            add_fraction_of_regular_sessions=False,
+            use_all_active_sessions=False,
         )
 
         # Other parameters

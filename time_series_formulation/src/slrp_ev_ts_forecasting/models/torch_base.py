@@ -12,7 +12,6 @@ import torch.optim.lr_scheduler as lr_scheduler
 from slrp_ev_ts_forecasting.asymmetric_loss import AsymmetricRMSELoss
 from slrp_ev_ts_forecasting.compute_losses import Losses, compute_torch_losses
 from slrp_ev_ts_forecasting.default_parameters import (
-    DEVICE,
     SAVED_MODELS_PATH,
     TypeErrorMetric,
     TypeOptimizeLags,
@@ -42,16 +41,25 @@ class TorchBaseModel(Base):
         error_metric: TypeErrorMetric,
         x_dim: int,
         lookahead: int,
+        optimize_lags: TypeOptimizeLags,
         get_val_data_from_shuffled_train: bool,
+        session_based_mode: bool,
+        peak_prediction: bool,
+        add_number_of_sessions: bool,
+        add_fraction_of_regular_sessions: bool,
+        use_all_active_sessions: bool,
         warmup_base_learning_rate: float = 1e-6,
-        optimize_lags: TypeOptimizeLags = None,
-        peak_prediction: bool = False,
     ):
         super().__init__(
             x_dim=x_dim,
             lookahead=lookahead,
             optimize_lags=optimize_lags,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            session_based_mode=session_based_mode,
+            peak_prediction=peak_prediction,
+            add_number_of_sessions=add_number_of_sessions,
+            add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
+            use_all_active_sessions=use_all_active_sessions,
         )
         # General NN parameters
         self.epochs = epochs
@@ -294,15 +302,19 @@ class TorchBaseModel(Base):
             x_batch, y_batch = batch
             step_number = epoch * len(train_loader) + (batch_number + 1)
 
-            # reshape y to have same shape as output (remove the 1 dimension at the end)
-            y_batch = y_batch.squeeze(-1)
-
             self.optimizer.zero_grad()
 
             # Forward pass
             y_pred_batch = self.model(x_batch)
+
+            # reshape y to have same shape as output (remove the 1 dimension at the end)
+            if y_batch.dim() == 3:
+                y_batch = y_batch.squeeze(-1)
+            if y_pred_batch.dim() == 3:
+                y_pred_batch = y_pred_batch.squeeze(-1)
+
             loss = self.criterion(
-                y_pred_batch.squeeze(-1)[
+                y_pred_batch[
                     :, self.first_prediction_index :
                 ],  # [:, self.first_prediction_index :]
                 y_batch[:, self.first_prediction_index :],  #
@@ -352,11 +364,16 @@ class TorchBaseModel(Base):
         with torch.no_grad():
             for val_batch_number, val_batch in enumerate(val_loader):
                 val_x_batch, val_y_batch = val_batch
-                # reshape y to have same shape as output (remove the 1 dimension at the end)
-                val_y_batch = val_y_batch.squeeze(-1)
                 val_y_pred_batch = self.model(val_x_batch)
+
+                # reshape y to have same shape as output (remove the 1 dimension at the end)
+                if val_y_batch.dim() == 3:
+                    val_y_batch = val_y_batch.squeeze(-1)
+                if val_y_pred_batch.dim() == 3:
+                    val_y_pred_batch = val_y_pred_batch.squeeze(-1)
+
                 vloss = self.criterion(
-                    val_y_pred_batch.squeeze(-1)[:, self.first_prediction_index :],
+                    val_y_pred_batch[:, self.first_prediction_index :],
                     val_y_batch[:, self.first_prediction_index :],
                 )
                 running_vloss += vloss.item()
@@ -374,7 +391,9 @@ class TorchBaseModel(Base):
             test, data_type="test", return_y_date=True, overlapping_windows=False
         )
         X_test_tensor, y_test_tensor = dataset.get_full_data()  # type: ignore
-        y_test_tensor = y_test_tensor.squeeze(-1)[:, self.first_prediction_index :]
+        if y_test_tensor.dim() == 3:
+            y_test_tensor = y_test_tensor.squeeze(-1)
+        y_test_tensor = y_test_tensor[:, self.first_prediction_index :]
 
         # Load model from the checkpoint
         self.load_checkpoint()
@@ -384,24 +403,19 @@ class TorchBaseModel(Base):
             raise NotImplementedError("Model must be implemented before predicting.")
 
         self.model.eval()
-        y_pred_test = self.model(X_test_tensor).detach().cpu().squeeze(-1).numpy()
-        y_pred_test_tensor = torch.tensor(
-            y_pred_test, dtype=torch.float32, device=DEVICE
-        )
+        y_pred_test_tensor = self.model(X_test_tensor)
+        if y_pred_test_tensor.dim() == 3:
+            y_pred_test_tensor = y_pred_test_tensor.squeeze(-1)
         y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
         losses = compute_torch_losses(
             y_pred_test_tensor.flatten(), y_test_tensor.flatten(), self.alpha
         )
 
-        # Flatten the lists to 1D
-        y_pred_test_flat = y_pred_test_tensor.flatten().cpu().numpy()
-        forecast_dates = (
-            y_dates.iloc[:, self.first_prediction_index :].to_numpy().flatten()
-        )
-
-        forecasts = y_pred_test_tensor.cpu().numpy()
+        forecasts = y_pred_test_tensor.detach().numpy()
         reals = y_test_tensor.cpu().numpy()
+        if len(y_dates.shape) == 1:
+            y_dates = y_dates.to_frame()  # type: ignore
         y_dates = y_dates.iloc[:, self.first_prediction_index :]
         if not self.peak_prediction:
             reals = None
