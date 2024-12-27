@@ -8,6 +8,7 @@ import seaborn as sns
 from constants.dcm import get_dcm_theta, get_dcm_v
 from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
 from tqdm.auto import tqdm
+from optimizer import parallel_grid_search
 from utils import (
     get_new_reg_obj,
     get_new_sch_obj,
@@ -31,6 +32,7 @@ class BaselineSimulator:
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
         custom_cost_dc: Optional[float] = MODIFIED_DC,
+        running_peak_initialization: float = 20,
         monte_carlo: bool = False,
         verbose: bool = False,
     ):
@@ -48,6 +50,7 @@ class BaselineSimulator:
                 Default is "BEV2S Secondary June 2023".
             custom_cost_dc: Custom demand charge cost in cents/kW that will replace the one from the tariffs. \
                 Set to None to use the dc of the selected tariff. Default is 500 cents/kW.
+            running_peak_initialization: where to initialize the running demand charge (kW)
             monte_carlo: Whether to re-evaluate choices with Discrete Choice Model (DCM). \
                 If False, we assume the charging choice of each session is the one historical done. \
                 If True, we will use the DCM to simulate the choice. Default is False.
@@ -61,6 +64,7 @@ class BaselineSimulator:
         self.delta_t = delta_t
         self.power_rate = power_rate
         self.flexibility_constant = flexibility_constant
+        self.running_peak_initialization = running_peak_initialization
 
         # Get the tariff
         self.TOU = DICT_TARIFFS[tariff_name]["TOU"]
@@ -295,58 +299,58 @@ class BaselineSimulator:
             )
         )
 
-    def argmin_u(
-        self,
-        z: list,
-        v: np.ndarray,
-        sub_df: pd.DataFrame,
-        current_time: pd.Timestamp,
-        running_peak: float,
-        power_profiles: dict,
-        prices: dict,
-    ):
-        """
-        Function to minimize charging cost. Flexible charging with variable power schedule
+    # def argmin_u(
+    #     self,
+    #     z: list,
+    #     v: np.ndarray,
+    #     sub_df: pd.DataFrame,
+    #     current_time: pd.Timestamp,
+    #     running_peak: float,
+    #     power_profiles: dict,
+    #     prices: dict,
+    # ):
+    #     """
+    #     Function to minimize charging cost. Flexible charging with variable power schedule
 
-        Inputs:
-            z: array where [tariff_flex, tariff_asap, tariff_overstay, leave = 1]
-            v: array with softmax results [sm_c, sm_uc, sm_y] (sm_y = leave)
-            sub_df: DataFrame containing rows of sessions_df that represent active \
-                sessions at the time of optimization
-            current_time: time of optimization
-            running_peak: running peak power this billing cycle
-            power_profiles: dictionary mapping dcosIds to power_profiles
-            prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
-        """
-        (
-            u,
-            e_delivered,
-            J,
-            J_array,
-            current_peak_sch,
-            current_peak_reg,
-            constraints,
-        ) = self.initialize_problem(
-            z, v, sub_df, current_time, running_peak, power_profiles, prices
-        )
+    #     Inputs:
+    #         z: array where [tariff_flex, tariff_asap, tariff_overstay, leave = 1]
+    #         v: array with softmax results [sm_c, sm_uc, sm_y] (sm_y = leave)
+    #         sub_df: DataFrame containing rows of sessions_df that represent active \
+    #             sessions at the time of optimization
+    #         current_time: time of optimization
+    #         running_peak: running peak power this billing cycle
+    #         power_profiles: dictionary mapping dcosIds to power_profiles
+    #         prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
+    #     """
+    #     (
+    #         u,
+    #         e_delivered,
+    #         J,
+    #         J_array,
+    #         current_peak_sch,
+    #         current_peak_reg,
+    #         constraints,
+    #     ) = self.initialize_problem(
+    #         z, v, sub_df, current_time, running_peak, power_profiles, prices
+    #     )
 
-        obj = cp.Minimize(J)
-        prob = cp.Problem(obj, constraints)
-        prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
-        if prob.status == "optimal_inaccurate":
-            # TODO: look into why this is happening
-            print("WARNING: optimal solution found, but is inaccurate")
-        elif prob.status != "optimal":
-            raise Exception(f"Optimization failed with status {prob.status}")
+    #     obj = cp.Minimize(J)
+    #     prob = cp.Problem(obj, constraints)
+    #     prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
+    #     if prob.status == "optimal_inaccurate":
+    #         # TODO: look into why this is happening
+    #         print("WARNING: optimal solution found, but is inaccurate")
+    #     elif prob.status != "optimal":
+    #         raise Exception(f"Optimization failed with status {prob.status}")
 
-        return (
-            u.value,
-            e_delivered.value,
-            current_peak_sch.value,
-            current_peak_reg.value,
-            J,
-            J_array,
-        )
+    #     return (
+    #         u.value,
+    #         e_delivered.value,
+    #         current_peak_sch.value,
+    #         current_peak_reg.value,
+    #         J,
+    #         J_array,
+    #     )
 
     def grid_search(
         self,
@@ -377,32 +381,48 @@ class BaselineSimulator:
         assert len(sub_df) > 0, "sub_df is empty, nothing to grid search over!"
 
         # TODO: Grid search below can be parallelized
-        grid_search_results = {}
-        for z_sch_k, z_reg_k in self.tariff_grid:
-            zk = [z_sch_k, z_reg_k, 1, 1]
-            vk = get_dcm_v(zk, self.theta)
+        # grid_search_results = {}
+        # for z_sch_k, z_reg_k in self.tariff_grid:
+        #     zk = [z_sch_k, z_reg_k, 1, 1]
+        #     vk = get_dcm_v(zk, self.theta)
 
-            (
-                uk_flex,
-                e_delivered,
-                current_peak_sch,
-                current_peak_reg,
-                J,
-                J_array,
-            ) = self.argmin_u(
-                zk, vk, sub_df, current_time, running_peak, power_profiles, prices
+        #     (
+        #         uk_flex,
+        #         e_delivered,
+        #         current_peak_sch,
+        #         current_peak_reg,
+        #         J,
+        #         J_array,
+        #     ) = argmin_u(
+        #         zk, vk, sub_df, current_time, running_peak, power_profiles, prices, self
+        #     )
+        #     grid_search_results[(z_sch_k, z_reg_k)] = {
+        #         "J": J.value[0] if isinstance(J.value, np.ndarray) else J.value,
+        #         # value of the objective function (the array is of length 1)
+        #         "J_arr": J_array,  # values of J_0=J_schedule, J_1=J_regular, J_2=J_leave, new_sch_obj, new_reg_obj, existing_sch_obj, existing_reg_obj, dc_charge_sch
+        #         "u": uk_flex,
+        #         "v": vk,  # array with probabilities of each choice [sch, reg, leave]
+        #         "current_peak_sch": current_peak_sch,
+        #         "current_peak_reg": current_peak_reg,
+        #     }
+
+        grid = {}
+
+        for z_sch, z_reg in self.tariff_grid:
+            z = [z_sch, z_reg, 1, 1]
+            v = get_dcm_v(z, self.theta)
+
+            problem = self.initialize_problem(
+                z, v, sub_df, current_time, running_peak, power_profiles, prices
             )
-            grid_search_results[(z_sch_k, z_reg_k)] = {
-                "J": J.value[0] if isinstance(J.value, np.ndarray) else J.value,
-                # value of the objective function (the array is of length 1)
-                "J_arr": J_array,  # values of J_0=J_schedule, J_1=J_regular, J_2=J_leave, new_sch_obj, new_reg_obj, existing_sch_obj, existing_reg_obj, dc_charge_sch
-                "u": uk_flex,
-                "v": vk,  # array with probabilities of each choice [sch, reg, leave]
-                "current_peak_sch": current_peak_sch,
-                "current_peak_reg": current_peak_reg,
-            }
+
+            grid[(z_sch, z_reg)] = problem
+
+        grid_search_results = parallel_grid_search(grid, sub_df, current_time, running_peak, power_profiles, prices, self.delta_t, self.power_rate, self.flexibility_constant, self.var_dim_constant, self.theta)
 
         return grid_search_results, sub_df
+
+    
 
     def update_aggregate_power_profile(
         self, previousStartChargeTime, startChargeTime, active_sessions, power_profiles
@@ -474,7 +494,6 @@ class BaselineSimulator:
         power_profiles = {c: np.array([]) for c in self.test_df["dcosId"]}
         prices = {c: () for c in self.test_df["dcosId"]}
         hourly_prices = {c: () for c in self.test_df["dcosId"]}
-        # active_sessions = [{dcosId : start_time},......] TODO
         active_sessions = []
 
         previousStartChargeTime = None
@@ -488,7 +507,7 @@ class BaselineSimulator:
                 active_sessions,
                 power_profiles,
             )
-            running_peak = self.aggregate_power_profile["power"].max()
+            running_peak = max(self.running_peak_initialization, self.aggregate_power_profile["power"].max())
 
             grid_search_results, sub_df = self.grid_search(
                 startChargeTime, running_peak, power_profiles, prices
