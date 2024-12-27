@@ -25,6 +25,6 @@ if __name__ == "__main__":
                                     "session_based_mode": session_based_mode,
                                     "peak_prediction": peak_prediction,
                                 },
-                                save_results_filename="session_based_ffnn",
+                                save_results_filename="improve_peak_forecasting",
                                 dataset=dataset,
                             )
