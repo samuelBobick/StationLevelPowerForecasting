@@ -17,6 +17,12 @@ from slrp_ev_ts_forecasting.default_parameters import (
     NUMBER_OF_DAYS_FOR_PACF,
     TypeOptimizeLags,
 )
+from slrp_ev_ts_forecasting.helper_session_forecasting import (
+    apply_generate_future_session_power,
+    extract_features,
+    make_artificial_sessions,
+    revert_power_df,
+)
 from slrp_ev_ts_forecasting.pacf import get_pacf_values, get_threshold, sort_pacf_values
 from tqdm.auto import tqdm
 
@@ -381,8 +387,7 @@ class Base:
         if self.session_based_mode:
             flat_inputs, flat_labels, merged_inputs_dates_sessions = (
                 self.transform_X_y_for_session_based_mode(
-                    flat_inputs,
-                    flat_labels,
+                    flat_inputs, flat_labels, data_type
                 )
             )
             if data_type == "test":
@@ -396,6 +401,13 @@ class Base:
         print(
             f"Data has {flat_inputs.shape[0]} samples, with {flat_inputs.shape[1]} features, to predict {flat_labels.shape[1]} labels"
         )
+
+        if data_type == "train":
+            # Shuffle the data
+            indices = flat_inputs.index.to_numpy(copy=True)
+            np.random.shuffle(indices)
+            flat_inputs = flat_inputs.loc[indices]
+            flat_labels = flat_labels.loc[indices]
 
         if return_y_date:
             if self.session_based_mode:
@@ -420,6 +432,7 @@ class Base:
         self,
         flat_inputs: pd.DataFrame,
         flat_labels: pd.DataFrame,
+        data_type: Literal["train", "val", "test"],
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         # TODO: Also add the number of current active sessions as a feature? Information is
         # maybe already in the "load until the start of this session"
@@ -451,6 +464,16 @@ class Base:
         )
 
         df_sessions = self.get_df_sessions(power_df)
+        if data_type == "train":
+            # TODO: make this a parameter
+            number_of_artificial_datasets = 2
+            for i in range(number_of_artificial_datasets):
+                df_artificial_sessions = self.get_df_sessions(
+                    power_df, artificial_mode=True
+                )
+                df_sessions = pd.concat(
+                    [df_sessions, df_artificial_sessions], ignore_index=True
+                )
 
         # Create a dataframe of samples, where we keep only the samples that have
         # a corresponding session
@@ -463,26 +486,16 @@ class Base:
 
         merged_inputs_dates_sessions = merged_inputs_dates_sessions.dropna()
 
-        number_of_sessions_feature_names = []
+        additional_feature_names = []
         if self.add_number_of_sessions or self.add_fraction_of_regular_sessions:
             # Add number of session and fraction or regular in the features
             # TODO: if we generate random session, see how to modify the fraction
             # of regular sessions. Maybe we don't generate random session in place of
             # sessions that were regular
             if self.add_number_of_sessions:
-                number_of_sessions_feature_names += ["numberOfActiveSessions"]
+                additional_feature_names += ["numberOfActiveSessions"]
             if self.add_fraction_of_regular_sessions:
-                number_of_sessions_feature_names += ["fractionOfRegularSessions"]
-
-            merged_inputs_dates_sessions = merged_inputs_dates_sessions.merge(
-                power_df[number_of_sessions_feature_names + ["date"]],
-                left_on="startChargeTime",
-                right_on="date",
-                how="left",
-            )
-            merged_inputs_dates_sessions = merged_inputs_dates_sessions.drop(
-                columns="date"
-            )
+                additional_feature_names += ["fractionOfRegularSessions"]
 
         merged_inputs_dates_sessions = merged_inputs_dates_sessions.sort_values(
             by="startChargeTime"
@@ -505,7 +518,7 @@ class Base:
         flat_inputs = merged_inputs_dates_sessions[
             list(flat_inputs.columns[~flat_inputs.columns.str.contains(r"date")])
             + [f"u_{i+1}" for i in range(self.lookahead)]
-            + number_of_sessions_feature_names
+            + additional_feature_names
         ]
 
         if self.peak_prediction:
@@ -515,7 +528,11 @@ class Base:
 
         return flat_inputs, flat_labels, merged_inputs_dates_sessions
 
-    def get_df_sessions(self, power_df: pd.DataFrame) -> pd.DataFrame:
+    def get_df_sessions(
+        self,
+        power_df: pd.DataFrame,
+        artificial_mode: bool = False,
+    ) -> pd.DataFrame:
         """
         Generate a DataFrame of sessions from a power DataFrame.
         The data frame has the dcosId (session ID) as index, and the future power \
@@ -534,76 +551,74 @@ class Base:
         for i in range(1, number_of_power_columns + 1):
             dcos_column = f"dcosId{i}"
             power_column = f"power{i}"
+            choice_column = f"is_choice_regular{i}"
 
             df_power_profiles = (
                 power_df[power_df[dcos_column].notna()][
-                    [dcos_column, power_column, "date"]
+                    [dcos_column, power_column, choice_column, "date"]
                 ]
                 .groupby(dcos_column)
                 .agg(list)
             )
             df_power_profiles = df_power_profiles.rename(
-                columns={power_column: "power_profiles"}
+                columns={
+                    power_column: "power_profiles",
+                    choice_column: "is_choice_regular",
+                }
             )
             session_profiles_from_interval.update(
                 df_power_profiles.to_dict(orient="index")
             )
 
         raw_df_sessions = pd.DataFrame(session_profiles_from_interval).T
+
+        if artificial_mode:
+            # TODO: change True to a parameter
+            raw_df_sessions = make_artificial_sessions(
+                raw_df_sessions,
+                random_start_time=True,
+                random_power_profile_shapes=True,
+                random_user_needs=True,
+                random_choices=True,
+            )
         raw_df_sessions["startChargeTime"] = raw_df_sessions.apply(
             lambda x: x["date"][0], axis=1
         )
         raw_df_sessions["endChargeTime"] = raw_df_sessions.apply(
             lambda x: x["date"][-1], axis=1
         )
-        # keep meaningful sessions
-        # filter sessions to keep only the ones with a total energy charged greater than 2kWh
-        # We convert to Series to have a sum even if the list contains NaN values
-        # We divide by 4 the sum of interval power values to get an energy value
-        # TODO: do not hardcode the 4 (use frequency of the data instead)
-        raw_df_sessions = raw_df_sessions.loc[
-            raw_df_sessions.apply(
-                lambda x: pd.Series(x["power_profiles"]).sum(), axis=1
+
+        reverted_power_df = revert_power_df(raw_df_sessions)
+        additional_session_features = extract_features(
+            reverted_power_df=reverted_power_df, power_df=power_df
+        )
+        if not self.add_number_of_sessions:
+            additional_session_features = additional_session_features.drop(
+                columns=["numberOfActiveSessions"]
             )
-            / 4
-            > 2000
-        ]
-
-        def _apply_generate_future_session_power(row):
-            dcosId = row.name
-            current_time = row["startChargeTime"]
-
-            if self.use_all_active_sessions:
-                data = _sum_all_active_sessions(raw_df_sessions, current_time)
-            else:
-                data = row["power_profiles"]
-
-            # Truncate or pad power array to self.lookahead elements
-            if len(data) > self.lookahead:
-                data = data[: self.lookahead]
-            elif len(data) < self.lookahead:
-                data = np.pad(
-                    data,
-                    (0, self.lookahead - len(data)),
-                    mode="constant",
-                )
-
-            new_row = pd.Series(
-                data=data,
-                index=[f"u_{i+1}" for i in range(self.lookahead)],
-                name=dcosId,
-                dtype=float,
+        if not self.add_fraction_of_regular_sessions:
+            additional_session_features = additional_session_features.drop(
+                columns=["fractionOfRegularSessions"]
             )
-            new_row["startChargeTime"] = current_time
-            return new_row
 
         df_sessions = raw_df_sessions.progress_apply(
-            _apply_generate_future_session_power, axis=1
+            apply_generate_future_session_power,
+            axis=1,
+            raw_df_sessions=raw_df_sessions,
+            use_all_active_sessions=self.use_all_active_sessions,
+            lookahead=self.lookahead,
         )  # type: ignore
         # We have a small issues with missing vales in the power profile when
         # the charge ends before the user unplugs the car. We fill the missing values
         # with 0
         df_sessions = df_sessions.fillna(0)
+
+        df_sessions = pd.merge(
+            df_sessions,
+            additional_session_features,
+            on="startChargeTime",
+            how="left",
+        )
 
         # normalize u columns by the EVSE max power
         # We need to do that after dropping the NaN values
@@ -779,7 +794,7 @@ class Base:
             if "fractionOfRegularSessions" in flat_inputs.columns:
                 subtitle += f"Fraction of regular sessions: {flat_inputs['fractionOfRegularSessions'].iloc[i]:.2f}\n"
             if "numberOfActiveSessions" in flat_inputs.columns:
-                subtitle += f"Number of active sessions: {flat_inputs['numberOfActiveSessions'].iloc[i]}\n"
+                subtitle += f"Number of active sessions: {flat_inputs['numberOfActiveSessions'].iloc[i] * 8}\n"
 
             fig.add_annotation(
                 text=subtitle,
@@ -799,23 +814,3 @@ class Base:
             yaxis_title="Normalized Power",
         )
         fig.show()
-
-
-def _sum_all_active_sessions(
-    raw_df_sessions: pd.DataFrame, current_time: pd.Timestamp
-) -> list:
-    # We are going to replace the u features (future profile of the next session)
-    # with the aggregated future power profiles of all the active sessions
-    active_sessions = raw_df_sessions[
-        (raw_df_sessions["startChargeTime"] <= current_time)
-        & (raw_df_sessions["endChargeTime"] >= current_time)
-    ]
-    sum_df = pd.DataFrame()
-    for _, this_session in active_sessions.iterrows():
-        this_session_df = pd.DataFrame(
-            data=this_session["power_profiles"], index=this_session["date"]
-        )
-        sum_df = pd.concat([sum_df, this_session_df], axis=1)
-    sum_df = sum_df.sum(axis=1)
-    sum_df = sum_df.loc[sum_df.index >= current_time]
-    return sum_df.to_list()
