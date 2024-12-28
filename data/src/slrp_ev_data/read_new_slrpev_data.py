@@ -14,7 +14,7 @@ def read_new_slrpev_data(keep_all_columns=False) -> pd.DataFrame:
         The new SLRP EV data.
     """
     data = pd.read_csv(
-        Path(__file__).parent / "data" / "power_df_2008-2406_v241220_15min.csv",
+        Path(__file__).parent / "data" / "power_df_2008-2406_v241227_15min.csv",
     )
 
     # convert date and remove timezone
