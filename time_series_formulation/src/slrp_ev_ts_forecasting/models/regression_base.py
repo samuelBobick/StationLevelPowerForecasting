@@ -93,11 +93,15 @@ class RegressionBaseModel(Base):
             ("_lagsOpti" if self.optimize_lags else "")
             + ("Short" if self.optimize_lags == "short_opt" else "")
             + ("Long" if self.optimize_lags == "long_opt" else "")
-            + ("_SessionBased" if self.session_based_mode else "")
-            + ("_PeakPrediction" if self.peak_prediction else "")
-            + ("_WithNbSessions" if self.add_number_of_sessions else "")
-            + ("_WithFracReg" if self.add_fraction_of_regular_sessions else "")
-            + ("_WithAllActiveSessions" if self.use_all_active_sessions else "")
+            + (
+                "_SessionBased"
+                + ("_PeakPrediction" if self.peak_prediction else "")
+                + ("_WithNbSessions" if self.add_number_of_sessions else "")
+                + ("_WithFracReg" if self.add_fraction_of_regular_sessions else "")
+                + ("_WithAllActiveSessions" if self.use_all_active_sessions else "")
+                if self.session_based_mode
+                else ""
+            )
         )
 
     def fit(self, train: pd.DataFrame, val: pd.DataFrame | None):
