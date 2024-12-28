@@ -54,6 +54,9 @@ class FFNN(TorchBaseModel):
         self.optimize_lags = optimize_lags
         self.session_based_mode = session_based_mode
         self.peak_prediction = peak_prediction
+        self.add_number_of_sessions = add_number_of_sessions
+        self.add_fraction_of_regular_sessions = add_fraction_of_regular_sessions
+        self.use_all_active_sessions = use_all_active_sessions
 
         # Other parameters
         self.alpha = alpha
@@ -106,7 +109,11 @@ class FFNN(TorchBaseModel):
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
-        input_size = self.x_dim
+        input_size = (
+            self.x_dim
+            + int(self.add_number_of_sessions)
+            + int(self.add_fraction_of_regular_sessions)
+        )
         if self.session_based_mode:
             input_size += self.lookahead
 
