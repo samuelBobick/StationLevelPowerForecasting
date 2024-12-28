@@ -93,11 +93,15 @@ class FFNN(TorchBaseModel):
             + ("Long" if self.optimize_lags == "long_opt" else "")
             + f"_dropout{self.dropout}"
             + ("_withBatchNorm" if self.batch_norm else "")
-            + ("_SessionBased" if self.session_based_mode else "")
-            + ("_PeakPrediction" if self.peak_prediction else "")
-            + ("_WithNbSessions" if self.add_number_of_sessions else "")
-            + ("_WithFracReg" if self.add_fraction_of_regular_sessions else "")
-            + ("_WithAllActiveSessions" if self.use_all_active_sessions else "")
+            + (
+                "_SessionBased"
+                + ("_PeakPrediction" if self.peak_prediction else "")
+                + ("_WithNbSessions" if self.add_number_of_sessions else "")
+                + ("_WithFracReg" if self.add_fraction_of_regular_sessions else "")
+                + ("_WithAllActiveSessions" if self.use_all_active_sessions else "")
+                if self.session_based_mode
+                else ""
+            )
         )
 
     def _determine_input_size(self) -> int:

@@ -50,6 +50,17 @@ class Base:
         self.add_fraction_of_regular_sessions = add_fraction_of_regular_sessions
         self.use_all_active_sessions = use_all_active_sessions
 
+        if not session_based_mode and (
+            add_number_of_sessions
+            or add_fraction_of_regular_sessions
+            or use_all_active_sessions
+        ):
+            raise UserWarning(
+                "One of the parameters add_number_of_sessions, add_fraction_of_regular_sessions "
+                "or use_all_active_sessions is set to True, but those are only used "
+                "when session_based_mode=True"
+            )
+
         # initialize parameters defined in the child classes
         self.pacf_top_values = None
 
