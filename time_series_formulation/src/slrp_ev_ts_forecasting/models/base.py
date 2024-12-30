@@ -20,6 +20,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
 from slrp_ev_ts_forecasting.helper_session_forecasting import (
     apply_generate_future_session_power,
     extract_features,
+    get_raw_df_sessions,
     make_artificial_sessions,
     revert_power_df,
 )
@@ -181,16 +182,17 @@ class Base:
                         "df_padded should be provided to generate windows "
                         "for train and test data types"
                     )
-                self._val_and_train_window = WindowGenerator(
-                    input_width=input_width,
-                    label_width=label_width,
-                    shift=self.lookahead,
-                    train_df=df_padded,
-                    get_val_from_shuffled_train=True,
-                    label_columns=["power", "date"],
-                    overlapping_windows=overlapping_windows,
-                    verbose=True,
-                )
+                if not hasattr(self, "_val_and_train_window"):
+                    self._val_and_train_window = WindowGenerator(
+                        input_width=input_width,
+                        label_width=label_width,
+                        shift=self.lookahead,
+                        train_df=df_padded,
+                        get_val_from_shuffled_train=True,
+                        label_columns=["power", "date"],
+                        overlapping_windows=overlapping_windows,
+                        verbose=True,
+                    )
                 return self._val_and_train_window, self._val_and_train_window.train
             elif data_type == "val":
                 if df_padded is not None:
@@ -299,12 +301,14 @@ class Base:
         return_y_date: bool = False,
         overlapping_windows: bool = False,
         multi_model_mode: bool = True,
+        add_artificial_data: bool = False,
     ):
         print(f"## Getting {data_type} data")
         if self.peak_prediction and not self.session_based_mode:
             raise ValueError(
                 "self.peak_prediction can only be True if self.session_based_mode is True"
             )
+
         if self.session_based_mode:
             # if self.session_based_mode is True, we do session forecasting, and
             # we will look for the sessions in all of the windows,
@@ -324,6 +328,65 @@ class Base:
         else:
             df_padded = None
 
+        samples = self.make_samples_X_y(
+            df_padded,
+            time_mode=time_mode,
+            data_type=data_type,
+            return_y_date=return_y_date,
+            overlapping_windows=overlapping_windows,
+            multi_model_mode=multi_model_mode,
+            input_width=input_width,
+        )
+        if len(samples) == 3:
+            flat_inputs, flat_labels, y_dates = samples
+            return flat_inputs, flat_labels, y_dates
+        else:
+            flat_inputs, flat_labels = samples
+
+        if data_type == "train":
+            if return_y_date:
+                raise ValueError(
+                    "return_y_date is not yet supported for 'train' data. Please set it to False"
+                )
+            if df_padded is None:
+                raise ValueError(
+                    "df_padded should be provided to generate windows for train data type"
+                )
+            if add_artificial_data:
+                # TODO: make this a parameter
+                number_of_artificial_datasets = 2
+                for i in range(number_of_artificial_datasets):
+                    artificial_df = get_artificial_data(train_data=df_padded)
+                    artificial_flat_inputs, artificial_flat_labels = self.make_samples_X_y(  # type: ignore
+                        artificial_df,
+                        time_mode=time_mode,
+                        data_type=data_type,
+                        return_y_date=return_y_date,
+                        overlapping_windows=overlapping_windows,
+                        multi_model_mode=multi_model_mode,
+                        input_width=input_width,
+                    )
+                    flat_inputs = pd.concat([flat_inputs, artificial_flat_inputs])
+                    flat_labels = pd.concat([flat_labels, artificial_flat_labels])
+
+            # Shuffle the data
+            indices = flat_inputs.index.to_numpy(copy=True)
+            np.random.shuffle(indices)
+            flat_inputs = flat_inputs.loc[indices]
+            flat_labels = flat_labels.loc[indices]
+
+        return flat_inputs, flat_labels
+
+    def make_samples_X_y(
+        self,
+        df_padded: pd.DataFrame | None,
+        time_mode: Literal["window", "cyclical"],
+        data_type: Literal["train", "val", "test"],
+        return_y_date: bool,
+        overlapping_windows: bool,
+        multi_model_mode: bool,
+        input_width: int,
+    ):
         W, window_data = self.get_window_data(
             df_padded, input_width, self.lookahead, overlapping_windows, data_type
         )
@@ -386,9 +449,7 @@ class Base:
 
         if self.session_based_mode:
             flat_inputs, flat_labels, merged_inputs_dates_sessions = (
-                self.transform_X_y_for_session_based_mode(
-                    flat_inputs, flat_labels, data_type
-                )
+                self.transform_X_y_for_session_based_mode(flat_inputs, flat_labels)
             )
             if data_type == "test":
                 self.plot_example_sample(
@@ -401,13 +462,6 @@ class Base:
         print(
             f"Data has {flat_inputs.shape[0]} samples, with {flat_inputs.shape[1]} features, to predict {flat_labels.shape[1]} labels"
         )
-
-        if data_type == "train":
-            # Shuffle the data
-            indices = flat_inputs.index.to_numpy(copy=True)
-            np.random.shuffle(indices)
-            flat_inputs = flat_inputs.loc[indices]
-            flat_labels = flat_labels.loc[indices]
 
         if return_y_date:
             if self.session_based_mode:
@@ -432,7 +486,6 @@ class Base:
         self,
         flat_inputs: pd.DataFrame,
         flat_labels: pd.DataFrame,
-        data_type: Literal["train", "val", "test"],
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         # TODO: Also add the number of current active sessions as a feature? Information is
         # maybe already in the "load until the start of this session"
@@ -464,16 +517,6 @@ class Base:
         )
 
         df_sessions = self.get_df_sessions(power_df)
-        if data_type == "train":
-            # TODO: make this a parameter
-            number_of_artificial_datasets = 2
-            for i in range(number_of_artificial_datasets):
-                df_artificial_sessions = self.get_df_sessions(
-                    power_df, artificial_mode=True
-                )
-                df_sessions = pd.concat(
-                    [df_sessions, df_artificial_sessions], ignore_index=True
-                )
 
         # Create a dataframe of samples, where we keep only the samples that have
         # a corresponding session
@@ -531,7 +574,6 @@ class Base:
     def get_df_sessions(
         self,
         power_df: pd.DataFrame,
-        artificial_mode: bool = False,
     ) -> pd.DataFrame:
         """
         Generate a DataFrame of sessions from a power DataFrame.
@@ -544,49 +586,7 @@ class Base:
         Returns:
             pd.DataFrame: The DataFrame of sessions with `self.lookahead` + 2.
         """
-        # Create a dictionary to map dcosId to their corresponding
-        # power profiles in the interval data
-        number_of_power_columns = power_df.filter(regex=r"power\d+").shape[1]
-        session_profiles_from_interval = {}
-        for i in range(1, number_of_power_columns + 1):
-            dcos_column = f"dcosId{i}"
-            power_column = f"power{i}"
-            choice_column = f"is_choice_regular{i}"
-
-            df_power_profiles = (
-                power_df[power_df[dcos_column].notna()][
-                    [dcos_column, power_column, choice_column, "date"]
-                ]
-                .groupby(dcos_column)
-                .agg(list)
-            )
-            df_power_profiles = df_power_profiles.rename(
-                columns={
-                    power_column: "power_profiles",
-                    choice_column: "is_choice_regular",
-                }
-            )
-            session_profiles_from_interval.update(
-                df_power_profiles.to_dict(orient="index")
-            )
-
-        raw_df_sessions = pd.DataFrame(session_profiles_from_interval).T
-
-        if artificial_mode:
-            # TODO: change True to a parameter
-            raw_df_sessions = make_artificial_sessions(
-                raw_df_sessions,
-                random_start_time=True,
-                random_power_profile_shapes=True,
-                random_user_needs=True,
-                random_choices=True,
-            )
-        raw_df_sessions["startChargeTime"] = raw_df_sessions.apply(
-            lambda x: x["date"][0], axis=1
-        )
-        raw_df_sessions["endChargeTime"] = raw_df_sessions.apply(
-            lambda x: x["date"][-1], axis=1
-        )
+        raw_df_sessions = get_raw_df_sessions(power_df)
 
         reverted_power_df = revert_power_df(raw_df_sessions)
         additional_session_features = extract_features(
@@ -814,3 +814,21 @@ class Base:
             yaxis_title="Normalized Power",
         )
         fig.show()
+
+
+def get_artificial_data(train_data: pd.DataFrame) -> pd.DataFrame:
+    power_df = read_new_slrpev_data(keep_all_columns=True)
+    power_df = power_df.loc[
+        power_df["date"].isin(pd.to_datetime(train_data["date"], unit="s"))
+    ]
+
+    raw_df_sessions = get_raw_df_sessions(power_df)
+
+    df_artificial_sessions = make_artificial_sessions(
+        raw_df_sessions,
+        random_start_time=True,
+        random_power_profile_shapes=True,
+        random_user_needs=True,
+        random_choices=True,
+    )
+    df_sessions = pd.concat([df_sessions, df_artificial_sessions], ignore_index=True)

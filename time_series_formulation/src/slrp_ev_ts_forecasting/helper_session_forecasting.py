@@ -53,6 +53,42 @@ def _sum_all_active_sessions(
     return sum_df.to_list()
 
 
+def get_raw_df_sessions(power_df: pd.DataFrame):
+    # Create a dictionary to map dcosId to their corresponding
+    # power profiles in the interval data
+    number_of_power_columns = power_df.filter(regex=r"power\d+").shape[1]
+    session_profiles_from_interval = {}
+    for i in range(1, number_of_power_columns + 1):
+        dcos_column = f"dcosId{i}"
+        power_column = f"power{i}"
+        choice_column = f"is_choice_regular{i}"
+
+        df_power_profiles = (
+            power_df[power_df[dcos_column].notna()][
+                [dcos_column, power_column, choice_column, "date"]
+            ]
+            .groupby(dcos_column)
+            .agg(list)
+        )
+        df_power_profiles = df_power_profiles.rename(
+            columns={
+                power_column: "power_profiles",
+                choice_column: "is_choice_regular",
+            }
+        )
+        session_profiles_from_interval.update(df_power_profiles.to_dict(orient="index"))
+
+    raw_df_sessions = pd.DataFrame(session_profiles_from_interval).T
+
+    raw_df_sessions["startChargeTime"] = raw_df_sessions.apply(
+        lambda x: x["date"][0], axis=1
+    )
+    raw_df_sessions["endChargeTime"] = raw_df_sessions.apply(
+        lambda x: x["date"][-1], axis=1
+    )
+    return raw_df_sessions
+
+
 def make_artificial_sessions(
     raw_df_sessions: pd.DataFrame,
     random_start_time: bool = False,
