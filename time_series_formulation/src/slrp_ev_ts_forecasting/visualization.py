@@ -7,6 +7,7 @@ def visualize_forecast(
     test_data: pd.DataFrame,
     df_predictions: pd.DataFrame,
     number_of_days: int,
+    model_name: str,
 ) -> None:
     """
     Visualize the forecasted values.
@@ -63,7 +64,7 @@ def visualize_forecast(
         )
 
     fig.update_layout(
-        title=f"Forecast for {number_of_days} days",
+        title=f"{model_name} - Forecast for {number_of_days} days",
         xaxis_title="Date",
         yaxis_title="Value",
     )

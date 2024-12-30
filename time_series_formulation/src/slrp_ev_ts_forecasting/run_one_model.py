@@ -153,11 +153,7 @@ def run_one_model(
     )
 
     if verbose:
-        visualize_forecast(
-            test,
-            df_predictions,
-            data_length_days,
-        )
+        visualize_forecast(test, df_predictions, data_length_days, model.model_str_name)
 
     model_parameters["dataset"] = dataset
     save_losses(losses, model_name, model_parameters, filename=save_results_filename)
