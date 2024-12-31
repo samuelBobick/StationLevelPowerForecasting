@@ -1,5 +1,12 @@
 import numpy as np
 import pandas as pd
+from slrp_ev_data.normalization_and_standardization import (
+    SINGLE_EVSE_NORMALIZATION_PARAM,
+)
+
+from slrp_ev_ts_forecasting.default_parameters import RANDOM_SEED
+
+np.random.seed(RANDOM_SEED)
 
 
 def apply_generate_future_session_power(
@@ -80,12 +87,6 @@ def get_raw_df_sessions(power_df: pd.DataFrame):
 
     raw_df_sessions = pd.DataFrame(session_profiles_from_interval).T
 
-    raw_df_sessions["startChargeTime"] = raw_df_sessions.apply(
-        lambda x: x["date"][0], axis=1
-    )
-    raw_df_sessions["endChargeTime"] = raw_df_sessions.apply(
-        lambda x: x["date"][-1], axis=1
-    )
     return raw_df_sessions
 
 
@@ -95,11 +96,51 @@ def make_artificial_sessions(
     random_power_profile_shapes: bool = False,
     random_user_needs: bool = False,
     random_choices: bool = False,
+    probability_of_scheduled_sessions: float = 0.35,
 ) -> pd.DataFrame:
+    raw_df_sessions["choice"] = raw_df_sessions["is_choice_regular"].apply(
+        lambda x: "REGULAR" if x[0] == 1 else "SCHEDULED"
+    )
+    raw_df_sessions["e_need"] = raw_df_sessions["power_profiles"].apply(
+        lambda x: sum(x) / 4
+    )
+    raw_df_sessions["duration"] = raw_df_sessions["power_profiles"].apply(len)
+
     if random_start_time:
         raw_df_sessions["date"] = raw_df_sessions.progress_apply(
             _apply_randomize_start_time, axis=1
         )  # type: ignore
+
+    if random_user_needs:
+        raw_df_sessions["e_need"] = raw_df_sessions["e_need"].apply(
+            lambda x: x * np.random.uniform(0.8, 1.2)
+        )
+        # TODO: need to change the dates if we allow changing the duration
+        # raw_df_sessions["duration"] = raw_df_sessions["duration"].apply(
+        #     lambda x: int(x * np.random.uniform(0.8, 1.2))
+        # )
+
+    # if random_choices:
+    #     # TODO: need a function to generate regular profiles
+    #     raw_df_sessions["choice"] = raw_df_sessions["choice"].apply(
+    #         lambda x: (
+    #             "REGULAR"
+    #             if np.random.uniform() > probability_of_scheduled_sessions
+    #             else "SCHEDULED"
+    #         )
+    #     )
+
+    if random_power_profile_shapes:
+        raw_df_sessions["power_profiles"] = raw_df_sessions.apply(
+            lambda row: (
+                generate_random_scheduled_profile(row["duration"], row["e_need"])
+                if row["choice"] == "SCHEDULED"
+                else row["power_profiles"]
+            ),
+            axis=1,
+        )
+
+    raw_df_sessions = raw_df_sessions.drop(columns=["choice", "e_need", "duration"])
     return raw_df_sessions
 
 
@@ -112,6 +153,40 @@ def _apply_randomize_start_time(
     # round to the closest 15 minutes (= closest 900 seconds)
     random_time_shift = pd.Timedelta(seconds=(random_time_shift // 900) * 900)
     return (pd.Series(row["date"]) + random_time_shift).to_list()
+
+
+def generate_random_scheduled_profile(
+    duration, e_need, min_power=0, max_power=SINGLE_EVSE_NORMALIZATION_PARAM
+):
+    max_power *= 1 + np.random.uniform(-0.05, 0.03)
+    # Generate random numbers
+    random_numbers = np.random.uniform(min_power, max_power, duration)
+
+    # Scale the random numbers to sum to e_need
+    scale_factor = e_need / np.sum(random_numbers)
+    scaled_numbers = random_numbers * scale_factor
+
+    # Ensure the scaled numbers are within the min and max bounds
+    scaled_numbers = np.clip(scaled_numbers, min_power, max_power)
+
+    # Adjust the sum to exactly match e_need
+    difference = e_need - np.sum(scaled_numbers)
+    for i in range(len(scaled_numbers)):
+        if difference == 0:
+            break
+        adjustment = min(difference, max_power - scaled_numbers[i])
+        scaled_numbers[i] += adjustment
+        difference -= adjustment
+
+    # randomly shuffle the power profile
+    np.random.shuffle(scaled_numbers)
+
+    # randomly slightly change the values equal to max power
+    for i in range(len(scaled_numbers)):
+        if scaled_numbers[i] == max_power:
+            scaled_numbers[i] *= 1 + np.random.uniform(-0.01, 0.01)
+
+    return scaled_numbers.tolist()
 
 
 def revert_power_df(raw_df_sessions):
@@ -136,13 +211,12 @@ def revert_power_df(raw_df_sessions):
     return reverted_power_df
 
 
-def extract_features(reverted_power_df, power_df):
-    reverted_power_df = reverted_power_df.drop(columns=["power"])
+def extract_features(reverted_power_df):
     # Set index and resample
     additional_features = (
         reverted_power_df.set_index("date")
         .resample("15min")
-        .agg({"dcosId": "count", "is_choice_regular": "mean"})
+        .agg({"dcosId": "count", "is_choice_regular": "mean", "power": "sum"})
         .reset_index()
     )
 

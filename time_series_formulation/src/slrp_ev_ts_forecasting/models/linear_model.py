@@ -61,7 +61,6 @@ class LinearModel(RegressionBaseModel):
         y_val: pd.DataFrame,
         val_mask: pd.Series,
     ):
-
         X_input = pd.concat(
             [
                 X_train[train_mask].drop(

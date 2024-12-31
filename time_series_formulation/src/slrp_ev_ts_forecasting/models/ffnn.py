@@ -148,18 +148,23 @@ class FFNN(TorchBaseModel):
         overlapping_windows: bool = False,
     ) -> Dataset | tuple[Dataset, pd.DataFrame]:
 
-        flat_inputs, flat_labels, y_dates = self.get_X_y(  # type: ignore
+        samples = self.get_X_y(
             df=df,
             time_mode=self.time_mode,
             data_type=data_type,
-            return_y_date=True,
+            return_y_date=return_y_date,
             overlapping_windows=overlapping_windows,
             multi_model_mode=False,
+            add_artificial_data=True,
         )
+
+        if len(samples) == 3:
+            flat_inputs, flat_labels, y_dates = samples
+        else:
+            flat_inputs, flat_labels = samples
 
         dataset = TensorDataset(flat_inputs, flat_labels)
         if return_y_date:
-
             return dataset, y_dates  # type: ignore
         else:
             return dataset

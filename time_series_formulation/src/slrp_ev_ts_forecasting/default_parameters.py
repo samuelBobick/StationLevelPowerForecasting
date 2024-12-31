@@ -31,7 +31,7 @@ ERROR_METRIC: TypeErrorMetric = "mse"
 
 TypeDataSet = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
 DATASET: TypeDataSet = "slrp-ev_new"
-GET_VAL_DATA_FROM_SHUFFLED_TRAIN = False
+GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
 
 SESSION_BASED_MODE = True
 PEAK_PREDICTION = True
@@ -66,3 +66,6 @@ if torch.cuda.is_available():
 else:
     print("CUDA is not available. Using CPU.")
     DEVICE = "cpu"
+
+RANDOM_SEED = 42
+VERBOSE = False

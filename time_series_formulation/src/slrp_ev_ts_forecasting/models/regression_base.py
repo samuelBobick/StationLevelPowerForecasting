@@ -116,7 +116,7 @@ class RegressionBaseModel(Base):
         if self.optimize_lags:
             self.pacf_top_values = self.get_top_pacf_values(train)
 
-        X_train, y_train = self.get_X_y(train, data_type="train", overlapping_windows=True, time_mode=self.time_mode)  # type: ignore
+        X_train, y_train = self.get_X_y(train, data_type="train", overlapping_windows=True, time_mode=self.time_mode, add_artificial_data=True)  # type: ignore
         self.update_seen_data(train)
         X_val, y_val = self.get_X_y(val, data_type="val", overlapping_windows=False, time_mode=self.time_mode)  # type: ignore
         if val is not None:
@@ -171,6 +171,7 @@ class RegressionBaseModel(Base):
             tuple (Losses, DataFrame): Losses object, DataFrame of predictions with \
                 "date" and multiple "power_x" columns for the predictions
         """
+        # TODO: turn add_artificial_data into a parameter
         X_test, y_test, y_dates = self.get_X_y(test, data_type="test", return_y_date=True, time_mode=self.time_mode)  # type: ignore
 
         forecasts = []
