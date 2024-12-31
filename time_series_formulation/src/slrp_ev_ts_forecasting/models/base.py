@@ -6,15 +6,19 @@ import plotly.graph_objects as go
 from plotly import subplots
 from slrp_ev_data.feature_engineering import (
     convert_date_from_int_to_datetime,
+    feature_engineering,
     one_hot_encoding,
 )
 from slrp_ev_data.normalization_and_standardization import (
     SINGLE_EVSE_NORMALIZATION_PARAM,
+    retrieve_train_min_and_max,
 )
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.default_parameters import (
     NUMBER_OF_DAYS_FOR_PACF,
+    RANDOM_SEED,
+    VERBOSE,
     TypeOptimizeLags,
 )
 from slrp_ev_ts_forecasting.helper_session_forecasting import (
@@ -30,6 +34,7 @@ from tqdm.auto import tqdm
 # Register `pandas.progress_apply` and `pandas.Series.map_apply` with `tqdm`
 # (can use `tqdm.gui.tqdm`, `tqdm.notebook.tqdm`, optional kwargs, etc.)
 tqdm.pandas()
+np.random.seed(RANDOM_SEED)
 
 
 class Base:
@@ -44,11 +49,13 @@ class Base:
         add_number_of_sessions: bool,
         add_fraction_of_regular_sessions: bool,
         use_all_active_sessions: bool,
+        verbose: bool = VERBOSE,
     ):
         self.x_dim = x_dim
         self.lookahead = lookahead
         self.optimize_lags = optimize_lags
         self.get_val_data_from_shuffled_train = get_val_data_from_shuffled_train
+        self.verbose = verbose
 
         # parameters to get data for session-based forecasting
         self.session_based_mode = session_based_mode
@@ -182,18 +189,20 @@ class Base:
                         "df_padded should be provided to generate windows "
                         "for train and test data types"
                     )
+                _val_and_train_window = WindowGenerator(
+                    input_width=input_width,
+                    label_width=label_width,
+                    shift=self.lookahead,
+                    train_df=df_padded,
+                    get_val_from_shuffled_train=True,
+                    label_columns=["power", "date"],
+                    overlapping_windows=overlapping_windows,
+                    verbose=True,
+                )
                 if not hasattr(self, "_val_and_train_window"):
-                    self._val_and_train_window = WindowGenerator(
-                        input_width=input_width,
-                        label_width=label_width,
-                        shift=self.lookahead,
-                        train_df=df_padded,
-                        get_val_from_shuffled_train=True,
-                        label_columns=["power", "date"],
-                        overlapping_windows=overlapping_windows,
-                        verbose=True,
-                    )
-                return self._val_and_train_window, self._val_and_train_window.train
+                    self._val_and_train_window = _val_and_train_window
+                return _val_and_train_window, _val_and_train_window.train
+
             elif data_type == "val":
                 if df_padded is not None:
                     raise ValueError(
@@ -356,15 +365,18 @@ class Base:
                 # TODO: make this a parameter
                 number_of_artificial_datasets = 2
                 for i in range(number_of_artificial_datasets):
-                    artificial_df = get_artificial_data(train_data=df_padded)
+                    artificial_train_data, artificial_raw_df_sessions = (
+                        get_artificial_data(train_data=df_padded)
+                    )
                     artificial_flat_inputs, artificial_flat_labels = self.make_samples_X_y(  # type: ignore
-                        artificial_df,
+                        artificial_train_data,
                         time_mode=time_mode,
                         data_type=data_type,
                         return_y_date=return_y_date,
                         overlapping_windows=overlapping_windows,
                         multi_model_mode=multi_model_mode,
                         input_width=input_width,
+                        artificial_raw_df_sessions=artificial_raw_df_sessions,
                     )
                     flat_inputs = pd.concat([flat_inputs, artificial_flat_inputs])
                     flat_labels = pd.concat([flat_labels, artificial_flat_labels])
@@ -386,6 +398,7 @@ class Base:
         overlapping_windows: bool,
         multi_model_mode: bool,
         input_width: int,
+        artificial_raw_df_sessions: pd.DataFrame | None = None,
     ):
         W, window_data = self.get_window_data(
             df_padded, input_width, self.lookahead, overlapping_windows, data_type
@@ -449,14 +462,19 @@ class Base:
 
         if self.session_based_mode:
             flat_inputs, flat_labels, merged_inputs_dates_sessions = (
-                self.transform_X_y_for_session_based_mode(flat_inputs, flat_labels)
+                self.transform_X_y_for_session_based_mode(
+                    flat_inputs,
+                    flat_labels,
+                    artificial_raw_df_sessions=artificial_raw_df_sessions,
+                )
             )
-            if data_type == "test":
+            if self.verbose:
                 self.plot_example_sample(
                     merged_inputs_dates_sessions,
                     flat_inputs,
                     flat_labels,
-                    date="2024-02-26",
+                    data_type=data_type,
+                    date="2024-02-26" if data_type == "test" else None,
                 )
 
         print(
@@ -486,6 +504,7 @@ class Base:
         self,
         flat_inputs: pd.DataFrame,
         flat_labels: pd.DataFrame,
+        artificial_raw_df_sessions: pd.DataFrame | None,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         # TODO: Also add the number of current active sessions as a feature? Information is
         # maybe already in the "load until the start of this session"
@@ -499,7 +518,10 @@ class Base:
         )
 
         power_df = read_new_slrpev_data(keep_all_columns=True)
-        power_df = power_df.loc[power_df["date"].isin(start_dates_prediction_window)]
+        power_df = power_df.loc[
+            (power_df["date"].dt.date >= start_dates_prediction_window.min().date())
+            & (power_df["date"].dt.date <= start_dates_prediction_window.max().date())
+        ]
 
         # We need to rename the label columns because "power_x" is already a column in flat_inputs
         flat_labels = flat_labels.rename(
@@ -516,7 +538,7 @@ class Base:
             axis=1,
         )
 
-        df_sessions = self.get_df_sessions(power_df)
+        df_sessions = self.get_df_sessions(power_df, artificial_raw_df_sessions)
 
         # Create a dataframe of samples, where we keep only the samples that have
         # a corresponding session
@@ -574,6 +596,7 @@ class Base:
     def get_df_sessions(
         self,
         power_df: pd.DataFrame,
+        artificial_raw_df_sessions: pd.DataFrame | None,
     ) -> pd.DataFrame:
         """
         Generate a DataFrame of sessions from a power DataFrame.
@@ -586,12 +609,22 @@ class Base:
         Returns:
             pd.DataFrame: The DataFrame of sessions with `self.lookahead` + 2.
         """
-        raw_df_sessions = get_raw_df_sessions(power_df)
+        if artificial_raw_df_sessions is not None:
+            raw_df_sessions = artificial_raw_df_sessions
+        else:
+            raw_df_sessions = get_raw_df_sessions(power_df)
+
+        raw_df_sessions["startChargeTime"] = raw_df_sessions.apply(
+            lambda x: x["date"][0], axis=1
+        )
+        raw_df_sessions["endChargeTime"] = raw_df_sessions.apply(
+            lambda x: x["date"][-1], axis=1
+        )
 
         reverted_power_df = revert_power_df(raw_df_sessions)
         additional_session_features = extract_features(
-            reverted_power_df=reverted_power_df, power_df=power_df
-        )
+            reverted_power_df=reverted_power_df
+        ).drop(columns=["power"])
         if not self.add_number_of_sessions:
             additional_session_features = additional_session_features.drop(
                 columns=["numberOfActiveSessions"]
@@ -699,6 +732,7 @@ class Base:
         merged_inputs_dates_sessions,
         flat_inputs,
         flat_labels,
+        data_type: str,
         date=None,
         number_of_samples: int = 3,
     ):
@@ -710,7 +744,9 @@ class Base:
         )
 
         if date is None:
-            date = merged_inputs_dates_sessions["startChargeTime"].dt.date.iloc[0]
+            date = merged_inputs_dates_sessions["startChargeTime"].dt.date.iloc[
+                -7 * 24 * 4
+            ]
         else:
             date = pd.to_datetime(date).date()
             if (
@@ -809,26 +845,59 @@ class Base:
             )
 
         fig.update_layout(
-            title_text=f"Example sample of the data for date {date}",
+            title_text=f"Example sample of the {data_type} data for date {date}",
             showlegend=True,
             yaxis_title="Normalized Power",
         )
         fig.show()
 
 
-def get_artificial_data(train_data: pd.DataFrame) -> pd.DataFrame:
+def get_artificial_data(train_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    train_data = train_data.copy()
+    train_data["date"] = convert_date_from_int_to_datetime(train_data["date"])
+
     power_df = read_new_slrpev_data(keep_all_columns=True)
+
     power_df = power_df.loc[
-        power_df["date"].isin(pd.to_datetime(train_data["date"], unit="s"))
+        (power_df["date"].dt.date >= train_data["date"].min().date())
+        & (power_df["date"].dt.date <= train_data["date"].max().date())
     ]
 
     raw_df_sessions = get_raw_df_sessions(power_df)
 
-    df_artificial_sessions = make_artificial_sessions(
+    artificial_raw_df_sessions = make_artificial_sessions(
         raw_df_sessions,
         random_start_time=True,
         random_power_profile_shapes=True,
         random_user_needs=True,
         random_choices=True,
     )
-    df_sessions = pd.concat([df_sessions, df_artificial_sessions], ignore_index=True)
+
+    artificial_power_df = extract_features(
+        revert_power_df(artificial_raw_df_sessions)
+    ).drop(columns=["numberOfActiveSessions", "fractionOfRegularSessions"])
+
+    artificial_power_df = artificial_power_df.merge(
+        train_data[["date", "power"]],
+        left_on="startChargeTime",
+        right_on="date",
+        how="inner",
+        suffixes=("", "_initial"),
+    )
+    # Add back the missing values where they were in the original data
+    artificial_power_df.loc[
+        artificial_power_df["power_initial"].isna()
+        & (artificial_power_df["power"] == 0),
+        "power",
+    ] = np.nan
+
+    artificial_power_df = artificial_power_df.drop(
+        columns=["power_initial", "startChargeTime"]
+    )
+    normalize_parameters = retrieve_train_min_and_max("slrp-ev_new")
+    artificial_train_data = feature_engineering(
+        data_input=artificial_power_df.dropna(subset=["power"]),
+        add_nans_for_missing_data=True,
+        normalize_parameters=normalize_parameters,
+    )
+    return artificial_train_data, artificial_raw_df_sessions

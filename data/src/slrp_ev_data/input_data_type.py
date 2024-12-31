@@ -20,7 +20,9 @@ DataSchema = pa.DataFrameSchema(
             ],
             nullable=False,
         ),
-        "workday": pa.Column(pa.Int, nullable=False),
+        # The column "workday" is a binary column that indicates whether the day is a workday or not.
+        # it is optional, since we actually recompute it in the feature engineering
+        "workday": pa.Column(pa.Int, nullable=False, required=False),
     }
 )
 

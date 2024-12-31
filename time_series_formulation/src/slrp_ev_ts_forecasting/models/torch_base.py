@@ -215,7 +215,6 @@ class TorchBaseModel(Base):
                 train_loader,
                 val_loader,
                 epochs=self.epochs_initial_models,
-                best_vloss=self.best_vloss,
             )
 
         if self.number_of_initial_models > 1:
@@ -227,14 +226,12 @@ class TorchBaseModel(Base):
                 val_loader,
                 start_epoch=current_model_epoch + 1,
                 writer=self.best_model_writer,
-                best_vloss=self.best_vloss,
             )
 
     def fit_one_model(
         self,
         train_loader: DataLoader,
         val_loader: DataLoader,
-        best_vloss: float = np.inf,
         epochs: Optional[int] = None,
         writer: Optional[SummaryWriter] = None,
         start_epoch: int = 0,
@@ -266,12 +263,6 @@ class TorchBaseModel(Base):
                 f"Epoch [{epoch + 1}/{epochs}], Current lr: {current_lr:.2E}, Training loss: {avg_loss:_.4f}, Validation loss:{avg_vloss:_.4f}"
             )
 
-            if avg_vloss < best_vloss:
-                best_vloss = avg_vloss
-                self.best_vloss = best_vloss
-                self.save_checkpoint(epoch, best_vloss)
-                self.best_model_writer = writer
-
             # early stopping criteria
             # next_lr = self.scheduler.get_last_lr()[0]
 
@@ -281,7 +272,7 @@ class TorchBaseModel(Base):
             #     )
             #     break
 
-        print(f"Training complete! Lowest validation loss is: {best_vloss}")
+        print(f"Training complete! Lowest validation loss is: {self.best_vloss}")
 
     def _train_epoch(
         self,
@@ -340,6 +331,11 @@ class TorchBaseModel(Base):
                     avg_vloss,
                     step_number,
                 )
+
+                if avg_vloss < self.best_vloss:
+                    self.best_vloss = avg_vloss
+                    self.save_checkpoint(epoch, self.best_vloss)
+                    self.best_model_writer = writer
 
                 # Log the current learning rate
                 current_lr = self._get_current_lr()
