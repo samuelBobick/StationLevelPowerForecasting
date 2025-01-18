@@ -11,15 +11,25 @@ from slrp_ev_ts_forecasting.default_parameters import (
 )
 
 TypeMetrics = Literal["rmse", "wrmse (alpha=2)", "mae", "wprmse (beta=3)", "r2"]
-GROUPBY_COLUMNS = [
-    "batch_size",
-    "x_dim",
-    "lookahead",
-    "time_mode",
-    "dataset",
-    "error_metric",
-    "get_val_data_from_shuffled_train",
-]
+
+
+def get_groupby_columns(df_results: pd.DataFrame) -> list[str]:
+    groupby_columns = [
+        col
+        for col in df_results.columns
+        if col
+        not in [
+            "date",
+            "model_name",
+            "rmse",
+            "wrmse (alpha=2)",
+            "wprmse (beta=3)",
+            "mae",
+            "r2",
+            "error_std",
+        ]
+    ]
+    return groupby_columns
 
 
 def visualize_results(
@@ -35,10 +45,12 @@ def visualize_results(
     # Filter the model names
     df_results = apply_filter(df_results, or_filter_model_name)
 
+    groupby_columns = get_groupby_columns(df_results)
+
     plt.figure(figsize=(10, 5))
-    df_results_grouped = df_results.groupby(GROUPBY_COLUMNS)
+    df_results_grouped = df_results.groupby(groupby_columns)
     df_group_names = pd.DataFrame(
-        list(df_results_grouped.indices.keys()), columns=GROUPBY_COLUMNS
+        list(df_results_grouped.indices.keys()), columns=groupby_columns
     ).T
     df_group_names["No Change"] = df_group_names.apply(
         lambda x: x.nunique() == 1, axis=1
@@ -105,9 +117,11 @@ def plot_loss_against_one_parameter(
     # Filter the model names
     df_results = apply_filter(df_results, or_filter_model_name)
 
-    GROUPBY_COLUMNS.remove(parameter_to_show)
-    GROUPBY_COLUMNS.append("model_name")
-    df_results_grouped = df_results.groupby(GROUPBY_COLUMNS)
+    groupby_columns = get_groupby_columns(df_results)
+
+    groupby_columns.remove(parameter_to_show)
+    groupby_columns.append("model_name")
+    df_results_grouped = df_results.groupby(groupby_columns)
 
     # Get a list of colors
     colors = plt.cm.viridis(np.linspace(0, 1, len(df_results_grouped)))  # type: ignore
@@ -167,12 +181,12 @@ def apply_filter(
 
 
 if __name__ == "__main__":
-    # plot_loss_against_one_parameter(
-    #     "rmse",
-    #     "get_val_data_from_shuffled_train",
-    #     ["FFN"],
-    #     include_scatter=True,
-    #     filename="results_ucsd_val_shuffle",
-    #     # y_limits=[5400, 6000],
-    # )
-    visualize_results("rmse", filename="improve_peak_forecasting")
+    plot_loss_against_one_parameter(
+        "rmse",
+        "number_of_artificial_datasets",
+        None,
+        include_scatter=True,
+        filename="experiment_artificial_data_slrpev_new",
+        # y_limits=[5400, 6000],
+    )
+    # visualize_results("rmse", filename="improve_peak_forecasting")

@@ -1,12 +1,13 @@
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import pandas as pd
 from slrp_ev_ts_forecasting.default_parameters import TypeDataSet
 
+from slrp_ev_data.data_utils import get_data_frequency
 from slrp_ev_data.input_data_type import DataSchema
 
-COLS_TO_NORMALIZE = ["power"]
+COLS_TO_NORMALIZE = ["power", "number_of_evses_available"]
 NORM_PARAMETERS_PATH = Path(__file__).parent / "saved_normalization_parameters"
 NORM_PARAMETERS_PATH.mkdir(parents=True, exist_ok=True)
 SINGLE_EVSE_NORMALIZATION_PARAM = 6_800
@@ -16,7 +17,7 @@ def save_series_to_csv(series: pd.Series, name: str) -> None:
     series.to_csv(NORM_PARAMETERS_PATH / f"{name}.csv")
 
 
-def load_series_from_csv(name: str):
+def load_series_from_csv(name: str) -> pd.Series:
     return pd.read_csv(NORM_PARAMETERS_PATH / f"{name}.csv", index_col=0).iloc[:, 0]
 
 
@@ -129,3 +130,211 @@ def reverse_normalize_data(
         train_min.index
     ).all(), "Data columns do not match the parameters columns"
     return data * (train_max - train_min) + train_min
+
+
+def get_rolling_scaling_column(
+    df: pd.DataFrame,
+    scaling_mode: Literal["rolling_standardize", "rolling_normalize"],
+    lookahead_15min_steps: int,
+    lookback_15min_steps: int = 96 * 30,
+    validate: bool = True,
+    dataset_name: Optional[TypeDataSet] = None,
+) -> pd.DataFrame:
+    """Creates a dataframe with the rolling mean and standard deviation of the power column,
+    for a given lookback and lookahead.
+
+    Args:
+        df (pd.DataFrame): Dataframe of type DataSchema
+        scaling_mode (Literal["rolling_standardize", "rolling_normalize"]): \
+            The scaling mode to apply
+        lookahead_15min_steps (int): Prediction horizon in 15min steps \
+            (e.g. 96 for 24h)
+        lookback_15min_steps (int): Lookback period on which to do the rolling \
+            average. Recommended to be at least 30 days. Default is 96*30
+        validate (bool): Whether to validate the input DataFrame type. \
+            Set it to True unless you know what you are doing. Default is True.
+        dataset_name (Optional[str]): Name of the dataset, used to save the \
+            scaling parameters in a csv. \
+
+    Returns:
+        pd.DataFrame: A DataFrame with 2*COLS_TO_NORMALIZE columns, \
+            one for the mean/min and one for the standard deviation/max \
+            for each of the COLS_TO_NORMALIZE
+    """
+    if validate:
+        DataSchema.validate(df)
+
+    freq = get_data_frequency(df)
+
+    if freq == "5min":
+        freq_factor = 3
+    elif freq == "15min":
+        freq_factor = 1
+    else:
+        raise ValueError(f"Unsupported frequency: {freq}, please update the code")
+
+    lookback_min_steps_min = lookback_15min_steps * 15 * freq_factor
+    rolling_power = df.set_index("date")[COLS_TO_NORMALIZE].rolling(
+        pd.Timedelta(minutes=lookback_min_steps_min),
+        min_periods=int(lookback_15min_steps * freq_factor * 0.7),
+        closed="left",
+    )
+
+    df_scaling_columns = pd.DataFrame(index=df["date"])
+    for column_name in COLS_TO_NORMALIZE:
+        if scaling_mode == "rolling_standardize":
+            df_scaling_columns[("mean_power_for_diff", column_name)] = (
+                rolling_power[column_name]
+                .mean()
+                .shift(lookahead_15min_steps * freq_factor, freq=freq)
+            )
+            df_scaling_columns[("std_power_for_diff", column_name)] = (
+                rolling_power[column_name]
+                .std()
+                .shift(lookahead_15min_steps * freq_factor, freq=freq)
+            )
+            # set to 1 the std when it is 0, otherwise we will have an issue in
+            # the scaling
+            # This is something done in sklearn: https://github.com/scikit-learn/scikit-learn/blob/7389dbac82d362f296dc2746f10e43ffa1615660/sklearn/preprocessing/data.py#L70
+            df_scaling_columns.loc[
+                df_scaling_columns[("std_power_for_diff", column_name)] == 0,
+                [("std_power_for_diff", column_name)],
+            ] = 1
+
+        elif scaling_mode == "rolling_normalize":
+            df_scaling_columns[("min_power_for_diff", column_name)] = (
+                rolling_power[column_name]
+                .min()
+                .shift(lookahead_15min_steps * freq_factor, freq=freq)
+            )
+            df_scaling_columns[("max_power_for_diff", column_name)] = (
+                rolling_power[column_name]
+                .max()
+                .shift(lookahead_15min_steps * freq_factor, freq=freq)
+            )
+        else:
+            raise ValueError(f"Unsupported scaling mode: {scaling_mode}")
+
+    df_scaling_columns = df_scaling_columns[
+        df_scaling_columns.index == df_scaling_columns.index.date
+    ].reindex(df_scaling_columns.index, method="ffill")
+
+    if dataset_name:
+        filename = f"{dataset_name}_rolling_{scaling_mode}_params"
+        with open(NORM_PARAMETERS_PATH / f"{filename}.csv", "w") as f:
+            df_scaling_columns.to_csv(f)
+    return df_scaling_columns
+
+
+def apply_rolling_scaling(
+    df: pd.DataFrame,
+    scaling_parameters: pd.DataFrame,
+    scaling_mode: Literal["rolling_standardize", "rolling_normalize"],
+    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
+) -> pd.DataFrame:
+    """Applies rolling scaling (normalization or standardization) to the "power" \
+        column of the DataFrame.
+
+    Args:
+        df (pd.DataFrame): a DataFrame with a "power" and "date" column
+        scaling_parameters (pd.Series): scaling parameters for the rolling \
+            scaling. Those are returned by the function get_rolling_scaling_column
+        scaling_mode (Literal["rolling_standardize", "rolling_normalize"]): \
+            The scaling mode to apply
+        cols_to_normalize (list[str]): Columns to normalize among COLS_TO_NORMALIZE
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    scaling_column_names = []
+    for column_name in cols_to_normalize:
+        if scaling_mode == "rolling_standardize":
+            scaling_column_names += [
+                ("mean_power_for_diff", column_name),
+                ("std_power_for_diff", column_name),
+            ]
+        elif scaling_mode == "rolling_normalize":
+            scaling_column_names += [
+                ("min_power_for_diff", column_name),
+                ("max_power_for_diff", column_name),
+            ]
+        else:
+            raise ValueError(f"Unsupported scaling mode: {scaling_mode}")
+
+    df = df.copy()
+    df = df.merge(
+        scaling_parameters[scaling_column_names],
+        how="left",
+        left_on="date",
+        right_index=True,
+    ).dropna(subset=scaling_column_names)
+
+    for column_name in cols_to_normalize:
+        if scaling_mode == "rolling_standardize":
+            df[column_name] = (
+                df[column_name] - df[("mean_power_for_diff", column_name)]
+            ) / df[("std_power_for_diff", column_name)]
+        elif scaling_mode == "rolling_normalize":
+            df[column_name] = (
+                df[column_name] - df[("min_power_for_diff", column_name)]
+            ) / (
+                df[("max_power_for_diff", column_name)]
+                - df[("min_power_for_diff", column_name)]
+            )
+
+    df = df.drop(columns=scaling_column_names)
+    return df
+
+
+def reverse_rolling_scaling(
+    df: pd.DataFrame,
+    column_for_difference: pd.DataFrame,
+    scaling_mode: Literal["rolling_standardize", "rolling_normalize"],
+) -> pd.DataFrame:
+    """Reverses the rolling standardization applied to the "power" column of the DataFrame.
+
+    Args:
+        df (pd.DataFrame): a DataFrame with a "power" and "date" column
+        column_for_difference (pd.Series): _description_
+        scaling_mode (Literal["rolling_standardize", "rolling_normalize"]): \
+            The scaling mode to apply
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    for column_name in COLS_TO_NORMALIZE:
+        if scaling_mode == "rolling_standardize":
+            scaling_column_names = [
+                ("mean_power_for_diff", column_name),
+                ("std_power_for_diff", column_name),
+            ]
+        elif scaling_mode == "rolling_normalize":
+            scaling_column_names = [
+                ("min_power_for_diff", column_name),
+                ("max_power_for_diff", column_name),
+            ]
+
+    df = df.copy()
+    df = df.merge(
+        column_for_difference,
+        how="left",
+        left_on="date",
+        right_index=True,
+    ).dropna(subset=scaling_column_names)
+
+    for column_name in COLS_TO_NORMALIZE:
+        if scaling_mode == "rolling_standardize":
+            df[column_name] = (
+                df[column_name] * df[("std_power_for_diff", column_name)]
+            ) + df[("mean_power_for_diff", column_name)]
+        elif scaling_mode == "rolling_normalize":
+            df[column_name] = (
+                df[column_name]
+                * (
+                    df[("max_power_for_diff", column_name)]
+                    - df[("min_power_for_diff", column_name)]
+                )
+            ) + df[("min_power_for_diff", column_name)]
+
+    df = df.drop(columns=scaling_column_names)
+    return df

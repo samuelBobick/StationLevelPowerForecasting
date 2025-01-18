@@ -60,13 +60,13 @@ class SimilarDay:
         self, current_day_index: int, df: pd.DataFrame, days_back: int
     ) -> int | None:
         is_workday_day_back = (
-            df["workday"]
+            df["workday_0"]
             .shift(self.readings_per_day * days_back)
             .loc[current_day_index]
         )
         if pd.isna(is_workday_day_back):
             return None
-        elif is_workday_day_back == df["workday"].loc[current_day_index]:
+        elif is_workday_day_back == df["workday_0"].loc[current_day_index]:
             return days_back
         else:
             return self.find_past_similar_day(current_day_index, df, days_back + 1)

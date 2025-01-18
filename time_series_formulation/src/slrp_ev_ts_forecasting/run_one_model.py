@@ -1,4 +1,4 @@
-import pandas as pd
+import numpy as np
 from slrp_ev_data import (
     read_new_slrpev_data,
     read_old_slrpev_data,
@@ -6,17 +6,17 @@ from slrp_ev_data import (
     train_test_split,
 )
 from slrp_ev_data.feature_engineering import (
-    convert_date_from_int_to_datetime,
     feature_engineering,
-    reverse_feature_engineering,
 )
-from slrp_ev_data.normalization_and_standardization import get_train_min_and_max
 
-from slrp_ev_ts_forecasting.compute_losses import get_real_scale_losses
+from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import (
+    ALPHA,
     DATASET,
     DEFAULT_RESULTS_FILENAME,
     GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+    LOOKAHEAD,
+    SCALING_MODE,
     TypeDataSet,
     TypeModelChoice,
 )
@@ -24,50 +24,11 @@ from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 from slrp_ev_ts_forecasting.save_losses import save_losses
+from slrp_ev_ts_forecasting.utils_data_processing import (
+    get_scaling_parameters,
+    reverse_engineer_forecast,
+)
 from slrp_ev_ts_forecasting.visualization import visualize_forecast
-
-
-def reverse_engineer_forecast(
-    df_test_example, df_predictions, normalize_parameters
-) -> pd.DataFrame:
-    # Reverse engineer the forecast to get the original features back
-    # convert from float32 to int64
-    df_predictions["date"] = df_predictions["date"].astype("int64")
-
-    # initialize final dataframe
-    df_reversed_predictions = pd.DataFrame()
-    df_reversed_predictions["date"] = convert_date_from_int_to_datetime(
-        df_predictions["date"]
-    )
-
-    next_power_column_number = len(df_predictions.columns) - 1
-    for i in range(next_power_column_number):
-        col_name = f"power_{i}"
-        if (i == next_power_column_number - 1) and (
-            "real_power" in df_predictions.columns
-        ):
-            col_name = "real_power"
-        # merge_asof performs a left merge with the closest date
-        df_reverse_helper = pd.merge_asof(
-            df_predictions[["date", col_name]],
-            df_test_example.drop(columns=["power"]),
-            on="date",
-            direction="nearest",
-        ).rename(columns={col_name: "power"})
-        df_reverse_helper = df_reverse_helper.dropna(subset=["power"])
-        df_reverse_helper = reverse_feature_engineering(
-            df_reverse_helper, normalize_parameters, bypass_output_validation=True
-        )
-
-        df_reverse_helper = df_reverse_helper[["date", "power"]]
-        helper_date_mask = df_reversed_predictions["date"].isin(
-            df_reverse_helper["date"]
-        )
-        df_reversed_predictions.loc[helper_date_mask, col_name] = df_reverse_helper[
-            "power"
-        ]
-
-    return df_reversed_predictions
 
 
 def run_one_model(
@@ -114,19 +75,48 @@ def run_one_model(
         model_class == FFNN
     )
 
-    normalize_parameters = get_train_min_and_max(train, dataset_name=dataset)
-    train_eng = feature_engineering(train, is_regression_model, normalize_parameters)
+    scaling_mode = model_parameters.get("scaling_mode", SCALING_MODE)
+
+    scaling_parameters = get_scaling_parameters(
+        train,
+        data,
+        scaling_mode,
+        dataset,
+        lookahead_15min_steps=model_parameters.get("lookahead", LOOKAHEAD),
+    )
+
+    train_eng = feature_engineering(
+        train,
+        is_regression_model,
+        scaling_mode=scaling_mode,
+        scaling_parameters=scaling_parameters,
+    )
     val_eng = (
-        feature_engineering(val, is_regression_model, normalize_parameters)
+        feature_engineering(
+            val,
+            is_regression_model,
+            scaling_mode=scaling_mode,
+            scaling_parameters=scaling_parameters,
+        )
         if val is not None
         else None
     )
-    test_eng = feature_engineering(test, is_regression_model, normalize_parameters)
+    test_eng = feature_engineering(
+        test,
+        is_regression_model,
+        scaling_mode=scaling_mode,
+        scaling_parameters=scaling_parameters,
+    )
 
+    # Add predefined model parameters to the model_parameters dictionary
     model_parameters = model_parameters | DICT_MODEL[model_choice]["model_params"]
     print(
         f"Model choice: {model_choice}, with the following parameters for the initialization: {model_parameters } "
     )
+    # Add the scaling parameters to the model_parameters dictionary.
+    # Since it is automatic, and a dataFrame, we do that after printing the
+    # parameters information
+    model_parameters["scaling_parameters"] = scaling_parameters
 
     model = model_class(**model_parameters)
     model_name = getattr(model, "model_str_name", model_choice)
@@ -134,10 +124,26 @@ def run_one_model(
     model.fit(train_eng, val=val_eng, **DICT_MODEL[model_choice]["fit_params"])
 
     print("# Making prediction(s)...")
-    losses, df_predictions = model.predict(test_eng)
+    df_predictions = model.predict(
+        test_eng,
+    )
 
-    data_length_days = df_predictions.shape[0] // 96
-    losses = get_real_scale_losses(losses, normalize_parameters=normalize_parameters)
+    # Reverse engineer the forecast to get the original features back
+    df_reversed_predictions = reverse_engineer_forecast(
+        test_eng,
+        df_predictions,
+        scaling_mode=scaling_mode,
+        scaling_parameters=scaling_parameters,
+    )
+    data_length_days = df_reversed_predictions.shape[0] // 96
+
+    y_pred = df_reversed_predictions.filter(regex="^power").values.reshape(-1)
+    y_true = df_reversed_predictions.filter(regex="real_power").values.reshape(-1)
+    mask_nan = ~np.isnan(y_pred)
+    y_pred = y_pred[mask_nan]
+    y_true = y_true[mask_nan]
+
+    losses = compute_losses(y_pred, y_true, model_parameters.get("alpha", ALPHA))
     print(
         f"{model_choice}: ",
         *[
@@ -147,13 +153,10 @@ def run_one_model(
         f"for around {data_length_days} days of predictions",
     )
 
-    # Reverse engineer the forecast to get the original features back
-    df_predictions = reverse_engineer_forecast(
-        test_eng, df_predictions, normalize_parameters
-    )
-
     if verbose:
-        visualize_forecast(test, df_predictions, data_length_days, model.model_str_name)
+        visualize_forecast(
+            test, df_reversed_predictions, data_length_days, model.model_str_name
+        )
 
     model_parameters["dataset"] = dataset
     save_losses(losses, model_name, model_parameters, filename=save_results_filename)

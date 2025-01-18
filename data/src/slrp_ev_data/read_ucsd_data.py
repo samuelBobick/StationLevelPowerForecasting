@@ -27,4 +27,11 @@ def read_ucsd_data(garage_name: Optional[str] = None) -> pd.DataFrame:
     # data["date"] = pd.to_datetime(data["date"]).dt.tz_localize("America/Los_Angeles")
     data["date"] = pd.to_datetime(data["date"])
 
+    # We don't need the workday column, it is recomputed in the feature engineering
+    # function
+    data = data.drop(columns=["workday"])
+
+    # Reduce the float precision and to save memory
+    data = data.astype({"number_of_evses_available": "float32"})
+
     return data

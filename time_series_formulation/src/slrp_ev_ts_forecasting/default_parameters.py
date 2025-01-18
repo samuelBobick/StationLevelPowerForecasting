@@ -32,12 +32,28 @@ ERROR_METRIC: TypeErrorMetric = "mse"
 TypeDataSet = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
 DATASET: TypeDataSet = "slrp-ev_new"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
+TypeScalingMode = Literal[
+    "normalize", "standardize", "rolling_standardize", "rolling_normalize"
+]
+SCALING_MODE: TypeScalingMode = "rolling_standardize"
 
 SESSION_BASED_MODE = True
 PEAK_PREDICTION = True
 ADD_NUMBER_OF_SESSIONS = True
-ADD_FRACTION_OF_REGULAR_SESSIONS = True
+ADD_FRACTION_OF_REGULAR_SESSIONS = False
 USE_ALL_ACTIVE_SESSIONS = True
+
+# parameters to generate random sessions
+NUMBER_OF_ARTIFICIAL_DATASETS = 2
+RANDOM_START_TIME = True
+SHUFFLE_POWER_PROFILES = (
+    True  # SHUFFLE_POWER_PROFILES and RANDOM_POWER_PROFILE_SHAPES can't be both True
+)
+RANDOM_POWER_PROFILE_SHAPES = False
+RANDOM_USER_NEEDS = True
+RANDOM_CHOICES = True
+
+ADD_NUMBER_OF_EVSES_AVAILABLE = True
 
 TypeModelChoice = Literal[
     "LinearRegression",
@@ -67,5 +83,5 @@ else:
     print("CUDA is not available. Using CPU.")
     DEVICE = "cpu"
 
-RANDOM_SEED = 42
+RANDOM_SEED: int | None = 42  # int(pd.Timestamp.now().timestamp())
 VERBOSE = False

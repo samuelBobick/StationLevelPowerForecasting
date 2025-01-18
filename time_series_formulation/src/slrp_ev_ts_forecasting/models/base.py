@@ -1,3 +1,4 @@
+import warnings
 from typing import Literal, Optional
 
 import numpy as np
@@ -5,13 +6,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly import subplots
 from slrp_ev_data.feature_engineering import (
+    apply_scaling,
     convert_date_from_int_to_datetime,
-    feature_engineering,
+    get_workday_column_names,
     one_hot_encoding,
-)
-from slrp_ev_data.normalization_and_standardization import (
-    SINGLE_EVSE_NORMALIZATION_PARAM,
-    retrieve_train_min_and_max,
 )
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_data.window_generator import WindowGenerator
@@ -20,12 +18,13 @@ from slrp_ev_ts_forecasting.default_parameters import (
     RANDOM_SEED,
     VERBOSE,
     TypeOptimizeLags,
+    TypeScalingMode,
 )
 from slrp_ev_ts_forecasting.helper_session_forecasting import (
     apply_generate_future_session_power,
     extract_features,
+    get_artificial_data,
     get_raw_df_sessions,
-    make_artificial_sessions,
     revert_power_df,
 )
 from slrp_ev_ts_forecasting.pacf import get_pacf_values, get_threshold, sort_pacf_values
@@ -34,7 +33,6 @@ from tqdm.auto import tqdm
 # Register `pandas.progress_apply` and `pandas.Series.map_apply` with `tqdm`
 # (can use `tqdm.gui.tqdm`, `tqdm.notebook.tqdm`, optional kwargs, etc.)
 tqdm.pandas()
-np.random.seed(RANDOM_SEED)
 
 
 class Base:
@@ -44,11 +42,20 @@ class Base:
         lookahead,
         optimize_lags: TypeOptimizeLags,
         get_val_data_from_shuffled_train: bool,
+        scaling_mode: TypeScalingMode,
+        scaling_parameters: tuple | pd.DataFrame | None,
         session_based_mode: bool,
         peak_prediction: bool,
         add_number_of_sessions: bool,
         add_fraction_of_regular_sessions: bool,
         use_all_active_sessions: bool,
+        number_of_artificial_datasets: int,
+        random_start_time: bool,
+        shuffle_power_profiles: bool,
+        random_power_profile_shapes: bool,
+        random_user_needs: bool,
+        random_choices: bool,
+        add_number_of_evses_available: bool,
         verbose: bool = VERBOSE,
     ):
         self.x_dim = x_dim
@@ -56,6 +63,19 @@ class Base:
         self.optimize_lags = optimize_lags
         self.get_val_data_from_shuffled_train = get_val_data_from_shuffled_train
         self.verbose = verbose
+        self.window_seed = (
+            RANDOM_SEED if RANDOM_SEED else int(pd.Timestamp.now().timestamp())
+        )
+        self.rng = np.random.default_rng(RANDOM_SEED)
+        self.scaling_mode: TypeScalingMode = scaling_mode
+        if scaling_parameters is None:
+            raise ValueError(
+                f"scaling_parameters should not be None. scaling_mode is {self.scaling_mode}"
+            )
+        else:
+            self.scaling_parameters = scaling_parameters
+
+        self.add_number_of_evses_available = add_number_of_evses_available
 
         # parameters to get data for session-based forecasting
         self.session_based_mode = session_based_mode
@@ -64,16 +84,26 @@ class Base:
         self.add_fraction_of_regular_sessions = add_fraction_of_regular_sessions
         self.use_all_active_sessions = use_all_active_sessions
 
+        # parameters to add artificial data
+        self.number_of_artificial_datasets = number_of_artificial_datasets
+        self.random_start_time = random_start_time
+        self.shuffle_power_profiles = shuffle_power_profiles
+        self.random_power_profile_shapes = random_power_profile_shapes
+        self.random_user_needs = random_user_needs
+        self.random_choices = random_choices
+
         if not session_based_mode and (
             add_number_of_sessions
             or add_fraction_of_regular_sessions
             or use_all_active_sessions
         ):
-            raise UserWarning(
+            warnings.warn(
                 "One of the parameters add_number_of_sessions, add_fraction_of_regular_sessions "
                 "or use_all_active_sessions is set to True, but those are only used "
                 "when session_based_mode=True"
             )
+
+        self.list_workday_column_names = get_workday_column_names(lookahead)
 
         # initialize parameters defined in the child classes
         self.pacf_top_values = None
@@ -96,7 +126,9 @@ class Base:
             nb_of_days_for_pacf=nb_of_days_for_pacf,
             nb_of_steps_to_predict=nb_of_steps_to_predict,
             return_confidence_interval=True,
-        )
+        )  # type: ignore
+        pacf_df: pd.DataFrame
+        interval: float
 
         number_of_lags_to_keep = self.x_dim
         pacf_top_values = sort_pacf_values(pacf_df, number_of_lags_to_keep)
@@ -197,6 +229,7 @@ class Base:
                     get_val_from_shuffled_train=True,
                     label_columns=["power", "date"],
                     overlapping_windows=overlapping_windows,
+                    seed=self.window_seed,
                     verbose=True,
                 )
                 if not hasattr(self, "_val_and_train_window"):
@@ -251,12 +284,13 @@ class Base:
         for i in range(predictions_array.shape[0]):
             df_single_prediction = pd.DataFrame(
                 {
-                    "date": predictions_array[i, :, 0],
+                    "date": convert_date_from_int_to_datetime(
+                        pd.Series(predictions_array[i, :, 0])
+                    ),
                     "power_0": predictions_array[i, :, 1],
+                    "real_power_0": predictions_array[i, :, 2],
                 }
             )
-            if add_real:
-                df_single_prediction["real_power"] = predictions_array[i, :, 2]
 
             if df_single_prediction["date"].isin(df_predictions["date"]).any():
                 # if we already have prediction data for these timesteps, we need to iterate
@@ -265,18 +299,23 @@ class Base:
                 df_predictions_these_dates = df_predictions[
                     df_predictions["date"].isin(df_single_prediction["date"])
                 ]
-                next_power_column_number = len(df_predictions.columns) - 1
-                if add_real:
-                    next_power_column_number -= 1
+                next_power_column_number = (df_predictions.shape[1] - 1) // 2
+
                 # by default we add the data to a new column
                 df_single_prediction = df_single_prediction.rename(
-                    columns={"power_0": f"power_{next_power_column_number}"}
+                    columns={
+                        "power_0": f"power_{next_power_column_number}",
+                        "real_power_0": f"real_power_{next_power_column_number}",
+                    }
                 )
                 # If possible, we add it to an existing column
                 for j in range(0, next_power_column_number):
                     if df_predictions_these_dates[f"power_{j}"].isna().all():
                         df_single_prediction = df_single_prediction.rename(
-                            columns={f"power_{next_power_column_number}": f"power_{j}"}
+                            columns={
+                                f"power_{next_power_column_number}": f"power_{j}",
+                                f"real_power_{next_power_column_number}": f"real_power_{j}",
+                            }
                         )
                         break
                 df_predictions = df_predictions.merge(df_single_prediction, how="outer")
@@ -289,6 +328,15 @@ class Base:
                     df_predictions = pd.concat(
                         [df_predictions, df_single_prediction], ignore_index=True
                     )
+
+        # we have an issue where some dates are duplicated,
+        # but with only 1 column that has a value for each duplicate. We actually
+        # want only 1 row with a value in each column
+        df_predictions = (
+            df_predictions.groupby("date")
+            .agg(lambda x: x.dropna().iloc[0] if not x.dropna().empty else np.nan)
+            .reset_index()
+        )
         return df_predictions
 
     def save_model(self, model, model_name: str):
@@ -310,7 +358,6 @@ class Base:
         return_y_date: bool = False,
         overlapping_windows: bool = False,
         multi_model_mode: bool = True,
-        add_artificial_data: bool = False,
     ):
         print(f"## Getting {data_type} data")
         if self.peak_prediction and not self.session_based_mode:
@@ -334,6 +381,26 @@ class Base:
             # We pad the data with input_width elements of the last seen data
             # so that we can predict the first elements of df
             df_padded = self.pad_with_seen_data(df, input_width)
+
+            # We want the predictions to start at midnight, so we set the first
+            # prediction window to start at midnight
+            # To do that, we make the data start at midnight - input width/4 hours
+            # TODO: change the 4 to be based on the data frequency
+            start_hour = 24 - input_width / 4 % 24
+            if start_hour == 24:
+                start_hour = 0
+            dates = convert_date_from_int_to_datetime(df_padded["date"])
+            start_date = pd.to_datetime(dates.iloc[0].date()) + pd.Timedelta(
+                hours=start_hour
+            )
+            if start_date not in dates.values:
+                start_date += pd.Timedelta(hours=24)
+            assert (
+                start_date in dates.values
+            ), f"start_date {start_date} not in dates {dates}, weird, please debug"
+
+            df_padded = df_padded.loc[dates >= start_date]
+
         else:
             df_padded = None
 
@@ -345,10 +412,11 @@ class Base:
             overlapping_windows=overlapping_windows,
             multi_model_mode=multi_model_mode,
             input_width=input_width,
+            scaling_mode=self.scaling_mode,
+            scaling_parameters=self.scaling_parameters,
         )
         if len(samples) == 3:
-            flat_inputs, flat_labels, y_dates = samples
-            return flat_inputs, flat_labels, y_dates
+            return samples
         else:
             flat_inputs, flat_labels = samples
 
@@ -361,29 +429,42 @@ class Base:
                 raise ValueError(
                     "df_padded should be provided to generate windows for train data type"
                 )
-            if add_artificial_data:
-                # TODO: make this a parameter
-                number_of_artificial_datasets = 2
-                for i in range(number_of_artificial_datasets):
-                    artificial_train_data, artificial_raw_df_sessions = (
-                        get_artificial_data(train_data=df_padded)
-                    )
-                    artificial_flat_inputs, artificial_flat_labels = self.make_samples_X_y(  # type: ignore
-                        artificial_train_data,
-                        time_mode=time_mode,
-                        data_type=data_type,
-                        return_y_date=return_y_date,
-                        overlapping_windows=overlapping_windows,
-                        multi_model_mode=multi_model_mode,
-                        input_width=input_width,
-                        artificial_raw_df_sessions=artificial_raw_df_sessions,
-                    )
-                    flat_inputs = pd.concat([flat_inputs, artificial_flat_inputs])
-                    flat_labels = pd.concat([flat_labels, artificial_flat_labels])
+
+            for i in range(self.number_of_artificial_datasets):
+                (
+                    artificial_train_data,
+                    artificial_raw_df_sessions,
+                    scaling_parameters,
+                ) = get_artificial_data(
+                    train_data=df_padded,
+                    random_start_time=self.random_start_time,
+                    shuffle_power_profiles=self.shuffle_power_profiles,
+                    random_power_profile_shapes=self.random_power_profile_shapes,
+                    random_user_needs=self.random_user_needs,
+                    random_choices=self.random_choices,
+                    scaling_mode=self.scaling_mode,
+                    lookahead=self.lookahead,
+                    rng=self.rng,
+                )
+
+                artificial_flat_inputs, artificial_flat_labels = self.make_samples_X_y(  # type: ignore
+                    artificial_train_data,
+                    time_mode=time_mode,
+                    data_type=data_type,
+                    return_y_date=return_y_date,
+                    overlapping_windows=overlapping_windows,
+                    multi_model_mode=multi_model_mode,
+                    input_width=input_width,
+                    artificial_raw_df_sessions=artificial_raw_df_sessions,
+                    scaling_mode=self.scaling_mode,
+                    scaling_parameters=scaling_parameters,
+                )
+                flat_inputs = pd.concat([flat_inputs, artificial_flat_inputs])
+                flat_labels = pd.concat([flat_labels, artificial_flat_labels])
 
             # Shuffle the data
             indices = flat_inputs.index.to_numpy(copy=True)
-            np.random.shuffle(indices)
+            self.rng.shuffle(indices)
             flat_inputs = flat_inputs.loc[indices]
             flat_labels = flat_labels.loc[indices]
 
@@ -398,13 +479,17 @@ class Base:
         overlapping_windows: bool,
         multi_model_mode: bool,
         input_width: int,
+        scaling_mode: TypeScalingMode,
+        scaling_parameters: tuple | pd.DataFrame,
         artificial_raw_df_sessions: pd.DataFrame | None = None,
     ):
         W, window_data = self.get_window_data(
             df_padded, input_width, self.lookahead, overlapping_windows, data_type
         )
 
-        cols_keep_last_value = []
+        cols_keep_last_value = self.list_workday_column_names.copy()
+        if self.add_number_of_evses_available:
+            cols_keep_last_value += ["number_of_evses_available"]
         if time_mode == "cyclical":
             cols_keep_last_value += [
                 "Day sin",
@@ -414,10 +499,8 @@ class Base:
                 "Year sin",
                 "Year cos",
             ]
-            if multi_model_mode:
-                cols_keep_last_value += ["workday"]
         elif time_mode == "window":
-            cols_keep_last_value += ["time_window", "workday"]
+            cols_keep_last_value += ["time_window"]
 
         label_cols_to_flatten = ["power"]
         if self.session_based_mode:
@@ -466,6 +549,8 @@ class Base:
                     flat_inputs,
                     flat_labels,
                     artificial_raw_df_sessions=artificial_raw_df_sessions,
+                    scaling_mode=scaling_mode,
+                    scaling_parameters=scaling_parameters,
                 )
             )
             if self.verbose:
@@ -505,10 +590,9 @@ class Base:
         flat_inputs: pd.DataFrame,
         flat_labels: pd.DataFrame,
         artificial_raw_df_sessions: pd.DataFrame | None,
+        scaling_mode: TypeScalingMode,
+        scaling_parameters: tuple | pd.DataFrame,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        # TODO: Also add the number of current active sessions as a feature? Information is
-        # maybe already in the "load until the start of this session"
-        # TODO: Add the fraction of scheduled users in the current sessions?
         # TODO: Change the loss function in the model, to better predict peaks
 
         start_dates_prediction_window = (
@@ -517,11 +601,17 @@ class Base:
             .rename("start_date_prediction_window")
         )
 
-        power_df = read_new_slrpev_data(keep_all_columns=True)
-        power_df = power_df.loc[
-            (power_df["date"].dt.date >= start_dates_prediction_window.min().date())
-            & (power_df["date"].dt.date <= start_dates_prediction_window.max().date())
-        ]
+        if artificial_raw_df_sessions is None:
+            power_df = read_new_slrpev_data(keep_all_columns=True)
+            power_df = power_df.loc[
+                (power_df["date"].dt.date >= start_dates_prediction_window.min().date())
+                & (
+                    power_df["date"].dt.date
+                    <= start_dates_prediction_window.max().date()
+                )
+            ]
+        else:
+            power_df = None
 
         # We need to rename the label columns because "power_x" is already a column in flat_inputs
         flat_labels = flat_labels.rename(
@@ -538,7 +628,12 @@ class Base:
             axis=1,
         )
 
-        df_sessions = self.get_df_sessions(power_df, artificial_raw_df_sessions)
+        df_sessions = self.get_df_sessions(
+            power_df,
+            artificial_raw_df_sessions,
+            scaling_mode=scaling_mode,
+            scaling_parameters=scaling_parameters,
+        )
 
         # Create a dataframe of samples, where we keep only the samples that have
         # a corresponding session
@@ -552,15 +647,11 @@ class Base:
         merged_inputs_dates_sessions = merged_inputs_dates_sessions.dropna()
 
         additional_feature_names = []
-        if self.add_number_of_sessions or self.add_fraction_of_regular_sessions:
-            # Add number of session and fraction or regular in the features
-            # TODO: if we generate random session, see how to modify the fraction
-            # of regular sessions. Maybe we don't generate random session in place of
-            # sessions that were regular
-            if self.add_number_of_sessions:
-                additional_feature_names += ["numberOfActiveSessions"]
-            if self.add_fraction_of_regular_sessions:
-                additional_feature_names += ["fractionOfRegularSessions"]
+        # Add number of session and fraction or regular in the features
+        if self.add_number_of_sessions:
+            additional_feature_names += ["numberOfActiveSessions"]
+        if self.add_fraction_of_regular_sessions:
+            additional_feature_names += ["fractionOfRegularSessions"]
 
         merged_inputs_dates_sessions = merged_inputs_dates_sessions.sort_values(
             by="startChargeTime"
@@ -588,15 +679,17 @@ class Base:
 
         if self.peak_prediction:
             flat_labels = self.transform_X_y_for_peak_prediction(
-                flat_labels, merged_inputs_dates_sessions
+                merged_inputs_dates_sessions
             )
 
         return flat_inputs, flat_labels, merged_inputs_dates_sessions
 
     def get_df_sessions(
         self,
-        power_df: pd.DataFrame,
+        power_df: pd.DataFrame | None,
         artificial_raw_df_sessions: pd.DataFrame | None,
+        scaling_mode: TypeScalingMode,
+        scaling_parameters: tuple | pd.DataFrame,
     ) -> pd.DataFrame:
         """
         Generate a DataFrame of sessions from a power DataFrame.
@@ -612,6 +705,10 @@ class Base:
         if artificial_raw_df_sessions is not None:
             raw_df_sessions = artificial_raw_df_sessions
         else:
+            if power_df is None:
+                raise ValueError(
+                    "power_df should be provided to generate the sessions DataFrame"
+                )
             raw_df_sessions = get_raw_df_sessions(power_df)
 
         raw_df_sessions["startChargeTime"] = raw_df_sessions.apply(
@@ -634,6 +731,7 @@ class Base:
                 columns=["fractionOfRegularSessions"]
             )
 
+        print("Generating future session power profiles")
         df_sessions = raw_df_sessions.progress_apply(
             apply_generate_future_session_power,
             axis=1,
@@ -646,6 +744,17 @@ class Base:
         # with 0
         df_sessions = df_sessions.fillna(0)
 
+        # scale u columns
+        # We need to do that after dropping the NaN values
+        list_u_columns = df_sessions.filter(regex=r"u_").columns
+        for u_col in list_u_columns:
+            df_sessions_for_scaling = df_sessions[[u_col, "startChargeTime"]].rename(
+                {u_col: "power", "startChargeTime": "date"}, axis=1
+            )
+            df_sessions[u_col] = apply_scaling(
+                df_sessions_for_scaling, scaling_mode, scaling_parameters, ["power"]
+            )["power"]
+
         df_sessions = pd.merge(
             df_sessions,
             additional_session_features,
@@ -653,77 +762,85 @@ class Base:
             how="left",
         )
 
-        # normalize u columns by the EVSE max power
-        # We need to do that after dropping the NaN values
-        # TODO: improve the normalization, this only works for SLRPEV data
-        # (if the max power is 6.6kW and there are 8 EVSEs)
-        if self.use_all_active_sessions:
-            for i in range(self.lookahead):
-                df_sessions[f"u_{i+1}"] /= SINGLE_EVSE_NORMALIZATION_PARAM * 8
-        else:
-            for i in range(self.lookahead):
-                df_sessions[f"u_{i+1}"] /= SINGLE_EVSE_NORMALIZATION_PARAM
-
         return df_sessions
 
     def transform_X_y_for_peak_prediction(
         self,
-        flat_labels: pd.DataFrame,
         merged_inputs_dates_sessions: pd.DataFrame,
+        mode: Literal["peak_of_day", "peak_next_8h"] = "peak_next_8h",
     ) -> pd.DataFrame:
-        # TODO: Look into predicting only the peak power for the rest of the day
-        # (and not the whole day). In this case we only use labels_power_df_from_samples
+        if mode == "peak_of_day":
+            # Extract dates from 'startChargeTime'
+            dates_to_extract = merged_inputs_dates_sessions["startChargeTime"].dt.date
 
-        # Extract dates from 'startChargeTime'
-        dates_to_extract = merged_inputs_dates_sessions["startChargeTime"].dt.date
+            # # Group by date and calculate the max 'totalPower' for each date
+            # power_df["date_only"] = power_df["date"].dt.date
+            # max_power_by_date_old = power_df.groupby("date_only")["power"].max()
+            # The functions below compute max_power_by_date from the samples
+            # (it gives the same results but at least the data is normalized)
 
-        # # Group by date and calculate the max 'totalPower' for each date
-        # power_df["date_only"] = power_df["date"].dt.date
-        # max_power_by_date_old = power_df.groupby("date_only")["power"].max()
-        # The functions below compute max_power_by_date from the samples
-        # (it gives the same results but at least the data is normalized)
+            # Create dataframes of all the samples with 2 columns: 'power' and 'date'
+            inputs_power_df_from_samples = pd.DataFrame(
+                data={
+                    "power": merged_inputs_dates_sessions.filter(
+                        regex=r"(power)_(\d+)\b"
+                    )
+                    .to_numpy()
+                    .flatten(),
+                    "date": merged_inputs_dates_sessions.filter(regex=r"(date)_(\d+)\b")
+                    .to_numpy()
+                    .flatten(),
+                }
+            )
+            labels_power_df_from_samples = pd.DataFrame(
+                data={
+                    "power": merged_inputs_dates_sessions.filter(
+                        regex=r"(power)_(\d+)_label"
+                    )
+                    .to_numpy()
+                    .flatten(),
+                    "date": merged_inputs_dates_sessions.filter(
+                        regex=r"(date)_(\d+)_label"
+                    )
+                    .to_numpy()
+                    .flatten(),
+                }
+            )
+            power_df_from_samples = pd.concat(
+                [inputs_power_df_from_samples, labels_power_df_from_samples]
+            )
+            power_df_from_samples["date"] = convert_date_from_int_to_datetime(
+                power_df_from_samples["date"]
+            ).dt.date
+            # Get the peak power of each day, looking at through the inputs and the labels
+            max_power_by_date = power_df_from_samples.groupby("date")["power"].max()
+            assert (
+                not max_power_by_date.isna().any()
+            ), "When trying to extract peak powers, there are NaN values"
 
-        # Create dataframes of all the samples with 2 columns: 'power' and 'date'
-        inputs_power_df_from_samples = pd.DataFrame(
-            data={
-                "power": merged_inputs_dates_sessions.filter(regex=r"(power)_(\d+)\b")
-                .to_numpy()
-                .flatten(),
-                "date": merged_inputs_dates_sessions.filter(regex=r"(date)_(\d+)\b")
-                .to_numpy()
-                .flatten(),
-            }
-        )
-        labels_power_df_from_samples = pd.DataFrame(
-            data={
-                "power": merged_inputs_dates_sessions.filter(
+            # Extract the max power values for the dates of interest
+            y_max = max_power_by_date.reindex(dates_to_extract).values
+
+            # Create the DataFrame with the results
+            flat_labels = pd.DataFrame(
+                index=merged_inputs_dates_sessions.index, data={"peak_power": y_max}
+            )
+
+        elif mode == "peak_next_8h":
+            # Get the peak power of the next 12 hours
+            label_columns = [
+                col
+                for col in merged_inputs_dates_sessions.filter(
                     regex=r"(power)_(\d+)_label"
-                )
-                .to_numpy()
-                .flatten(),
-                "date": merged_inputs_dates_sessions.filter(regex=r"(date)_(\d+)_label")
-                .to_numpy()
-                .flatten(),
-            }
-        )
-        power_df_from_samples = pd.concat(
-            [inputs_power_df_from_samples, labels_power_df_from_samples]
-        )
-        power_df_from_samples["date"] = convert_date_from_int_to_datetime(
-            power_df_from_samples["date"]
-        ).dt.date
-        # Get the peak power of each day, looking at through the inputs and the labels
-        max_power_by_date = power_df_from_samples.groupby("date")["power"].max()
+                ).columns
+                if int(col.split("_")[1]) < 8 * 4
+            ]
+            flat_labels = (
+                merged_inputs_dates_sessions[label_columns].max(axis=1).to_frame()
+            )
 
-        assert (
-            not max_power_by_date.isna().any()
-        ), "When trying to extract peak powers, there are NaN values"
-
-        # Extract the max power values for the dates of interest
-        y_max = max_power_by_date.reindex(dates_to_extract).values
-
-        # Create the DataFrame with the results
-        flat_labels = pd.DataFrame(index=flat_labels.index, data={"peak_power": y_max})
+        else:
+            raise ValueError("mode should be 'peak_of_day' or 'peak_next_12h'")
 
         return flat_labels
 
@@ -826,11 +943,17 @@ class Base:
             )
 
             # Add subtitle for each subplot
+            # column_names_of_non_lagged_features = flat_inputs.filter(regex=r"^(?!power_\d+$|u_\d+$)")
             subtitle = ""
             if "fractionOfRegularSessions" in flat_inputs.columns:
                 subtitle += f"Fraction of regular sessions: {flat_inputs['fractionOfRegularSessions'].iloc[i]:.2f}\n"
             if "numberOfActiveSessions" in flat_inputs.columns:
                 subtitle += f"Number of active sessions: {flat_inputs['numberOfActiveSessions'].iloc[i] * 8}\n"
+            if "number_of_evses_available" in flat_inputs.columns:
+                subtitle += f"Scaled number of EVSEs available: {flat_inputs['number_of_evses_available'].iloc[i]}\n"
+            for workday_column in self.list_workday_column_names:
+                if workday_column in flat_inputs.columns:
+                    subtitle += f"Workday: {flat_inputs[workday_column].iloc[i]}\n"
 
             fig.add_annotation(
                 text=subtitle,
@@ -850,54 +973,3 @@ class Base:
             yaxis_title="Normalized Power",
         )
         fig.show()
-
-
-def get_artificial_data(train_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    train_data = train_data.copy()
-    train_data["date"] = convert_date_from_int_to_datetime(train_data["date"])
-
-    power_df = read_new_slrpev_data(keep_all_columns=True)
-
-    power_df = power_df.loc[
-        (power_df["date"].dt.date >= train_data["date"].min().date())
-        & (power_df["date"].dt.date <= train_data["date"].max().date())
-    ]
-
-    raw_df_sessions = get_raw_df_sessions(power_df)
-
-    artificial_raw_df_sessions = make_artificial_sessions(
-        raw_df_sessions,
-        random_start_time=True,
-        random_power_profile_shapes=True,
-        random_user_needs=True,
-        random_choices=True,
-    )
-
-    artificial_power_df = extract_features(
-        revert_power_df(artificial_raw_df_sessions)
-    ).drop(columns=["numberOfActiveSessions", "fractionOfRegularSessions"])
-
-    artificial_power_df = artificial_power_df.merge(
-        train_data[["date", "power"]],
-        left_on="startChargeTime",
-        right_on="date",
-        how="inner",
-        suffixes=("", "_initial"),
-    )
-    # Add back the missing values where they were in the original data
-    artificial_power_df.loc[
-        artificial_power_df["power_initial"].isna()
-        & (artificial_power_df["power"] == 0),
-        "power",
-    ] = np.nan
-
-    artificial_power_df = artificial_power_df.drop(
-        columns=["power_initial", "startChargeTime"]
-    )
-    normalize_parameters = retrieve_train_min_and_max("slrp-ev_new")
-    artificial_train_data = feature_engineering(
-        data_input=artificial_power_df.dropna(subset=["power"]),
-        add_nans_for_missing_data=True,
-        normalize_parameters=normalize_parameters,
-    )
-    return artificial_train_data, artificial_raw_df_sessions

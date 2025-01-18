@@ -6,6 +6,8 @@
         "dcos",
         "downsample",
         "EVSE",
+        "evses",
+        "isin",
         "nlags",
         "PACF",
         "slrp",

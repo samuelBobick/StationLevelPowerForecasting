@@ -2,8 +2,10 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from slrp_ev_ts_forecasting.compute_losses import Losses, compute_losses
-from slrp_ev_ts_forecasting.default_parameters import TypeOptimizeLags
+from slrp_ev_ts_forecasting.default_parameters import (
+    TypeOptimizeLags,
+    TypeScalingMode,
+)
 from slrp_ev_ts_forecasting.models.base import Base
 from tqdm import tqdm
 
@@ -18,11 +20,20 @@ class RegressionBaseModel(Base):
         time_mode: Literal["window", "cyclical"],
         optimize_lags: TypeOptimizeLags,
         get_val_data_from_shuffled_train: bool,
+        scaling_mode: TypeScalingMode,
+        scaling_parameters: tuple | pd.DataFrame | None,
         session_based_mode: bool,
         peak_prediction: bool,
         add_number_of_sessions: bool,
         add_fraction_of_regular_sessions: bool,
         use_all_active_sessions: bool,
+        number_of_artificial_datasets: int,
+        random_start_time: bool,
+        shuffle_power_profiles: bool,
+        random_power_profile_shapes: bool,
+        random_user_needs: bool,
+        random_choices: bool,
+        add_number_of_evses_available: bool,
     ):
         """Base class for getting data, training and predicting regression models.
 
@@ -60,11 +71,20 @@ class RegressionBaseModel(Base):
             lookahead=lookahead,
             optimize_lags=optimize_lags,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            scaling_mode=scaling_mode,
+            scaling_parameters=scaling_parameters,
             session_based_mode=session_based_mode,
             peak_prediction=peak_prediction,
             add_number_of_sessions=add_number_of_sessions,
             add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
             use_all_active_sessions=use_all_active_sessions,
+            number_of_artificial_datasets=number_of_artificial_datasets,
+            random_start_time=random_start_time,
+            shuffle_power_profiles=shuffle_power_profiles,
+            random_power_profile_shapes=random_power_profile_shapes,
+            random_user_needs=random_user_needs,
+            random_choices=random_choices,
+            add_number_of_evses_available=add_number_of_evses_available,
         )
         self.lookahead = lookahead
         self.x_dim = x_dim
@@ -78,11 +98,11 @@ class RegressionBaseModel(Base):
         if self.time_mode == "window":
             self.cols_to_drop_for_model = [
                 "time_window",
-                "workday",
+                "workday_0",
             ]
         elif self.time_mode == "cyclical":
             self.cols_to_drop_for_model = [
-                "workday",
+                "workday_0",
                 # "Year sin",
                 # "Year cos",
             ]
@@ -116,7 +136,7 @@ class RegressionBaseModel(Base):
         if self.optimize_lags:
             self.pacf_top_values = self.get_top_pacf_values(train)
 
-        X_train, y_train = self.get_X_y(train, data_type="train", overlapping_windows=True, time_mode=self.time_mode, add_artificial_data=True)  # type: ignore
+        X_train, y_train = self.get_X_y(train, data_type="train", overlapping_windows=True, time_mode=self.time_mode)  # type: ignore
         self.update_seen_data(train)
         X_val, y_val = self.get_X_y(val, data_type="val", overlapping_windows=False, time_mode=self.time_mode)  # type: ignore
         if val is not None:
@@ -127,9 +147,9 @@ class RegressionBaseModel(Base):
             for t_w in range(6):
                 for w in [0, 1]:
                     train_mask = (X_train["time_window"] == t_w) & (
-                        X_train["workday"] == w
+                        X_train["workday_0"] == w
                     )
-                    val_mask = (X_val["time_window"] == t_w) & (X_val["workday"] == w)
+                    val_mask = (X_val["time_window"] == t_w) & (X_val["workday_0"] == w)
 
                     self.models[(t_w, w)] = self.fit_model(
                         X_train, y_train, train_mask, X_val, y_val, val_mask
@@ -140,8 +160,8 @@ class RegressionBaseModel(Base):
                     )
         elif self.time_mode == "cyclical":
             for w in [0, 1]:
-                train_mask = X_train["workday"] == w
-                val_mask = X_val["workday"] == w
+                train_mask = X_train["workday_0"] == w
+                val_mask = X_val["workday_0"] == w
                 self.models[w] = self.fit_model(
                     X_train, y_train, train_mask, X_val, y_val, val_mask
                 )
@@ -160,7 +180,7 @@ class RegressionBaseModel(Base):
             "This method should be implemented by the child class"
         )
 
-    def predict(self, test) -> tuple[Losses, pd.DataFrame]:
+    def predict(self, test) -> pd.DataFrame:
         """
         Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
 
@@ -181,25 +201,25 @@ class RegressionBaseModel(Base):
                 [row.drop(self.cols_to_drop_for_model)]
             )  # .to_numpy().reshape(1, -1)
             if self.time_mode == "window":
-                model = self.models[(row["time_window"], row["workday"])]
+                model = self.models[(row["time_window"], row["workday_0"])]
                 forecasts.append(self.predict_model(model, input))
 
             elif self.time_mode == "cyclical":
-                model = self.models[row["workday"]]
+                model = self.models[row["workday_0"]]
                 forecasts.append(self.predict_model(model, input))
 
-        forecast = np.array(forecasts).squeeze().flatten()
-        real = y_test.to_numpy().flatten()
-        losses = compute_losses(forecast, real, self.alpha)
+        # forecast = np.array(forecasts).squeeze().flatten()
+        # real = y_test.to_numpy().flatten()
+        # losses = compute_losses(forecast, real, self.alpha)
 
-        if not self.peak_prediction:
-            reals = None
-        else:
-            reals = y_test.to_numpy()
+        # if not self.peak_prediction:
+        #     reals = None
+        # else:
+        reals = y_test.to_numpy()
         df_predictions = self.prepare_df_predictions(
             np.array(forecasts), y_dates, reals
         )
-        return losses, df_predictions
+        return df_predictions
 
     def predict_model(self, model, X_test: pd.DataFrame):
         raise NotImplementedError(

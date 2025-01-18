@@ -5,7 +5,6 @@ import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
-from slrp_ev_data.window_generator import TFToTorchDataset
 from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 from torch.nn.utils.parametrizations import weight_norm
 
@@ -31,6 +30,15 @@ class TCN(TorchBaseModel):
         use_decoder: bool = True,
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+        scaling_mode: default_parameters.TypeScalingMode = default_parameters.SCALING_MODE,
+        scaling_parameters: tuple | pd.DataFrame | None = None,
+        number_of_artificial_datasets: int = default_parameters.NUMBER_OF_ARTIFICIAL_DATASETS,
+        random_start_time: bool = default_parameters.RANDOM_START_TIME,
+        shuffle_power_profiles: bool = default_parameters.SHUFFLE_POWER_PROFILES,
+        random_power_profile_shapes: bool = default_parameters.RANDOM_POWER_PROFILE_SHAPES,
+        random_user_needs: bool = default_parameters.RANDOM_USER_NEEDS,
+        random_choices: bool = default_parameters.RANDOM_CHOICES,
+        add_number_of_evses_available: bool = default_parameters.ADD_NUMBER_OF_EVSES_AVAILABLE,
     ):
         """
         Initialize the TCN model with the given parameters.
@@ -100,12 +108,23 @@ class TCN(TorchBaseModel):
             x_dim=x_dim,
             lookahead=lookahead,
             optimize_lags=None,
+            time_mode=time_mode,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            scaling_mode=scaling_mode,
+            scaling_parameters=scaling_parameters,
             session_based_mode=False,
             peak_prediction=False,
             add_number_of_sessions=False,
             add_fraction_of_regular_sessions=False,
             use_all_active_sessions=False,
+            number_of_artificial_datasets=number_of_artificial_datasets,
+            random_start_time=random_start_time,
+            shuffle_power_profiles=shuffle_power_profiles,
+            random_power_profile_shapes=random_power_profile_shapes,
+            random_user_needs=random_user_needs,
+            random_choices=random_choices,
+            add_number_of_evses_available=add_number_of_evses_available,
+            use_decoder=use_decoder,
         )
 
         # Other parameters
@@ -154,70 +173,17 @@ class TCN(TorchBaseModel):
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
+        input_size = int(self.add_number_of_evses_available)
         if self.time_mode == "window":
             return (
-                1 + 6 + 1
+                input_size + 1 + 6 + 1
             )  # Example: 1 for power, 6 for time one-hot encoding, 1 for workday
         elif self.time_mode == "cyclical":
             return (
-                1 + 6
+                input_size + 1 + 6
             )  # Example: 1 for power, 6 for sin/cos encoding, (day, week, year)
         else:
             raise ValueError(f"Invalid time_mode: {self.time_mode}")
-
-    def get_dataset(
-        self,
-        df: pd.DataFrame | None,
-        data_type: Literal["train", "val", "test"],
-        return_y_date: bool = False,
-        overlapping_windows: bool = False,
-    ) -> TFToTorchDataset | tuple[TFToTorchDataset, pd.DataFrame]:
-        """Generates the dataset and features based on the input DataFrame."""
-        label_width = self.lookahead
-        if not self.use_decoder:
-            # To have an output of the same length as the input
-            label_width = self.x_dim
-        if df is not None:
-            df = df.copy()
-            df_padded = self.pad_with_seen_data(
-                df, number_of_timesteps_to_pad=self.x_dim
-            )
-        else:
-            df_padded = None
-
-        W, window_data = self.get_window_data(
-            df_padded, self.x_dim, label_width, overlapping_windows, data_type
-        )
-
-        cols_to_keep_as_features = ["power"]
-        if self.time_mode == "cyclical":
-            cols_to_keep_as_features += [
-                "Day sin",
-                "Day cos",
-                "Week sin",
-                "Week cos",
-                "Year sin",
-                "Year cos",
-            ]
-        elif self.time_mode == "window":
-            cols_to_keep_as_features += ["time_window", "workday"]
-
-        dataset = W.convert_to_torch_dataset(
-            window_data, cols_to_keep_as_features, cols_to_keep_as_labels=["power"]
-        )
-
-        if return_y_date:
-            x_dates, y_dates = W.flatten_dataset(
-                window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            )
-            # x_dates, y_dates = W.convert_to_torch_dataset(
-            #     window_data,
-            #     cols_to_keep_as_features=["date"],
-            #     cols_to_keep_as_labels=["date"],
-            # ).get_full_data()
-            return dataset, y_dates
-        else:
-            return dataset
 
     @property
     def first_prediction_index(self) -> int:
