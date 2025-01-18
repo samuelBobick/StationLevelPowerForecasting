@@ -32,11 +32,20 @@ class FFNN(TorchBaseModel):
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+        scaling_mode: default_parameters.TypeScalingMode = default_parameters.SCALING_MODE,
+        scaling_parameters: tuple | pd.DataFrame | None = None,
         session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
         peak_prediction: bool = default_parameters.PEAK_PREDICTION,
         add_number_of_sessions: bool = default_parameters.ADD_NUMBER_OF_SESSIONS,
         add_fraction_of_regular_sessions: bool = default_parameters.ADD_FRACTION_OF_REGULAR_SESSIONS,
         use_all_active_sessions: bool = default_parameters.USE_ALL_ACTIVE_SESSIONS,
+        number_of_artificial_datasets: int = default_parameters.NUMBER_OF_ARTIFICIAL_DATASETS,
+        random_start_time: bool = default_parameters.RANDOM_START_TIME,
+        shuffle_power_profiles: bool = default_parameters.SHUFFLE_POWER_PROFILES,
+        random_power_profile_shapes: bool = default_parameters.RANDOM_POWER_PROFILE_SHAPES,
+        random_user_needs: bool = default_parameters.RANDOM_USER_NEEDS,
+        random_choices: bool = default_parameters.RANDOM_CHOICES,
+        add_number_of_evses_available: bool = default_parameters.ADD_NUMBER_OF_EVSES_AVAILABLE,
     ):
         """TODO"""
 
@@ -61,6 +70,7 @@ class FFNN(TorchBaseModel):
         # Other parameters
         self.alpha = alpha
         self.time_mode: Literal["window", "cyclical"] = time_mode
+        self.add_number_of_evses_available = add_number_of_evses_available
 
         # Initialize the BaseModel with relevant parameters
         super().__init__(
@@ -76,12 +86,22 @@ class FFNN(TorchBaseModel):
             x_dim=x_dim,
             lookahead=lookahead,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            scaling_mode=scaling_mode,
+            scaling_parameters=scaling_parameters,
             optimize_lags=optimize_lags,
+            time_mode=time_mode,
             session_based_mode=session_based_mode,
             peak_prediction=peak_prediction,
             add_number_of_sessions=add_number_of_sessions,
             add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
             use_all_active_sessions=use_all_active_sessions,
+            number_of_artificial_datasets=number_of_artificial_datasets,
+            random_start_time=random_start_time,
+            shuffle_power_profiles=shuffle_power_profiles,
+            random_power_profile_shapes=random_power_profile_shapes,
+            random_user_needs=random_user_needs,
+            random_choices=random_choices,
+            add_number_of_evses_available=add_number_of_evses_available,
         )
 
         # Determine input size based on time_mode
@@ -113,12 +133,14 @@ class FFNN(TorchBaseModel):
             self.x_dim
             + int(self.add_number_of_sessions)
             + int(self.add_fraction_of_regular_sessions)
+            + int(self.add_number_of_evses_available)
+            + len(self.list_workday_column_names)
         )
         if self.session_based_mode:
             input_size += self.lookahead
 
         if self.time_mode == "window":
-            return input_size + 6 + 1  # 6 for time one-hot encoding, 1 for workday
+            return input_size + 6  # 6 for time one-hot encoding
         elif self.time_mode == "cyclical":
             return input_size + 6  #  6 for sin/cos encoding (day, week, year)
         else:
@@ -137,6 +159,8 @@ class FFNN(TorchBaseModel):
             activation=self.activation,
             dropout=self.dropout,
             batch_norm=self.batch_norm,
+            force_positive_output=self.scaling_mode
+            in ["normalize", "rolling_normalize"],
         )
         self.model.to(default_parameters.DEVICE)
 
@@ -155,7 +179,6 @@ class FFNN(TorchBaseModel):
             return_y_date=return_y_date,
             overlapping_windows=overlapping_windows,
             multi_model_mode=False,
-            add_artificial_data=True,
         )
 
         if len(samples) == 3:
@@ -180,6 +203,7 @@ class FFNN_model(nn.Module):
         activation,
         dropout,
         batch_norm,
+        force_positive_output=True,
     ):
         super(FFNN_model, self).__init__()
         self.hidden_layers = nn.ModuleList([nn.Linear(input_size, hidden_size)])
@@ -193,6 +217,8 @@ class FFNN_model(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fc_out = nn.Linear(hidden_size, output_size)
 
+        self.force_positive_output = force_positive_output
+
     def forward(self, x) -> torch.Tensor:
         for layer in self.hidden_layers:
             x = self.activation(layer(x))
@@ -203,8 +229,9 @@ class FFNN_model(nn.Module):
             x = self.dropout(x)
 
         x = self.fc_out(x)
-        # Add a continuous activation function to unsure results are positive
-        x = nn.functional.softplus(x)
+        if self.force_positive_output:
+            # Add a continuous activation function to unsure results are positive
+            x = nn.functional.softplus(x)
         return x
 
 

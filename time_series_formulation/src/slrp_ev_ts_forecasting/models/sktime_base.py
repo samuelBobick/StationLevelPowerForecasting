@@ -213,7 +213,7 @@ class SktimeBaseModel:
                 "Year cos",
             ]
         elif self.time_mode == "window":
-            cols_to_keep_as_features += ["time_window", "workday"]
+            cols_to_keep_as_features += ["time_window"] + self.list_workday_column_names
 
         X = data_r[cols_to_keep_as_features]
         if resample_labels:

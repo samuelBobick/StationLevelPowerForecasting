@@ -19,11 +19,20 @@ class KNN(RegressionBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+        scaling_mode: default_parameters.TypeScalingMode = default_parameters.SCALING_MODE,
+        scaling_parameters: tuple | pd.DataFrame | None = None,
         session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
         peak_prediction: bool = default_parameters.PEAK_PREDICTION,
         add_number_of_sessions: bool = default_parameters.ADD_NUMBER_OF_SESSIONS,
         add_fraction_of_regular_sessions: bool = default_parameters.ADD_FRACTION_OF_REGULAR_SESSIONS,
         use_all_active_sessions: bool = default_parameters.USE_ALL_ACTIVE_SESSIONS,
+        number_of_artificial_datasets: int = default_parameters.NUMBER_OF_ARTIFICIAL_DATASETS,
+        random_start_time: bool = default_parameters.RANDOM_START_TIME,
+        shuffle_power_profiles: bool = default_parameters.SHUFFLE_POWER_PROFILES,
+        random_power_profile_shapes: bool = default_parameters.RANDOM_POWER_PROFILE_SHAPES,
+        random_user_needs: bool = default_parameters.RANDOM_USER_NEEDS,
+        random_choices: bool = default_parameters.RANDOM_CHOICES,
+        add_number_of_evses_available: bool = default_parameters.ADD_NUMBER_OF_EVSES_AVAILABLE,
     ):
         """_summary_
 
@@ -41,11 +50,20 @@ class KNN(RegressionBaseModel):
             time_mode=time_mode,
             optimize_lags=optimize_lags,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            scaling_mode=scaling_mode,
+            scaling_parameters=scaling_parameters,
             session_based_mode=session_based_mode,
             peak_prediction=peak_prediction,
             add_number_of_sessions=add_number_of_sessions,
             add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
             use_all_active_sessions=use_all_active_sessions,
+            number_of_artificial_datasets=number_of_artificial_datasets,
+            random_start_time=random_start_time,
+            shuffle_power_profiles=shuffle_power_profiles,
+            random_power_profile_shapes=random_power_profile_shapes,
+            random_user_needs=random_user_needs,
+            random_choices=random_choices,
+            add_number_of_evses_available=add_number_of_evses_available,
         )
         self.alpha = alpha
         self.time_mode = time_mode

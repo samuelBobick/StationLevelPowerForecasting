@@ -9,9 +9,8 @@ import torch
 from plotly import graph_objects as go
 from torch.utils.data import Dataset
 
+from slrp_ev_data.data_utils import convert_data_freq_to_minutes, get_data_frequency
 from slrp_ev_data.feature_engineering import (
-    convert_data_freq_to_minutes,
-    get_data_frequency,
     reverse_feature_engineering,
 )
 
@@ -101,6 +100,7 @@ class WindowGenerator:
         label_columns: list[str] | None = None,
         overlapping_windows: bool = False,
         batch_size: int = 64,
+        seed: int | None = None,
         verbose=True,
     ):
         """_summary_
@@ -186,6 +186,8 @@ class WindowGenerator:
         self.labels_slice = slice(self.label_start, None)
         self.label_indices = np.arange(self.total_window_size)[self.labels_slice]
 
+        self.seed = seed
+
     def __repr__(self):
         return "\n".join(
             [
@@ -258,6 +260,7 @@ class WindowGenerator:
             sequence_stride=self.sequence_stride,
             shuffle=shuffle,
             batch_size=self.batch_size,
+            seed=self.seed,
         )
 
         ds = ds.map(self.split_window)

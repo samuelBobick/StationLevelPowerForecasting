@@ -40,20 +40,19 @@ def visualize_forecast(
         # We do not need to do that if we plot markers
         df_predictions = add_missing_timesteps(df_predictions)
 
-    next_power_column_number = len(df_predictions.columns) - 1
-    if "real_power" in df_predictions.columns:
-        next_power_column_number -= 1
+    number_of_power_columns = len(df_predictions.filter(regex="^power_").columns)
+
+    for i in range(number_of_power_columns):
+        # if prediction_scatter_mode == "markers" or number_of_power_columns == 1:
         fig.add_trace(
             go.Scatter(
                 x=df_predictions["date"],
-                y=df_predictions["real_power"],
-                mode="markers",
-                name="Real Power",
-                marker=dict(symbol="diamond"),
+                y=df_predictions[f"real_power_{i}"],
+                mode=prediction_scatter_mode,
+                name=f"Real Power_{i}",
+                marker=(dict(symbol="diamond")),
             )
         )
-
-    for i in range(next_power_column_number):
         fig.add_trace(
             go.Scatter(
                 x=df_predictions["date"],

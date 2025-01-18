@@ -1,7 +1,10 @@
+from threading import Lock
+
 import pandas as pd
 
 from slrp_ev_ts_forecasting.compute_losses import Losses
 from slrp_ev_ts_forecasting.default_parameters import (
+    ADD_NUMBER_OF_EVSES_AVAILABLE,
     ALPHA,
     BATCH_SIZE,
     BETA,
@@ -10,10 +13,19 @@ from slrp_ev_ts_forecasting.default_parameters import (
     ERROR_METRIC,
     GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     LOOKAHEAD,
+    NUMBER_OF_ARTIFICIAL_DATASETS,
+    RANDOM_CHOICES,
+    RANDOM_POWER_PROFILE_SHAPES,
+    RANDOM_START_TIME,
+    RANDOM_USER_NEEDS,
     RESULTS_PATH,
+    SHUFFLE_POWER_PROFILES,
     TIME_MODE,
     X_DIM,
 )
+
+# Create a global lock
+csv_lock = Lock()
 
 
 def save_losses(
@@ -39,6 +51,13 @@ def save_losses(
             "get_val_data_from_shuffled_train": model_params.get(
                 "get_val_data_from_shuffled_train", GET_VAL_DATA_FROM_SHUFFLED_TRAIN
             ),
+            "scaling_mode": model_params.get(
+                "scaling_mode",
+                model_params.get("data_scaling_mode", "rolling_standardize"),
+            ),
+            "add_number_of_evses_available": model_params.get(
+                "add_number_of_evses_available", ADD_NUMBER_OF_EVSES_AVAILABLE
+            ),
             "error_metric": model_params.get("error_metric", ERROR_METRIC),
             "model_name": model_name,
             "rmse": losses["rmse"],
@@ -46,18 +65,36 @@ def save_losses(
             f"wprmse (beta={BETA})": losses["wprmse"],
             "mae": losses["mae"],
             "r2": losses["r2"],
+            "error_std": losses["error_std"],
+            "number_of_artificial_datasets": model_params.get(
+                "number_of_artificial_datasets", NUMBER_OF_ARTIFICIAL_DATASETS
+            ),
+            "random_start_time": model_params.get(
+                "random_start_time", RANDOM_START_TIME
+            ),
+            "shuffle_power_profiles": model_params.get(
+                "shuffle_power_profiles", SHUFFLE_POWER_PROFILES
+            ),
+            "random_power_profile_shapes": model_params.get(
+                "random_power_profile_shapes", RANDOM_POWER_PROFILE_SHAPES
+            ),
+            "random_user_needs": model_params.get(
+                "random_user_needs", RANDOM_USER_NEEDS
+            ),
+            "random_choices": model_params.get("random_choices", RANDOM_CHOICES),
         },
         index=[0],
     )
 
     results_file_path = RESULTS_PATH / f"{filename}.csv"
 
-    # read the file if it exists
-    try:
-        df_results = pd.read_csv(results_file_path, index_col=False)
-    except FileNotFoundError:
-        df_results = pd.DataFrame()
-    df_results = pd.concat([df_results, additional_data], ignore_index=True)
+    with csv_lock:
+        # read the file if it exists
+        try:
+            df_results = pd.read_csv(results_file_path, index_col=False)
+        except FileNotFoundError:
+            df_results = pd.DataFrame()
+        df_results = pd.concat([df_results, additional_data], ignore_index=True)
 
-    results_file_path.parent.mkdir(exist_ok=True)
-    df_results.to_csv(results_file_path, index=False)
+        results_file_path.parent.mkdir(exist_ok=True)
+        df_results.to_csv(results_file_path, index=False)
