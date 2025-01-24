@@ -62,12 +62,7 @@ def get_new_reg_obj(row, z, delta_t, TOU, power_rate, flexibility_constant):
         row, pd.to_datetime(row["startChargeTime"]), delta_t
     )
 
-    if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
-        e_need = row["energyReq_Wh"] / 1000 / delta_t
-    elif row["choice"] == "SCHEDULED":
-        e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
-    else:
-        e_need = row["cumEnergy_Wh"] / 1000 / delta_t
+    e_need = get_total_e_need(row, delta_t, flexibility_constant)
 
     N_reg = int(
         e_need // power_rate
@@ -93,7 +88,7 @@ def get_power_profile_idx(row, current_time, delta_t):
     return power_profile_current_idx
 
 
-def get_e_need(
+def get_remaining_e_need(
     row, current_time, power_profiles, delta_t, power_rate, flexibility_constant
 ):
     """
@@ -106,16 +101,7 @@ def get_e_need(
         power_rate: max power of a single EV charger, in kW
         flexibility_constant: proportion of regular demand that a user would have demanded if they chose scheduled
     """
-    if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
-        # Case where the session was really scheduled and we have the energy needed
-        # for the session given by the user
-        e_need = row["energyReq_Wh"] / 1000 / delta_t
-    elif row["choice"] == "SCHEDULED":
-        # case for when we consider the session scheduled but the real one was regular
-        # so we have to estimate the energy needed
-        e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
-    else:
-        e_need = row["cumEnergy_Wh"] / 1000 / delta_t
+    e_need = get_total_e_need(row, delta_t, flexibility_constant)
 
     power_profile_current_idx = get_power_profile_idx(row, current_time, delta_t)
     TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
@@ -133,6 +119,20 @@ def get_e_need(
     if e_need > N_remain * power_rate:  # if user requests an infeasible amount of power
         e_need = N_remain * power_rate
 
+    return e_need
+
+
+def get_total_e_need(row, delta_t, flexibility_constant):
+    if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
+        # Case where the session was really scheduled and we have the energy needed
+        # for the session given by the user
+        e_need = row["energyReq_Wh"] / 1000 / delta_t
+    elif row["choice"] == "SCHEDULED":
+        # case for when we consider the session scheduled but the real one was regular
+        # so we have to estimate the energy needed
+        e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
+    else:
+        e_need = row["cumEnergy_Wh"] / 1000 / delta_t
     return e_need
 
 
@@ -196,7 +196,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
     """
     Aggregate the power profiles from a month-long simulation
 
-        Inputs:
+    Inputs:
         test_df: the pandas DataFrame used in the simulation
         power_profiles: dictionary mapping dcosIds to power profiles
         power_rate: max power of a single EV charger, in kW
@@ -208,7 +208,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
     filtered_power_profiles = {k: v for k, v in power_profiles.items() if len(v) > 0}
     agg_power_profile = np.zeros(int(32 * 24 / delta_t))
 
-    rows = []
+    df = pd.DataFrame()
     for dcosId, power_profile in filtered_power_profiles.items():
         matching_row = test_df.loc[test_df["dcosId"] == dcosId]
         row = matching_row.squeeze()
@@ -243,36 +243,20 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
         # convert the optimal prices from $/kWh to $/hour
         z_sch_hourly = float(z_sch * energy_delivered / (N_remain * delta_t))
         z_reg_hourly = z_reg * energy_delivered / (hours_if_reg)
-        row = [
-            dcosId,
-            z_sch,
-            z_reg,
-            round(z_sch_hourly, 2),
-            round(z_reg_hourly, 2),
-            start_time,
-            round(charging_revenue, 1),
-            round(TOU_cost, 1),
-            round(energy_delivered, 1),
-            np.round(power_profile, 2),
-        ]
-        rows.append(row)
+        row_data = {
+            "dcosId": dcosId,
+            "z_sch": z_sch,
+            "z_reg": z_reg,
+            "hourly_scheduled_price": round(z_sch_hourly, 2),
+            "hourly_regular_price": round(z_reg_hourly, 2),
+            "start_time": start_time,
+            "charging_revenue": round(charging_revenue, 1),
+            "TOU_cost": round(TOU_cost, 1),
+            "energy_delivered": round(energy_delivered, 1),
+            "power_profile": np.round(power_profile, 2),
+        }
 
-        # Column names
-        columns = [
-            "dcosId",
-            "z_sch",
-            "z_reg",
-            "hourly_scheduled_price",
-            "hourly_regular_price",
-            "start_time",
-            "charging_revenue",
-            "TOU_cost",
-            "energy_delivered",
-            "power_profile",
-        ]
-
-        # Create DataFrame
-        df = pd.DataFrame(rows, columns=columns)
+        df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
 
     return df
 
@@ -293,3 +277,18 @@ def get_session_power_profile(row) -> pd.DataFrame:
 
     df_power["timestamp"] = pd.to_datetime(df_power["timestamp"], unit="s")
     return df_power
+
+
+def round_up_to_nearest_timestep(ts, delta_t):
+    """
+    Round pd.datetime object forward in time to the next 15-minute interval
+    """
+    round_interval = 60 * delta_t
+    # Find the number of seconds since the last 15-minute interval
+    seconds_to_next = (round_interval * 60) - (
+        ts.minute % round_interval * 60 + ts.second
+    )
+
+    # Add the remaining seconds to the original timestamp
+    rounded_ts = ts + pd.Timedelta(seconds=seconds_to_next)
+    return rounded_ts.replace(second=0, microsecond=0)

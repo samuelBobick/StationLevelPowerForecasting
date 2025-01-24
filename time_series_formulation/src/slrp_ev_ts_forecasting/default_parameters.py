@@ -7,7 +7,7 @@ NUMBER_OF_INITIAL_MODELS = 1
 X_DIM = 96
 LOOKAHEAD = 96
 EPOCHS = 5
-TIME_MODE: Literal["cyclical", "window"] = "cyclical"
+TIME_MODE: Literal["window", "cyclical"] = "cyclical"
 ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 BATCH_SIZE = 32
@@ -23,13 +23,37 @@ NUMBER_OF_DAYS_FOR_PACF = 35  # 70 was the old parameter, but it is too big for
 
 RESULTS_PATH = Path(__file__).parent / "results"
 DEFAULT_RESULTS_FILENAME = "results"
+SAVED_MODELS_PATH = Path(__file__).parent / "models" / "saved_models"
+SAVED_MODELS_PATH.mkdir(parents=True, exist_ok=True)
 
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"
 
 TypeDataSet = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
 DATASET: TypeDataSet = "slrp-ev_new"
-GET_VAL_DATA_FROM_SHUFFLED_TRAIN = False
+GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
+TypeScalingMode = Literal[
+    "normalize", "standardize", "rolling_standardize", "rolling_normalize"
+]
+SCALING_MODE: TypeScalingMode = "rolling_standardize"
+
+SESSION_BASED_MODE = True
+PEAK_PREDICTION = True
+ADD_NUMBER_OF_SESSIONS = True
+ADD_FRACTION_OF_REGULAR_SESSIONS = False
+USE_ALL_ACTIVE_SESSIONS = True
+
+# parameters to generate random sessions
+NUMBER_OF_ARTIFICIAL_DATASETS = 2
+RANDOM_START_TIME = True
+SHUFFLE_POWER_PROFILES = (
+    True  # SHUFFLE_POWER_PROFILES and RANDOM_POWER_PROFILE_SHAPES can't be both True
+)
+RANDOM_POWER_PROFILE_SHAPES = False
+RANDOM_USER_NEEDS = True
+RANDOM_CHOICES = True
+
+ADD_NUMBER_OF_EVSES_AVAILABLE = True
 
 TypeModelChoice = Literal[
     "LinearRegression",
@@ -44,6 +68,7 @@ TypeModelChoice = Literal[
     "AutoARIMA",
     "ARIMA",
     "Prophet",
+    "PeakPersistence",
 ]
 
 if torch.cuda.is_available():
@@ -57,3 +82,6 @@ if torch.cuda.is_available():
 else:
     print("CUDA is not available. Using CPU.")
     DEVICE = "cpu"
+
+RANDOM_SEED: int | None = 42  # int(pd.Timestamp.now().timestamp())
+VERBOSE = False

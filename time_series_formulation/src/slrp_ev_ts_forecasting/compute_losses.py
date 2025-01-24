@@ -20,6 +20,7 @@ class Losses(TypedDict):
     mae: float
     wprmse: float
     r2: float
+    error_std: float
 
 
 def compute_losses(
@@ -30,7 +31,8 @@ def compute_losses(
     mae = mean_absolute_error(y_true, y_pred)
     wprmse = weighted_peaks_rmse(y_pred, y_true)
     r2 = r2_score(y_true, y_pred)
-    return Losses(rmse=rmse, wrmse=wrmse, mae=mae, wprmse=wprmse, r2=r2)  # type: ignore
+    error_std = np.std(np.array(y_pred) - np.array(y_true))
+    return Losses(rmse=rmse, wrmse=wrmse, mae=mae, wprmse=wprmse, r2=r2, error_std=error_std)  # type: ignore
 
 
 def compute_torch_losses(
@@ -45,7 +47,8 @@ def compute_torch_losses(
     # print(f"y_pred device: {y_pred.device}")
     # print(f"y_true device: {y_true.device}")
     r2 = R2Score().update(y_pred.cpu(), y_true.cpu()).compute().item()
-    return Losses(rmse=rmse, wrmse=wrmse, mae=mae, wprmse=wprmse, r2=r2)
+    error_std = torch.std(y_pred - y_true).item()
+    return Losses(rmse=rmse, wrmse=wrmse, mae=mae, wprmse=wprmse, r2=r2, error_std=error_std)  # type: ignore
 
 
 def get_real_scale_losses(losses: Losses, normalize_parameters) -> Losses:

@@ -6,8 +6,10 @@ import pandas as pd
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 from scipy import stats
-from slrp_ev_data.feature_engineering import get_data_frequency
+from slrp_ev_data.data_utils import get_data_frequency
 from statsmodels.tsa.stattools import pacf
+
+from slrp_ev_ts_forecasting.default_parameters import VERBOSE
 
 
 def get_pacf_values(
@@ -16,7 +18,7 @@ def get_pacf_values(
     nb_of_days_for_pacf: int,
     nb_of_steps_to_predict: int = 1,
     return_confidence_interval: bool = False,
-):
+) -> pd.DataFrame | tuple[pd.DataFrame, float]:
     """Compute the Partial AutoCorrelation Function (PACF) values for the power data.
 
     Args:
@@ -192,7 +194,7 @@ def get_threshold(
     pacf_df: pd.DataFrame,
     number_of_lags_to_keep: int = 96,
     interval: Optional[float] = None,
-    verbose: bool = True,
+    verbose: bool = VERBOSE,
 ) -> tuple[float, int]:
     """Given a DataFrame with PACF values, returns the threshold value and
     the index of the farthest lag"""
@@ -317,7 +319,7 @@ def get_df_complete_intervals(
 
     # define start and end dates of missing intervals
     for i in range(df_complete_intervals.shape[0]):
-        index = df_complete_intervals.iloc[i].name
+        index = df_complete_intervals.index[i]
         df_complete_intervals.loc[index, "end_complete"] = (
             df_complete_intervals.loc[index, date_column]
             - df_complete_intervals.loc[index, "diff"]

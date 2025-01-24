@@ -16,4 +16,7 @@ def read_old_slrpev_data():
     # convert power from kW to W
     data["power"] = data["power"].round(3).apply(lambda x: x * 1000)
 
+    # remove data from the beginning because it is not very representative
+    data = data.loc[data["date"] >= "2021-03-01"]
+
     return data

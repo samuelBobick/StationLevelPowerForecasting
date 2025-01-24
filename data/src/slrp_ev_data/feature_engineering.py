@@ -1,22 +1,60 @@
+from typing import Literal
+
 import numpy as np
 import pandas as pd
+from pandas.tseries.holiday import USFederalHolidayCalendar as UScalendar
+from slrp_ev_ts_forecasting.default_parameters import TypeScalingMode
+
+from slrp_ev_data.data_utils import USAcademicHolidayCalendar, get_data_frequency
+from slrp_ev_data.normalization_and_standardization import (
+    COLS_TO_NORMALIZE,
+    apply_rolling_scaling,
+    normalize_data,
+    reverse_normalize_data,
+    reverse_rolling_scaling,
+    reverse_standardize_data,
+    standardize_data,
+)
 
 from .input_data_type import DataSchema, FeaturedEngineeredSchema
 
-COLS_TO_NORMALIZE = ["power"]
+
+def convert_date_from_int_to_datetime(date_column: pd.Series) -> pd.Series:
+    # Convert the date back to a Timestamp
+    date_column = pd.to_datetime(date_column, unit="s")
+    # Round dates to closest minute
+    date_column = date_column.dt.round("5min")
+    return date_column
+
+
+def convert_date_from_datetime_to_int(date_column: pd.Series) -> pd.Series:
+    # Convert the date back to a Timestamp
+    date_column = date_column.astype("int64") // 10**9
+    return date_column
+
+
+def get_workday_column_names(lookahead: int) -> list[str]:
+    # TODO: update for different data frequency
+    workday_column_names = []
+    for i in range((lookahead // 96) + 1):
+        workday_column_names.append(f"workday_{int(i*96)}")
+    return workday_column_names
 
 
 def feature_engineering(
     data_input: pd.DataFrame,
     add_nans_for_missing_data: bool,
-    standardize_parameters: tuple[pd.Series, pd.Series] | None = None,
-    normalize_parameters: tuple[pd.Series, pd.Series] | None = None,
+    scaling_mode: TypeScalingMode,
+    scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
+    cols_normalization_to_skip: list[str] = [],
+    holiday_calendar: Literal["USFederal", "USAcademic"] = "USAcademic",
+    lookahead: int = 96,
 ) -> pd.DataFrame:
     """Processes the data so that it can be used in the models.
     Here are the different steps that are done:
         - Convert the date from a Timestamp to an int
         - Add the 4 hour time window (0 if the hour is between 0 and 4, 1 if the hour is between 4 and 8, etc.)
-        - Standardize (or normalize) the data
+        - Scale the data (Standardize, normalize or apply rolling standardization)
         - Add time of day and time of year as sin and cos features
         - Remove the data from before March 2021 because it doesn't make sense. Plotting the monthly
             peak distribution shows that 2020 and the first two months of 2021 are outliers with no real usage.
@@ -37,44 +75,61 @@ def feature_engineering(
     # Check that the data is in the correct format
     DataSchema.validate(data)
 
-    data = data.loc[data["date"] >= "2021-03-01"]
+    cols_to_normalize = [
+        col for col in COLS_TO_NORMALIZE if col not in cols_normalization_to_skip
+    ]
 
-    if normalize_parameters and standardize_parameters:
-        raise ValueError(
-            "Cannot normalize and standardize at the same time. Please pass normalize_parameters OR standardize_parameters"
-        )
-    if standardize_parameters:
-        train_mean, train_std = standardize_parameters
-        data[COLS_TO_NORMALIZE] = (data[COLS_TO_NORMALIZE] - train_mean) / train_std
-    if normalize_parameters:
-        train_min, train_max = normalize_parameters
-        data[COLS_TO_NORMALIZE] = (data[COLS_TO_NORMALIZE] - train_min) / (
-            train_max - train_min
-        )
+    data = apply_scaling(data, scaling_mode, scaling_parameters, cols_to_normalize)
 
     if add_nans_for_missing_data:
         data = add_missing_timesteps(data)
 
-    data["workday"] = (data["date"].dt.dayofweek < 5).astype(int)
+    data["workday_0"] = (data["date"].dt.dayofweek < 5).astype(int)
+    # set public holidays to 0 (non workday)
+    if holiday_calendar == "USAcademic":
+        cal = USAcademicHolidayCalendar()
+    elif holiday_calendar == "USFederal":
+        cal = UScalendar()
+    else:
+        raise ValueError(
+            f"holiday_calendar should be either 'USFederal' or 'USAcademic'. {holiday_calendar} was provided."
+        )
+    us_holidays = cal.holidays(start=data["date"].min(), end=data["date"].max())
+    data.loc[pd.to_datetime(data["date"].dt.date).isin(us_holidays), "workday_0"] = 0
+    # shift the workday column by 1, so that each timesteps knows the workday status of the next timestep
+    # useful for regression models, when we make a prediction starting 00:00, knowing everything
+    # up to 23:45 of the previous day
+    workday_next_timestep = data["workday_0"].shift(-1).ffill()
+    # we are going to have 1 workday column for all the days we have to predict + 1
+    list_workday_column_names = get_workday_column_names(lookahead)
+    for i, workday_column_name in enumerate(list_workday_column_names):
+        data[workday_column_name] = (
+            workday_next_timestep.shift(-i * 96).ffill().astype(int)
+        )
+    # drop the few timesteps where we don't know the workday status of the next timestep
+    rows_to_exclude = (len(list_workday_column_names) - 1) * 96 + 1
+    data = data.iloc[:-rows_to_exclude].copy()
 
     # Add the 4 hour time window
     data["time_window"] = data["date"].dt.hour // 4
+    data["time_window"] = data["time_window"].shift(-1).ffill().astype(int)
 
     # Convert the date to an int
     # we choose int instead of having a float, because the date magnitude (10**9)
     # is too large for a float32 (the tensorflow default dtype) to be precise
-    data["date"] = data["date"].astype("int64") // 10**9
+    data["date"] = convert_date_from_datetime_to_int(data["date"])
 
-    s_in_day = 24 * 60 * 60
+    s_in_day = 24 * 60 * 60  # number of seconds in a day
     s_in_week = 7 * s_in_day
     s_in_year = (365.2425) * s_in_day
-    data["Day sin"] = np.sin(data["date"] * (2 * np.pi / s_in_day))
-    data["Day cos"] = np.cos(data["date"] * (2 * np.pi / s_in_day))
-    data["Week sin"] = np.sin(data["date"] * (2 * np.pi / s_in_week))
-    data["Week cos"] = np.cos(data["date"] * (2 * np.pi / s_in_week))
-    data["Year sin"] = np.sin(data["date"] * (2 * np.pi / s_in_year))
-    data["Year cos"] = np.cos(data["date"] * (2 * np.pi / s_in_year))
+    data["Day sin"] = np.sin(data["date"] * (2 * np.pi / s_in_day), dtype=np.float32)
+    data["Day cos"] = np.cos(data["date"] * (2 * np.pi / s_in_day), dtype=np.float32)
+    data["Week sin"] = np.sin(data["date"] * (2 * np.pi / s_in_week), dtype=np.float32)
+    data["Week cos"] = np.cos(data["date"] * (2 * np.pi / s_in_week), dtype=np.float32)
+    data["Year sin"] = np.sin(data["date"] * (2 * np.pi / s_in_year), dtype=np.float32)
+    data["Year cos"] = np.cos(data["date"] * (2 * np.pi / s_in_year), dtype=np.float32)
 
+    data = data.astype({"power": "float32", "number_of_evses_available": "float32"})
     FeaturedEngineeredSchema.validate(data)
 
     return data
@@ -82,9 +137,10 @@ def feature_engineering(
 
 def reverse_feature_engineering(
     data_input: pd.DataFrame,
-    standardize_parameters: tuple[pd.Series, pd.Series] | None = None,
-    normalize_parameters: tuple[pd.Series, pd.Series] | None = None,
+    scaling_mode: TypeScalingMode,
+    scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
     bypass_output_validation: bool = False,
+    lookahead: int = 96,
 ) -> pd.DataFrame:
     """Reverses the feature engineering done in feature_engineer.
 
@@ -94,41 +150,47 @@ def reverse_feature_engineering(
     Returns:
         pd.DataFrame: Data in its original form.
     """
+    list_workday_column_names = get_workday_column_names(lookahead)
+
     # convert table to DataFrame if it is in the tensor format
     if not isinstance(data_input, pd.DataFrame):
         data = pd.DataFrame(data_input)
+        dict_rename = {
+            0: "date",
+            1: "power",
+        }
+        for i, workday_column_name in enumerate(list_workday_column_names):
+            dict_rename = dict_rename | {2 + i: workday_column_name}
+        dict_rename = dict_rename | {
+            i + 3: "time_window",
+            i + 4: "Day sin",
+            i + 5: "Day cos",
+            i + 6: "Week sin",
+            i + 7: "Week cos",
+            i + 8: "Year sin",
+            i + 9: "Year cos",
+        }
         data.rename(
-            columns={
-                0: "date",
-                1: "power",
-                2: "workday",
-                3: "time_window",
-                4: "Day sin",
-                5: "Day cos",
-                6: "Week sin",
-                7: "Week cos",
-                8: "Year sin",
-                9: "Year cos",
-            },
+            columns=dict_rename,
             inplace=True,
         )
 
     else:
         data = data_input.copy()
-    data = data.astype(
-        {
-            "date": "int64",
-            "power": "float64",
-            "workday": "int64",
-            "time_window": "int32",
-            "Day sin": "float64",
-            "Day cos": "float64",
-            "Week sin": "float64",
-            "Week cos": "float64",
-            "Year sin": "float64",
-            "Year cos": "float64",
-        }
-    )
+    dict_types = {
+        "date": "int64",
+        "power": "float32",
+        "time_window": "int32",
+        "Day sin": "float32",
+        "Day cos": "float32",
+        "Week sin": "float32",
+        "Week cos": "float32",
+        "Year sin": "float32",
+        "Year cos": "float32",
+    }
+    for workday_column_name in list_workday_column_names:
+        dict_types[workday_column_name] = "int32"
+    data = data.astype(dict_types)
 
     # Check that the data is in the correct format
     FeaturedEngineeredSchema.validate(data)
@@ -139,23 +201,10 @@ def reverse_feature_engineering(
     )
 
     # Convert the date back to a Timestamp
-    data["date"] = pd.to_datetime(data["date"], unit="s")
-    # Round dates to closest minute
-    data["date"] = data["date"].dt.round("5min")
+    data["date"] = convert_date_from_int_to_datetime(data["date"])
 
-    # Reverse the standardization
-    if normalize_parameters and standardize_parameters:
-        raise ValueError(
-            "Cannot normalize and standardize at the same time. Please pass normalize_parameters OR standardize_parameters"
-        )
-    if standardize_parameters:
-        train_mean, train_std = standardize_parameters
-        data[COLS_TO_NORMALIZE] = data[COLS_TO_NORMALIZE] * train_std + train_mean
-    if normalize_parameters:
-        train_min, train_max = normalize_parameters
-        data[COLS_TO_NORMALIZE] = (
-            data[COLS_TO_NORMALIZE] * (train_max - train_min) + train_min
-        )
+    data = reverse_scaling(data, scaling_mode, scaling_parameters)
+
     if not bypass_output_validation:
         DataSchema.validate(data)
     return data
@@ -187,73 +236,119 @@ def one_hot_encoding(
     return data_encoded
 
 
-def get_train_mean_and_std(df_train: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    """Get the mean and standard deviation of the training data, used to normalize the rest of the data.
-
-    Args:
-        df_train (pd.DataFrame): Train dataframe, should be in the format of the DataSchema.
-
-    Returns:
-        tuple[pd.Series, pd.Series]: training data mean, training data standard deviation
-
-    Example:
-    >>> train_mean, train_std = get_train_mean_and_std(df_train)
-    >>> df_val_eng = feature_engineering(df_val, train_mean, train_std)
-    """
-    # Check that the data is in the correct format
-    DataSchema.validate(df_train)
-
-    train_mean = df_train[COLS_TO_NORMALIZE].mean()
-    train_std = df_train[COLS_TO_NORMALIZE].std()
-    return train_mean, train_std
-
-
-def get_train_min_and_max(df_train: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    DataSchema.validate(df_train)
-
-    train_min = df_train[COLS_TO_NORMALIZE].min()
-    train_max = df_train[COLS_TO_NORMALIZE].max()
-
-    return train_min, train_max
-
-
-def get_data_frequency(df, _data_size_for_freq_lookup=None) -> str:
-    """Get the data frequency from the DataFrame.
-    Leave _data_size_for_freq_lookup to None, it is used for recursion."""
-    if _data_size_for_freq_lookup is None:
-        _data_size_for_freq_lookup = df.shape[0]
-
-    if isinstance(df["date"].iloc[0], pd.Timestamp):
-        data_freq = pd.infer_freq(df["date"].iloc[-_data_size_for_freq_lookup:])
-    else:
-        data_freq = pd.infer_freq(
-            pd.to_datetime(df["date"].iloc[-_data_size_for_freq_lookup:], unit="s")
-        )
-
-    # if the data frequency is not found, it might be because we have gaps.
-    # Then, we recursively call the function with a smaller
-    # data size lookup
-    if not data_freq:
-        if _data_size_for_freq_lookup < 100:
-            raise ValueError("The data frequency could not be inferred.")
-        else:
-            _data_size_for_freq_lookup = int(_data_size_for_freq_lookup / 2)
-            return get_data_frequency(df, _data_size_for_freq_lookup)
-    return data_freq
-
-
-def convert_data_freq_to_minutes(data_freq) -> int:
-    try:
-        return int(data_freq.split("min")[0])  #
-    except ValueError:
-        raise ValueError(
-            "The data frequency is not in minutes. "
-            "Please edit this function to handle other frequencies."
-        )
-
-
 def add_missing_timesteps(data) -> pd.DataFrame:
     # make sure that date is a datetime before calling that function
     return (
         data.set_index("date").resample(get_data_frequency(data)).mean().reset_index()
     )
+
+
+def apply_scaling(
+    data: pd.DataFrame,
+    scaling_mode: TypeScalingMode,
+    scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
+    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
+) -> pd.DataFrame:
+    data = data.copy()
+    if scaling_mode:
+        if scaling_parameters is None:
+            raise ValueError(
+                "If scaling_mode is not None, scaling_parameters must be provided"
+            )
+        if scaling_mode == "standardize":
+            if isinstance(scaling_parameters, pd.DataFrame):
+                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
+            train_mean, train_std = scaling_parameters
+            data[cols_to_normalize] = standardize_data(
+                data[cols_to_normalize],
+                train_mean[cols_to_normalize],
+                train_std[cols_to_normalize],
+            )
+        elif scaling_mode == "normalize":
+            if isinstance(scaling_parameters, pd.DataFrame):
+                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
+            train_min, train_max = scaling_parameters
+            data[cols_to_normalize] = normalize_data(
+                data[cols_to_normalize],
+                train_min[cols_to_normalize],
+                train_max[cols_to_normalize],
+            )
+        elif scaling_mode in ["rolling_standardize", "rolling_normalize"]:
+            if not isinstance(scaling_parameters, pd.DataFrame):
+                raise ValueError(
+                    "scaling_parameters should be a pd.DataFrame, and 2 pd.Series"
+                )
+            data = apply_rolling_scaling(
+                data,
+                scaling_parameters,
+                scaling_mode=scaling_mode,
+                cols_to_normalize=cols_to_normalize,
+            )
+        else:
+            raise ValueError(
+                f"scaling_mode should be one of 'standardize', 'normalize', 'rolling_standardize', 'rolling_normalize'. {scaling_mode} was provided."
+            )
+
+    else:
+        if scaling_parameters is not None:
+            raise ValueError(
+                "If scaling_parameters were provided but scaling_mode is None, please "
+                "provide a scaling_mode or don't provide scaling_parameters"
+            )
+    return data
+
+
+def reverse_scaling(
+    data: pd.DataFrame,
+    scaling_mode: TypeScalingMode,
+    scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
+    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
+):
+    data = data.copy()
+    # Reverse the standardization
+
+    if scaling_mode:
+        if scaling_parameters is None:
+            raise ValueError(
+                "If scaling_mode is not None, scaling_parameters must be provided"
+            )
+        if scaling_mode == "standardize":
+            if isinstance(scaling_parameters, pd.DataFrame):
+                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
+            train_mean, train_std = scaling_parameters
+            data[cols_to_normalize] = reverse_standardize_data(
+                data[cols_to_normalize],
+                train_mean[cols_to_normalize],
+                train_std[cols_to_normalize],
+            )
+        elif scaling_mode == "normalize":
+            if isinstance(scaling_parameters, pd.DataFrame):
+                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
+            train_min, train_max = scaling_parameters
+            data[cols_to_normalize] = reverse_normalize_data(
+                data[cols_to_normalize],
+                train_min[cols_to_normalize],
+                train_max[cols_to_normalize],
+            )
+        elif scaling_mode in ["rolling_standardize", "rolling_normalize"]:
+            if not isinstance(scaling_parameters, pd.DataFrame):
+                raise ValueError(
+                    "scaling_parameters should be a pd.DataFrame, and 2 pd.Series"
+                )
+
+            data = reverse_rolling_scaling(
+                data, scaling_parameters, scaling_mode=scaling_mode
+            )
+        else:
+            raise ValueError(
+                f"scaling_mode should be one of 'standardize', 'normalize', 'rolling_standardize'"
+                f", 'rolling_normalize'. {scaling_mode} was provided."
+            )
+    else:
+        if scaling_parameters is not None:
+            raise ValueError(
+                "If scaling_parameters were provided but scaling_mode is None, please "
+                "provide a scaling_mode or don't provide scaling_parameters"
+            )
+
+    return data

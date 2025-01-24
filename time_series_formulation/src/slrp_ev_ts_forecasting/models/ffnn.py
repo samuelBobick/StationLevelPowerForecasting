@@ -4,7 +4,6 @@ import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
 import torch
 import torch.nn as nn
-from slrp_ev_data.feature_engineering import one_hot_encoding
 from slrp_ev_ts_forecasting.models.torch_base import TorchBaseModel
 from torch.utils.data import Dataset
 
@@ -33,6 +32,20 @@ class FFNN(TorchBaseModel):
         error_metric: default_parameters.TypeErrorMetric = default_parameters.ERROR_METRIC,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
+        scaling_mode: default_parameters.TypeScalingMode = default_parameters.SCALING_MODE,
+        scaling_parameters: tuple | pd.DataFrame | None = None,
+        session_based_mode: bool = default_parameters.SESSION_BASED_MODE,
+        peak_prediction: bool = default_parameters.PEAK_PREDICTION,
+        add_number_of_sessions: bool = default_parameters.ADD_NUMBER_OF_SESSIONS,
+        add_fraction_of_regular_sessions: bool = default_parameters.ADD_FRACTION_OF_REGULAR_SESSIONS,
+        use_all_active_sessions: bool = default_parameters.USE_ALL_ACTIVE_SESSIONS,
+        number_of_artificial_datasets: int = default_parameters.NUMBER_OF_ARTIFICIAL_DATASETS,
+        random_start_time: bool = default_parameters.RANDOM_START_TIME,
+        shuffle_power_profiles: bool = default_parameters.SHUFFLE_POWER_PROFILES,
+        random_power_profile_shapes: bool = default_parameters.RANDOM_POWER_PROFILE_SHAPES,
+        random_user_needs: bool = default_parameters.RANDOM_USER_NEEDS,
+        random_choices: bool = default_parameters.RANDOM_CHOICES,
+        add_number_of_evses_available: bool = default_parameters.ADD_NUMBER_OF_EVSES_AVAILABLE,
     ):
         """TODO"""
 
@@ -48,10 +61,16 @@ class FFNN(TorchBaseModel):
 
         # Regression specific parameters
         self.optimize_lags = optimize_lags
+        self.session_based_mode = session_based_mode
+        self.peak_prediction = peak_prediction
+        self.add_number_of_sessions = add_number_of_sessions
+        self.add_fraction_of_regular_sessions = add_fraction_of_regular_sessions
+        self.use_all_active_sessions = use_all_active_sessions
 
         # Other parameters
         self.alpha = alpha
-        self.time_mode = time_mode
+        self.time_mode: Literal["window", "cyclical"] = time_mode
+        self.add_number_of_evses_available = add_number_of_evses_available
 
         # Initialize the BaseModel with relevant parameters
         super().__init__(
@@ -67,7 +86,22 @@ class FFNN(TorchBaseModel):
             x_dim=x_dim,
             lookahead=lookahead,
             get_val_data_from_shuffled_train=get_val_data_from_shuffled_train,
+            scaling_mode=scaling_mode,
+            scaling_parameters=scaling_parameters,
             optimize_lags=optimize_lags,
+            time_mode=time_mode,
+            session_based_mode=session_based_mode,
+            peak_prediction=peak_prediction,
+            add_number_of_sessions=add_number_of_sessions,
+            add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
+            use_all_active_sessions=use_all_active_sessions,
+            number_of_artificial_datasets=number_of_artificial_datasets,
+            random_start_time=random_start_time,
+            shuffle_power_profiles=shuffle_power_profiles,
+            random_power_profile_shapes=random_power_profile_shapes,
+            random_user_needs=random_user_needs,
+            random_choices=random_choices,
+            add_number_of_evses_available=add_number_of_evses_available,
         )
 
         # Determine input size based on time_mode
@@ -82,27 +116,51 @@ class FFNN(TorchBaseModel):
             + ("Long" if self.optimize_lags == "long_opt" else "")
             + f"_dropout{self.dropout}"
             + ("_withBatchNorm" if self.batch_norm else "")
+            + (
+                "_SessionBased"
+                + ("_PeakPrediction" if self.peak_prediction else "")
+                + ("_WithNbSessions" if self.add_number_of_sessions else "")
+                + ("_WithFracReg" if self.add_fraction_of_regular_sessions else "")
+                + ("_WithAllActiveSessions" if self.use_all_active_sessions else "")
+                if self.session_based_mode
+                else ""
+            )
         )
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
+        input_size = (
+            self.x_dim
+            + int(self.add_number_of_sessions)
+            + int(self.add_fraction_of_regular_sessions)
+            + int(self.add_number_of_evses_available)
+            + len(self.list_workday_column_names)
+        )
+        if self.session_based_mode:
+            input_size += self.lookahead
+
         if self.time_mode == "window":
-            return self.x_dim + 6 + 1  # 6 for time one-hot encoding, 1 for workday
+            return input_size + 6  # 6 for time one-hot encoding
         elif self.time_mode == "cyclical":
-            return self.x_dim + 6  #  6 for sin/cos encoding (day, week, year)
+            return input_size + 6  #  6 for sin/cos encoding (day, week, year)
         else:
             raise ValueError(f"Invalid time_mode: {self.time_mode}")
 
     def initialize_model(self) -> None:
         """Initializes the FFNN model based on the current configuration."""
+        output_size = self.output_size
+        if self.peak_prediction:
+            output_size = 1
         self.model = FFNN_model(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
-            output_size=self.output_size,
+            output_size=output_size,
             num_hidden_layers=self.num_hidden_layers,
             activation=self.activation,
             dropout=self.dropout,
             batch_norm=self.batch_norm,
+            force_positive_output=self.scaling_mode
+            in ["normalize", "rolling_normalize"],
         )
         self.model.to(default_parameters.DEVICE)
 
@@ -114,69 +172,23 @@ class FFNN(TorchBaseModel):
         overlapping_windows: bool = False,
     ) -> Dataset | tuple[Dataset, pd.DataFrame]:
 
-        if self.optimize_lags:
-            input_width = self.index_farthest_lag
-        else:
-            input_width = self.x_dim
-
-        if df is not None:
-            df = df.copy()
-            df_padded = self.pad_with_seen_data(df, input_width)
-        else:
-            df_padded = None
-
-        W, window_data = self.get_window_data(
-            df_padded, input_width, self.lookahead, overlapping_windows, data_type
+        samples = self.get_X_y(
+            df=df,
+            time_mode=self.time_mode,
+            data_type=data_type,
+            return_y_date=return_y_date,
+            overlapping_windows=overlapping_windows,
+            multi_model_mode=False,
         )
 
-        cols_keep_last_value = []
-        if self.time_mode == "cyclical":
-            cols_keep_last_value += [
-                "Day sin",
-                "Day cos",
-                "Week sin",
-                "Week cos",
-                "Year sin",
-                "Year cos",
-            ]
-        elif self.time_mode == "window":
-            cols_keep_last_value += ["time_window", "workday"]
-
-        if self.optimize_lags:
-            flat_inputs, flat_labels = W.flatten_dataset(
-                window_data,
-                cols_keep_last_value=cols_keep_last_value,
-                cols_keep_some_values=[
-                    {
-                        "col_name": "power",
-                        "indexes_to_keep": input_width
-                        - self.pacf_top_values.index.to_numpy(),
-                    }
-                ],
-                label_cols_to_flatten=["power"],
-            )
+        if len(samples) == 3:
+            flat_inputs, flat_labels, y_dates = samples
         else:
-            flat_inputs, flat_labels = W.flatten_dataset(
-                window_data,
-                cols_to_flatten=["power"],
-                cols_keep_last_value=cols_keep_last_value,
-                label_cols_to_flatten=["power"],
-            )
+            flat_inputs, flat_labels = samples
 
-        if self.time_mode == "window":
-            flat_inputs = one_hot_encoding(flat_inputs, ["time_window"])
-
-        mask_nan = flat_inputs.isna().any(axis=1) | flat_labels.isna().any(axis=1)
-        flat_inputs = flat_inputs[~mask_nan]
-        flat_labels = flat_labels[~mask_nan]
         dataset = TensorDataset(flat_inputs, flat_labels)
-
         if return_y_date:
-            x_dates, y_dates = W.flatten_dataset(
-                window_data, cols_to_flatten=["date"], label_cols_to_flatten=["date"]
-            )
-            y_dates = y_dates[~mask_nan]
-            return dataset, y_dates
+            return dataset, y_dates  # type: ignore
         else:
             return dataset
 
@@ -191,6 +203,7 @@ class FFNN_model(nn.Module):
         activation,
         dropout,
         batch_norm,
+        force_positive_output=True,
     ):
         super(FFNN_model, self).__init__()
         self.hidden_layers = nn.ModuleList([nn.Linear(input_size, hidden_size)])
@@ -204,6 +217,8 @@ class FFNN_model(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fc_out = nn.Linear(hidden_size, output_size)
 
+        self.force_positive_output = force_positive_output
+
     def forward(self, x) -> torch.Tensor:
         for layer in self.hidden_layers:
             x = self.activation(layer(x))
@@ -214,8 +229,9 @@ class FFNN_model(nn.Module):
             x = self.dropout(x)
 
         x = self.fc_out(x)
-        # Add a continuous activation function to unsure results are positive
-        x = nn.functional.softplus(x)
+        if self.force_positive_output:
+            # Add a continuous activation function to unsure results are positive
+            x = nn.functional.softplus(x)
         return x
 
 

@@ -1,20 +1,20 @@
 from typing import Literal
 
-import numpy as np
 import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
-from sklearn.neighbors import KNeighborsRegressor
+from slrp_ev_data.normalization_and_standardization import (
+    SINGLE_EVSE_NORMALIZATION_PARAM,
+    retrieve_train_min_and_max,
+)
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 
 
-class KNN(RegressionBaseModel):
+class PeakPersistence(RegressionBaseModel):
 
     def __init__(
         self,
         x_dim=default_parameters.X_DIM,
         lookahead=default_parameters.LOOKAHEAD,
-        n_neighbors=10,
-        percentile=90,
         alpha=default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
@@ -26,12 +26,6 @@ class KNN(RegressionBaseModel):
         add_number_of_sessions: bool = default_parameters.ADD_NUMBER_OF_SESSIONS,
         add_fraction_of_regular_sessions: bool = default_parameters.ADD_FRACTION_OF_REGULAR_SESSIONS,
         use_all_active_sessions: bool = default_parameters.USE_ALL_ACTIVE_SESSIONS,
-        number_of_artificial_datasets: int = default_parameters.NUMBER_OF_ARTIFICIAL_DATASETS,
-        random_start_time: bool = default_parameters.RANDOM_START_TIME,
-        shuffle_power_profiles: bool = default_parameters.SHUFFLE_POWER_PROFILES,
-        random_power_profile_shapes: bool = default_parameters.RANDOM_POWER_PROFILE_SHAPES,
-        random_user_needs: bool = default_parameters.RANDOM_USER_NEEDS,
-        random_choices: bool = default_parameters.RANDOM_CHOICES,
         add_number_of_evses_available: bool = default_parameters.ADD_NUMBER_OF_EVSES_AVAILABLE,
     ):
         """_summary_
@@ -39,8 +33,6 @@ class KNN(RegressionBaseModel):
         Args:
             x_dim (int, optional): How many past timesteps ahead we want to use as inputs. Defaults to 16.
             lookahead (int, optional): How many timesteps ahead we want to predict. Defaults to 16.
-            n_neighbors (int, optional): K in the KNN algorithm. Defaults to 10.
-            percentile (int, optional): What percentile of the KNN we take. Defaults to 90.
             alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
         """
         super().__init__(
@@ -57,26 +49,24 @@ class KNN(RegressionBaseModel):
             add_number_of_sessions=add_number_of_sessions,
             add_fraction_of_regular_sessions=add_fraction_of_regular_sessions,
             use_all_active_sessions=use_all_active_sessions,
-            number_of_artificial_datasets=number_of_artificial_datasets,
-            random_start_time=random_start_time,
-            shuffle_power_profiles=shuffle_power_profiles,
-            random_power_profile_shapes=random_power_profile_shapes,
-            random_user_needs=random_user_needs,
-            random_choices=random_choices,
+            number_of_artificial_datasets=0,
+            random_start_time=False,
+            shuffle_power_profiles=False,
+            random_power_profile_shapes=False,
+            random_user_needs=False,
+            random_choices=False,
             add_number_of_evses_available=add_number_of_evses_available,
         )
         self.alpha = alpha
         self.time_mode = time_mode
-
-        self.n_neighbors = n_neighbors
-        self.percentile = percentile
+        if not peak_prediction:
+            raise ValueError(
+                "PeakPersistence model can only be used for peak prediction. Please set peak_prediction=True."
+            )
 
     @property
     def model_str_name(self):
-        return (
-            f"KNN_neighbors{self.n_neighbors}_percentile{self.percentile}"
-            + self.model_str_name_suffix
-        )
+        return "PeakPersistence" + self.model_str_name_suffix
 
     def fit_model(
         self,
@@ -87,41 +77,38 @@ class KNN(RegressionBaseModel):
         y_val: pd.DataFrame,
         val_mask: pd.Series,
     ):
-        knn_regressor = PercentileKNNRegressor(
-            n_neighbors=self.n_neighbors, percentile=self.percentile
-        )
-
-        X_input = X_train[train_mask].drop(
-            self.cols_to_drop_for_model,
-            # [col for col in X_train.columns if not col.startswith("power")],
-            axis=1,
-        )
-        y_input = y_train[train_mask]
-
-        knn_regressor.fit(X_input, y_input)
-        return knn_regressor
+        return None
 
     def predict_model(self, model, X_test: pd.DataFrame):
-        return model.predict(X_test)
-
-
-class PercentileKNNRegressor:
-    def __init__(self, n_neighbors=5, percentile=50):
-        self.n_neighbors = n_neighbors
-        self.percentile = percentile
-        self.knn = KNeighborsRegressor(
-            n_neighbors=n_neighbors, weights="uniform", n_jobs=-1
+        # We have the information of the max before the current time
+        # it's in the last 10 hours of the station power
+        lookback_timesteps_for_peak = min(10 * 4, self.x_dim)
+        max_before_current_time = (
+            X_test[
+                [
+                    f"power_{i}"
+                    for i in range(self.x_dim - lookback_timesteps_for_peak, self.x_dim)
+                ]
+            ]
+            .max(axis=1)
+            .iloc[0]
         )
+        # After the current time, we don't have the exact load.
+        # Therefore, we predict that the max after now is going to be
+        # the load of the last known timestep + the max of the next session profile
+        # We have to pu the max of the next session profile in the same scale as the load
+        max_after_current_time = X_test.filter(regex=r"u_").max(axis=1).iloc[0]
 
-    def fit(self, X, y):
-        self.knn.fit(X, y)
+        scale_factor = 8
+        if not self.use_all_active_sessions:
+            max_after_current_time += X_test[f"power_{self.x_dim - 1}"].iloc[0]
+            scale_factor = 1
 
-    def predict(self, X):
-        distances, indices = self.knn.kneighbors(X)
-        nearest_neighbors_values = self.knn._y[indices]  # type: ignore
-
-        nth_percentile_values = np.percentile(
-            nearest_neighbors_values, self.percentile, axis=1
+        _, train_max = retrieve_train_min_and_max("slrp-ev_new")
+        max_after_current_time = (
+            max_after_current_time
+            * SINGLE_EVSE_NORMALIZATION_PARAM
+            * scale_factor
+            / train_max.iloc[0]
         )
-
-        return nth_percentile_values
+        return max(max_before_current_time, max_after_current_time)
