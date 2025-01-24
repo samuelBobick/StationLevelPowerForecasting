@@ -51,8 +51,13 @@ def weighted_peaks_rmse(
     the peaks.
     """
     y_pred, y_true = np.array(y_pred), np.array(y_true)
-    # rememnder that the values are scaled and should be between 0 and 1
-    weights = 1 + beta * y_true
+    # remember that the values are scaled and should be between 0 and 1
+    # if not, we scale them the apply the weights
+    if np.max(y_true) > 1:
+        y_true_for_weights = y_true / np.max(y_true)
+    else:
+        y_true_for_weights = y_true
+    weights = 1 + beta * y_true_for_weights
     # we need to add a 1 to avoid the weight being 0 when y_true is 0
 
     # wprmse = np.sqrt(mean_squared_error(y_pred, y_true, sample_weight=weights))

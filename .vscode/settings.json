@@ -2,8 +2,16 @@
     "cSpell.words": [
         "argmin",
         "dataframe",
+        "dataframes",
         "dcos",
-        "slrp"
+        "downsample",
+        "EVSE",
+        "evses",
+        "isin",
+        "nlags",
+        "PACF",
+        "slrp",
+        "varacf"
     ],
     "python.analysis.fixAll": [
         "source.unusedImports"

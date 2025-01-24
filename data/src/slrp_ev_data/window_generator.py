@@ -1,3 +1,4 @@
+import os
 from typing import TypedDict
 
 import matplotlib.pyplot as plt
@@ -8,13 +9,16 @@ import torch
 from plotly import graph_objects as go
 from torch.utils.data import Dataset
 
+from slrp_ev_data.data_utils import convert_data_freq_to_minutes, get_data_frequency
 from slrp_ev_data.feature_engineering import (
-    convert_data_freq_to_minutes,
-    get_data_frequency,
     reverse_feature_engineering,
 )
 
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
+
+# Set the logging level using TensorFlow's logging module, to only show errors
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+tf.get_logger().setLevel("ERROR")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Window Generator is using device: {DEVICE}")
@@ -96,6 +100,7 @@ class WindowGenerator:
         label_columns: list[str] | None = None,
         overlapping_windows: bool = False,
         batch_size: int = 64,
+        seed: int | None = None,
         verbose=True,
     ):
         """_summary_
@@ -181,6 +186,8 @@ class WindowGenerator:
         self.labels_slice = slice(self.label_start, None)
         self.label_indices = np.arange(self.total_window_size)[self.labels_slice]
 
+        self.seed = seed
+
     def __repr__(self):
         return "\n".join(
             [
@@ -236,14 +243,14 @@ class WindowGenerator:
 
     def make_dataset(self, data, shuffle: bool = False) -> list[tuple]:
         data = np.array(data, dtype=np.float32)
-        max_number_of_samples = np.floor(
+        max_number_of_windows = np.floor(
             (data.shape[0] - self.total_window_size + self.sequence_stride)
             / self.sequence_stride
         )
         if self.verbose:
             print(
                 f"Data length: {data.shape[0]:.0f}. "
-                f"We should have {max_number_of_samples:.0f} samples"
+                f"We should have {max_number_of_windows:.0f} windows"
             )
 
         ds = tf.keras.utils.timeseries_dataset_from_array(  # type: ignore
@@ -253,16 +260,17 @@ class WindowGenerator:
             sequence_stride=self.sequence_stride,
             shuffle=shuffle,
             batch_size=self.batch_size,
+            seed=self.seed,
         )
 
         ds = ds.map(self.split_window)
-        number_of_samples = self.get_dataset_size(ds)
+        number_of_windows = self.get_dataset_size(ds)
         if self.verbose:
             gaps = (
-                max_number_of_samples - number_of_samples
+                max_number_of_windows - number_of_windows
             )  # counter for the number of gaps in the data
             if gaps > 0:
-                percentage_gaps = gaps / max_number_of_samples
+                percentage_gaps = gaps / max_number_of_windows
                 print(
                     f"WARNING: Number of gaps (=number of windows dropped) found "
                     f"when making windows: {gaps:.0f} ({percentage_gaps:.2%}% of the data)"
@@ -380,7 +388,8 @@ class WindowGenerator:
         ]
         if columns_not_selected:
             print(
-                f"INFO: The following columns will be dropped when flattening: {columns_not_selected}"
+                "INFO: The following columns will be dropped when "
+                f"flattening the inputs: {columns_not_selected}"
             )
         no_user_last_keep_value = False
         if not cols_keep_last_value:
@@ -429,7 +438,7 @@ class WindowGenerator:
             else:
                 items_to_flatten = tf.zeros([inputs.shape[0], 0], dtype=tf.float32)
 
-            # Initialize empty dataframe with good shape
+            # Initialize empty dataframe with good shape (batch_size, 0)
             items_to_keep_some_values = tf.zeros([inputs.shape[0], 0], dtype=tf.float32)
             # Gather the values of the columns in which we only keep some values
             for col_dict in keep_some_values_indices:
@@ -474,7 +483,7 @@ class WindowGenerator:
 
         ### Generate Column Names ###
         input_column_names = (
-            [f"{name}_{i}" for name in cols_to_flatten for i in range(inputs.shape[1])]
+            [f"{name}_{i}" for i in range(inputs.shape[1]) for name in cols_to_flatten]
             + [
                 f"{dict_keep_some_values['col_name']}_{i}"
                 for dict_keep_some_values in cols_keep_some_values
@@ -484,11 +493,11 @@ class WindowGenerator:
         )
         label_column_names = [
             f"{name}_{i}"
-            for name in label_cols_to_flatten
             for i in range(labels.shape[1])
+            for name in label_cols_to_flatten
         ]
 
-        # Convert lists to Pandas DataFrames
+        # Convert arrays to Pandas DataFrames
         flat_inputs_df = pd.DataFrame(flat_inputs, columns=input_column_names)
         if no_user_last_keep_value:
             # if the user didn't specify any columns to keep the last value from but we had to select
