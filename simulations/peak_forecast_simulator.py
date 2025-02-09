@@ -44,7 +44,7 @@ class PeakForecastSimulator(BaselineSimulator):
 
         self.forecasting_models = {}
         for workday in [0, 1]:
-            filename = f"LinearModel_SessionBased_PeakPrediction_{workday}.json"
+            filename = f"LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions_{workday}.json"
             self.forecasting_models[workday] = self.load_model_parameters(filename)
 
         self.features_name = self.forecasting_models[0]["feature_names"]
@@ -132,13 +132,13 @@ class PeakForecastSimulator(BaselineSimulator):
         return reversed_prediction
 
     def get_current_peak_sch(
-        self, num_reg_user, num_sch_user, u, time
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time
     ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
         Args:
             num_reg_user (int): number of regular users
-            num_reg_user (int): number of scheduled users
+            num_sch_user (int): number of scheduled users
             u (cp.Variable): scheduled power profile
             time (pd.datetime): timf of optimization
 
@@ -147,7 +147,12 @@ class PeakForecastSimulator(BaselineSimulator):
         """
         next_session_profile = cp.reshape(u[:96], (96,))
         # divide by 1000 to convert from W to kW
-        return self.get_current_peak(next_session_profile, time) / 1000
+        return (
+            self.get_current_peak(
+                next_session_profile, num_reg_user + num_sch_user - 1, time
+            )
+            / 1000
+        )
 
     def get_current_peak_reg(
         self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
@@ -160,7 +165,7 @@ class PeakForecastSimulator(BaselineSimulator):
 
         Args:
             num_reg_user (int): number of regular users
-            num_reg_user (int): number of scheduled users
+            num_sch_user (int): number of scheduled users
             u (cp.Variable): scheduled power profile
             time (pd.datetime): timf of optimization
 
@@ -174,16 +179,22 @@ class PeakForecastSimulator(BaselineSimulator):
         )  # how many time steps would it take the user to charge if they chose regular?
         next_session_profile = np.array([self.power_rate] * N_reg + [0] * (96 - N_reg))
         # divide by 1000 to convert from W to kW
-        return self.get_current_peak(next_session_profile, time) / 1000
+        return (
+            self.get_current_peak(
+                next_session_profile, num_reg_user + num_sch_user - 1, time
+            )
+            / 1000
+        )
 
     def get_current_peak(
-        self, next_session_profile, time, verbose=False
+        self, next_session_profile, num_active_sessions, time, verbose=False
     ) -> cp.Expression:
         """Make a forecast for the peak given the optimized power profile
 
         Args:
-            u (cp.Variable): scheduled power profile
-            time (pd.datetime): timf of optimization
+            next_scheduled_profile (cp.Variable): scheduled power profile
+            time (pd.datetime): time of optimization
+            num_active_sessions (int): number of active sessions
 
         Returns:
             prediction of current peak given time, past power profile, and scheduled power_profile
@@ -194,6 +205,7 @@ class PeakForecastSimulator(BaselineSimulator):
             periods=96,
             freq="15min",
         )
+
         historical_power_profile = self.aggregate_power_profile[
             self.aggregate_power_profile["date"].isin(timesteps)
         ]["power"].values
@@ -213,14 +225,25 @@ class PeakForecastSimulator(BaselineSimulator):
             ]
         )
 
+        workday = int(time.dayofweek < 5)
+        if time.date() in self.holidays.date:
+            workday = 0
+
         features = cp.hstack(
             [
                 historical_power_profile * 1000,
+                workday,
+                8,  # number EVSEs available (always 8 in SLRP-EV)
                 time_features,
                 next_session_profile * 1000,
+                num_active_sessions,
             ]
         )
-        workday = int(time.dayofweek < 5)
+
+        # TODO Thibaud can you review this and make sure I am doing it right? Also make it less hardcoded
+        features = (features - self.features_norm_parameters_min) / (
+            self.features_norm_parameters_max - self.features_norm_parameters_min
+        )
 
         prediction = self.make_prediction(features, workday)
 
