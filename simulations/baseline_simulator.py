@@ -7,6 +7,7 @@ import pandas as pd
 import seaborn as sns
 from constants.dcm import get_dcm_theta, get_dcm_v
 from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
+from slrp_ev_data.data_utils import USAcademicHolidayCalendar
 from tqdm.auto import tqdm
 from utils import (
     get_new_reg_obj,
@@ -112,6 +113,9 @@ class BaselineSimulator:
             start=start_of_month, end=end_of_month, freq="15min"
         )
         self.aggregate_power_profile = pd.DataFrame({"date": intervals, "power": 0})
+
+        cal = USAcademicHolidayCalendar()
+        self.holidays = cal.holidays(start=start_of_month, end=end_of_month)
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
         # having to use cp.maximum is much slower than putting this max into inequality constraints
@@ -647,7 +651,7 @@ class BaselineSimulator:
 
                 # visualize the predictions for peak_simulator
                 self.get_current_peak(
-                    power_profiles[last_row["dcosId"]], startChargeTime, verbose=True
+                    power_profiles[last_row["dcosId"]], len(sub_df), startChargeTime, verbose=True
                 )
 
                 # TODO: put this in a separate function? (e.g. `plot_prices_grid_profit_heatmap`)
