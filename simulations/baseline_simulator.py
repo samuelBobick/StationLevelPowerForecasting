@@ -13,6 +13,7 @@ from utils import (
     get_new_reg_obj,
     get_new_sch_obj,
     get_remaining_e_need,
+    get_sub_df,
     get_timestep_info,
     round_up_to_nearest_timestep,
 )
@@ -109,10 +110,9 @@ class BaselineSimulator:
         end_of_month = (start_date + pd.offsets.MonthEnd(1)).replace(
             hour=23, minute=59, second=59
         )
-        intervals = pd.date_range(
-            start=start_of_month, end=end_of_month, freq="15min"
-        )
+        intervals = pd.date_range(start=start_of_month, end=end_of_month, freq="15min")
         self.aggregate_power_profile = pd.DataFrame({"date": intervals, "power": 0})
+        self.power_profiles = {}
 
         cal = USAcademicHolidayCalendar()
         self.holidays = cal.holidays(start=start_of_month, end=end_of_month)
@@ -131,7 +131,6 @@ class BaselineSimulator:
         sub_df: pd.DataFrame,
         current_time: pd.Timestamp,
         running_peak: float,
-        power_profiles: dict,
         prices: dict,
     ) -> tuple:
         """
@@ -144,7 +143,6 @@ class BaselineSimulator:
             sub_df: DataFrame containing rows of sessions_df that represent active sessions at the time of optimization
             current_time: time of optimization
             running_peak: running peak power this billing cycle
-            power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
         num_sch_user = 0
@@ -172,12 +170,12 @@ class BaselineSimulator:
             else:  # Assumes we know exactly how long they will stay
                 price = prices[row["dcosId"]][1]
                 if (
-                    len(power_profiles[row["dcosId"]]) > 0
+                    len(self.power_profiles[row["dcosId"]]) > 0
                     and TOU_end_idx - TOU_current_idx > 0
                 ):
                     existing_reg_obj += (
                         self.delta_t
-                        * power_profiles[row["dcosId"]][
+                        * self.power_profiles[row["dcosId"]][
                             -(TOU_end_idx - TOU_current_idx) :
                         ]
                         @ (self.TOU[TOU_current_idx:TOU_end_idx] - price)
@@ -306,7 +304,6 @@ class BaselineSimulator:
         sub_df: pd.DataFrame,
         current_time: pd.Timestamp,
         running_peak: float,
-        power_profiles: dict,
         prices: dict,
     ):
         """
@@ -319,7 +316,6 @@ class BaselineSimulator:
                 sessions at the time of optimization
             current_time: time of optimization
             running_peak: running peak power this billing cycle
-            power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
         (
@@ -331,7 +327,7 @@ class BaselineSimulator:
             current_peak_reg,
             constraints,
         ) = self.initialize_problem(
-            z, v, sub_df, current_time, running_peak, power_profiles, prices
+            z, v, sub_df, current_time, running_peak, prices
         )
 
         obj = cp.Minimize(J)
@@ -356,7 +352,6 @@ class BaselineSimulator:
         self,
         current_time: pd.Timestamp,
         running_peak: float,
-        power_profiles: dict,
         prices: dict,
     ) -> tuple[dict[tuple, dict], pd.DataFrame]:
         """
@@ -365,18 +360,9 @@ class BaselineSimulator:
         Inputs:
             current_time: time of optimization
             running_peak: running peak power this billing cycle
-            power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
-        sub_df = self.test_df[
-            pd.to_datetime(self.test_df["startChargeTime"]) <= current_time
-        ]
-        end_charge_times = (
-            pd.to_datetime(sub_df["startChargeTime"])
-            + pd.to_timedelta(sub_df["DurationHrs"], unit="h")
-            - pd.Timedelta(minutes=15)
-        ).dt.floor("15min")
-        sub_df = sub_df[end_charge_times >= current_time]
+        sub_df = get_sub_df(self.test_df, current_time)
 
         assert len(sub_df) > 0, "sub_df is empty, nothing to grid search over!"
 
@@ -394,7 +380,7 @@ class BaselineSimulator:
                 J,
                 J_array,
             ) = self.argmin_u(
-                zk, vk, sub_df, current_time, running_peak, power_profiles, prices
+                zk, vk, sub_df, current_time, running_peak, prices
             )
             grid_search_results[(z_sch_k, z_reg_k)] = {
                 "J": J.value[0] if isinstance(J.value, np.ndarray) else J.value,
@@ -409,7 +395,7 @@ class BaselineSimulator:
         return grid_search_results, sub_df
 
     def update_aggregate_power_profile(
-        self, previousStartChargeTime, startChargeTime, active_sessions, power_profiles
+        self, previousStartChargeTime, startChargeTime, active_sessions
     ):
         """_summary_
 
@@ -417,10 +403,9 @@ class BaselineSimulator:
             previousStartChargeTime (_type_): _description_
             startChargeTime (_type_): _description_
             active_sessions (_type_): _description_
-            power_profiles (_type_): _description_
         """
         for row in active_sessions:
-            power_profile = power_profiles[row["dcosId"]]
+            power_profile = self.power_profiles[row["dcosId"]]
             power_profile_start_time = round_up_to_nearest_timestep(
                 pd.to_datetime(row["startChargeTime"]), self.delta_t
             )
@@ -475,7 +460,7 @@ class BaselineSimulator:
         """
         Replay self.test_df and simulate the real-time optimization and control decisions
         """
-        power_profiles = {c: np.array([]) for c in self.test_df["dcosId"]}
+        self.power_profiles = {c: np.array([]) for c in self.test_df["dcosId"]}
         prices = {c: () for c in self.test_df["dcosId"]}
         hourly_prices = {c: () for c in self.test_df["dcosId"]}
         # active_sessions = [{dcosId : start_time},......] TODO
@@ -490,12 +475,11 @@ class BaselineSimulator:
                 previousStartChargeTime,
                 startChargeTime,
                 active_sessions,
-                power_profiles,
             )
             running_peak = self.aggregate_power_profile["power"].max()
 
             grid_search_results, sub_df = self.grid_search(
-                startChargeTime, running_peak, power_profiles, prices
+                startChargeTime, running_peak, prices
             )
 
             optimal_prices = min(
@@ -522,7 +506,7 @@ class BaselineSimulator:
 
                 adj_constant = int((num_sch_user + 1) * self.var_dim_constant)
                 num_sch_user += 1
-                power_profiles[row["dcosId"]][
+                self.power_profiles[row["dcosId"]][
                     (TOU_current_idx - TOU_start_idx) : (
                         TOU_current_idx - TOU_start_idx
                     )
@@ -561,7 +545,7 @@ class BaselineSimulator:
 
             previous_running_peak = running_peak
             if choice == "SCHEDULED":
-                power_profiles[last_row["dcosId"]] = u[
+                self.power_profiles[last_row["dcosId"]] = u[
                     : self.var_dim_constant
                 ].flatten()
                 num_sch_user += 1
@@ -577,8 +561,10 @@ class BaselineSimulator:
                     N_reg % 1
                 )  # for that last timestep, what fraction of a timestep is charging needed to satisfy demand?
                 N_reg = int(N_reg)
-                power_profiles[last_row["dcosId"]] = np.zeros(self.var_dim_constant)
-                power_profiles[last_row["dcosId"]][:N_reg] = np.array(
+                self.power_profiles[last_row["dcosId"]] = np.zeros(
+                    self.var_dim_constant
+                )
+                self.power_profiles[last_row["dcosId"]][:N_reg] = np.array(
                     [self.power_rate] * N_reg
                 )
 
@@ -651,7 +637,10 @@ class BaselineSimulator:
 
                 # visualize the predictions for peak_simulator
                 self.get_current_peak(
-                    power_profiles[last_row["dcosId"]], len(sub_df), startChargeTime, verbose=True
+                    self.power_profiles[last_row["dcosId"]],
+                    len(sub_df),
+                    startChargeTime,
+                    verbose=True,
                 )
 
                 # TODO: put this in a separate function? (e.g. `plot_prices_grid_profit_heatmap`)
@@ -685,11 +674,9 @@ class BaselineSimulator:
                 # print('TOU slice', self.TOU[TOU_start_idx : TOU_end_idx])
                 # print('')
 
-        return power_profiles, prices, hourly_prices
+        return self.power_profiles, prices, hourly_prices
 
-    def initialize_problem(
-        self, z, v, sub_df, current_time, running_peak, power_profiles, prices
-    ):
+    def initialize_problem(self, z, v, sub_df, current_time, running_peak, prices):
         """Helper function to return the cvxpy variables to solve the optimization problem.
 
         Inputs:
@@ -699,7 +686,6 @@ class BaselineSimulator:
                 sessions at the time of optimization
             current_time: time of optimization
             running_peak: running peak power this billing cycle
-            power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
 
@@ -714,7 +700,7 @@ class BaselineSimulator:
         e_need = get_remaining_e_need(
             last_row,
             current_time,
-            power_profiles,
+            self.power_profiles,
             self.delta_t,
             self.power_rate,
             self.flexibility_constant,
@@ -731,7 +717,7 @@ class BaselineSimulator:
             e_need = get_remaining_e_need(
                 row,
                 current_time,
-                power_profiles,
+                self.power_profiles,
                 self.delta_t,
                 self.power_rate,
                 self.flexibility_constant,
@@ -785,7 +771,6 @@ class BaselineSimulator:
             sub_df,
             current_time,
             running_peak,
-            power_profiles,
             prices,
         )
 

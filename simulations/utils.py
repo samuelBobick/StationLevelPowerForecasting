@@ -292,3 +292,36 @@ def round_up_to_nearest_timestep(ts, delta_t):
     # Add the remaining seconds to the original timestamp
     rounded_ts = ts + pd.Timedelta(seconds=seconds_to_next)
     return rounded_ts.replace(second=0, microsecond=0)
+
+
+def get_sub_df(test_df, current_time):
+    """
+    Given current time and the DataFrame to simulate on, return the number of rows of all active sessions.
+    """
+    sub_df = test_df[pd.to_datetime(test_df["startChargeTime"]) <= current_time]
+    end_charge_times = (
+        pd.to_datetime(sub_df["startChargeTime"])
+        + pd.to_timedelta(sub_df["DurationHrs"], unit="h")
+        - pd.Timedelta(minutes=15)
+    ).dt.floor("15min")
+    sub_df = sub_df[end_charge_times >= current_time]
+
+    return sub_df
+
+
+def get_aggregate_reg_profiles(test_df, current_time, power_profiles, delta_t):
+    sub_df = get_sub_df(test_df, current_time)[:-1]
+    output = np.zeros(96)
+
+    for index, row in sub_df.iterrows():
+        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+            row, pd.to_datetime(row["startChargeTime"]), delta_t
+        )
+
+        p = power_profiles[row["dcosId"]][TOU_current_idx:]
+        output += np.pad(
+            p, (0, max(0, 96 - len(p))), mode="constant", constant_values=0
+        )
+
+    return output
+    
