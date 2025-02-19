@@ -168,12 +168,17 @@ class TCN(TorchBaseModel):
             dropout=self.dropout,
             activation=self.activation,
             use_decoder=self.use_decoder,
+            greater_than_zero=self.scaling_mode in ["normalize", "rolling_normalize"],
         )
         self.model.to(default_parameters.DEVICE)
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
-        input_size = int(self.add_number_of_evses_available)
+        input_size = (
+            int(self.add_number_of_evses_available)
+            + len(self.list_workday_column_names)
+            - 1
+        )
         if self.time_mode == "window":
             return (
                 input_size + 1 + 6 + 1
@@ -305,6 +310,7 @@ class TCN_model(nn.Module):
         kernel_size=2,
         dropout=0.2,
         use_decoder=True,
+        greater_than_zero: bool = True,
     ):
         super(TCN_model, self).__init__()
         self.tcn = TemporalConvNet(
@@ -322,6 +328,8 @@ class TCN_model(nn.Module):
             self.activation = activation
             self.fc_1 = nn.Linear(input_length, 128)  # fully connected layer
             self.fc = nn.Linear(128, output_length)  # output layer
+
+        self.greater_than_zero = greater_than_zero
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """perform a forward pass on the TCN model
@@ -346,5 +354,6 @@ class TCN_model(nn.Module):
             out = out.squeeze()
             out = self.activation(self.fc_1(out))
             out = self.fc(out)
-            out = nn.functional.softplus(out)  # ensuring non-negative output
+            if self.greater_than_zero:
+                out = nn.functional.softplus(out)  # ensuring non-negative output
         return out
