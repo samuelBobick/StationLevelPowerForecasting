@@ -262,83 +262,6 @@ class Base:
 
         return W, window_data
 
-    def prepare_df_predictions(
-        self, forecasts: np.ndarray, y_dates, reals: Optional[np.ndarray] = None
-    ) -> pd.DataFrame:
-        # TODO: use it in all the other predict functions
-        add_real = reals is not None
-        if add_real:
-            predictions_array = np.stack(
-                (y_dates.to_numpy().squeeze(), forecasts.squeeze(), reals.squeeze()),
-                axis=-1,
-            )
-        else:
-            predictions_array = np.stack(
-                (y_dates.to_numpy().squeeze(), forecasts.squeeze()), axis=-1
-            )
-        # Reshape to add a 3rd dimension in case we predict only the peak
-        if len(predictions_array.shape) == 2:
-            predictions_array = np.expand_dims(predictions_array, axis=1)
-
-        df_predictions = pd.DataFrame(columns=["date"])
-        for i in range(predictions_array.shape[0]):
-            df_single_prediction = pd.DataFrame(
-                {
-                    "date": convert_date_from_int_to_datetime(
-                        pd.Series(predictions_array[i, :, 0])
-                    ),
-                    "power_0": predictions_array[i, :, 1],
-                    "real_power_0": predictions_array[i, :, 2],
-                }
-            )
-
-            if df_single_prediction["date"].isin(df_predictions["date"]).any():
-                # if we already have prediction data for these timesteps, we need to iterate
-                # over the other power_x columns to find the first one that doesn't have data yet
-                # if they all have data, we create a new column
-                df_predictions_these_dates = df_predictions[
-                    df_predictions["date"].isin(df_single_prediction["date"])
-                ]
-                next_power_column_number = (df_predictions.shape[1] - 1) // 2
-
-                # by default we add the data to a new column
-                df_single_prediction = df_single_prediction.rename(
-                    columns={
-                        "power_0": f"power_{next_power_column_number}",
-                        "real_power_0": f"real_power_{next_power_column_number}",
-                    }
-                )
-                # If possible, we add it to an existing column
-                for j in range(0, next_power_column_number):
-                    if df_predictions_these_dates[f"power_{j}"].isna().all():
-                        df_single_prediction = df_single_prediction.rename(
-                            columns={
-                                f"power_{next_power_column_number}": f"power_{j}",
-                                f"real_power_{next_power_column_number}": f"real_power_{j}",
-                            }
-                        )
-                        break
-                df_predictions = df_predictions.merge(df_single_prediction, how="outer")
-            else:
-                if df_predictions.empty:
-                    # in the initial case, we have a pandas warning with the
-                    # concat operation if the dataframe is empty, we solve it like so
-                    df_predictions = df_single_prediction
-                else:
-                    df_predictions = pd.concat(
-                        [df_predictions, df_single_prediction], ignore_index=True
-                    )
-
-        # we have an issue where some dates are duplicated,
-        # but with only 1 column that has a value for each duplicate. We actually
-        # want only 1 row with a value in each column
-        df_predictions = (
-            df_predictions.groupby("date")
-            .agg(lambda x: x.dropna().iloc[0] if not x.dropna().empty else np.nan)
-            .reset_index()
-        )
-        return df_predictions
-
     def save_model(self, model, model_name: str):
         print(
             "WARNING: Model not saved. save_model method not implemented for this model."
@@ -973,3 +896,81 @@ class Base:
             yaxis_title="Normalized Power",
         )
         fig.show()
+
+
+def prepare_df_predictions(
+    forecasts: np.ndarray, y_dates, reals: Optional[np.ndarray] = None
+) -> pd.DataFrame:
+    # TODO: use it in all the other predict functions
+    add_real = reals is not None
+    if add_real:
+        predictions_array = np.stack(
+            (y_dates.to_numpy().squeeze(), forecasts.squeeze(), reals.squeeze()),
+            axis=-1,
+        )
+    else:
+        predictions_array = np.stack(
+            (y_dates.to_numpy().squeeze(), forecasts.squeeze()), axis=-1
+        )
+    # Reshape to add a 3rd dimension in case we predict only the peak
+    if len(predictions_array.shape) == 2:
+        predictions_array = np.expand_dims(predictions_array, axis=1)
+
+    df_predictions = pd.DataFrame(columns=["date"])
+    for i in range(predictions_array.shape[0]):
+        df_single_prediction = pd.DataFrame(
+            {
+                "date": convert_date_from_int_to_datetime(
+                    pd.Series(predictions_array[i, :, 0])
+                ),
+                "power_0": predictions_array[i, :, 1],
+                "real_power_0": predictions_array[i, :, 2],
+            }
+        )
+
+        if df_single_prediction["date"].isin(df_predictions["date"]).any():
+            # if we already have prediction data for these timesteps, we need to iterate
+            # over the other power_x columns to find the first one that doesn't have data yet
+            # if they all have data, we create a new column
+            df_predictions_these_dates = df_predictions[
+                df_predictions["date"].isin(df_single_prediction["date"])
+            ]
+            next_power_column_number = (df_predictions.shape[1] - 1) // 2
+
+            # by default we add the data to a new column
+            df_single_prediction = df_single_prediction.rename(
+                columns={
+                    "power_0": f"power_{next_power_column_number}",
+                    "real_power_0": f"real_power_{next_power_column_number}",
+                }
+            )
+            # If possible, we add it to an existing column
+            for j in range(0, next_power_column_number):
+                if df_predictions_these_dates[f"power_{j}"].isna().all():
+                    df_single_prediction = df_single_prediction.rename(
+                        columns={
+                            f"power_{next_power_column_number}": f"power_{j}",
+                            f"real_power_{next_power_column_number}": f"real_power_{j}",
+                        }
+                    )
+                    break
+            df_predictions = df_predictions.merge(df_single_prediction, how="outer")
+        else:
+            if df_predictions.empty:
+                # in the initial case, we have a pandas warning with the
+                # concat operation if the dataframe is empty, we solve it like so
+                df_predictions = df_single_prediction
+            else:
+                df_predictions = pd.concat(
+                    [df_predictions, df_single_prediction], ignore_index=True
+                )
+
+    # we have an issue where some dates are duplicated,
+    # but with only 1 column that has a value for each duplicate. We actually
+    # want only 1 row with a value in each column
+    df_predictions = (
+        df_predictions.groupby("date")
+        .agg(lambda x: x.dropna().iloc[0] if not x.dropna().empty else np.nan)
+        .reset_index()
+    )
+    return df_predictions
