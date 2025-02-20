@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from slrp_ev_data import (
     read_new_slrpev_data,
@@ -40,6 +42,7 @@ def run_one_model(
 ) -> None:
     # Read the data
     print("# Starting...")
+    start_time = time.time()
     if dataset == "slrp-ev_old":
         data = read_old_slrpev_data.read_old_slrpev_data()
     elif dataset == "slrp-ev_new":
@@ -159,4 +162,12 @@ def run_one_model(
         )
 
     model_parameters["dataset"] = dataset
-    save_losses(losses, model_name, model_parameters, filename=save_results_filename)
+
+    elapsed_time = time.time() - start_time
+    save_losses(
+        losses,
+        model_name,
+        elapsed_time=elapsed_time,
+        model_params=model_parameters,
+        filename=save_results_filename,
+    )
