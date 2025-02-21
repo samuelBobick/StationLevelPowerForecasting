@@ -62,11 +62,13 @@ def save_losses(
             "error_metric": model_params.get("error_metric", ERROR_METRIC),
             "model_name": model_name,
             "rmse": losses["rmse"],
+            "relative_rmse": losses["relative_rmse"],
             f"wrmse (alpha={ALPHA})": losses["wrmse"],
             f"wprmse (beta={BETA})": losses["wprmse"],
             "mae": losses["mae"],
             "r2": losses["r2"],
-            "error_std": losses["error_std"],
+            # "error_std": losses["error_std"],
+            "smape": losses["smape"],
             "elapsed_time": elapsed_time,
             "number_of_artificial_datasets": model_params.get(
                 "number_of_artificial_datasets", NUMBER_OF_ARTIFICIAL_DATASETS

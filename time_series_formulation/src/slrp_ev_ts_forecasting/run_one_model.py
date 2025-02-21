@@ -24,6 +24,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
 )
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
+from slrp_ev_ts_forecasting.models.last_week import LastWeek
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 from slrp_ev_ts_forecasting.save_losses import save_losses
 from slrp_ev_ts_forecasting.utils_data_processing import (
@@ -138,28 +139,46 @@ def run_one_model(
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
     )
-    data_length_days = df_reversed_predictions.shape[0] // 96
 
+    # get forecasted and real power values into 1D numpy arrays
     y_pred = df_reversed_predictions.filter(regex="^power").values.reshape(-1)
     y_true = df_reversed_predictions.filter(regex="real_power").values.reshape(-1)
     mask_nan = ~np.isnan(y_pred)
     y_pred = y_pred[mask_nan]
     y_true = y_true[mask_nan]
 
-    losses = compute_losses(y_pred, y_true, model_parameters.get("alpha", ALPHA))
+    # Now we also get the naive predictions for the scaled errors
+    naive_model = LastWeek()
+    df_naive_predictions = naive_model.predict(test_eng)
+    df_reversed_naive_predictions = reverse_engineer_forecast(
+        test_eng,
+        df_naive_predictions,
+        scaling_mode=scaling_mode,
+        scaling_parameters=scaling_parameters,
+    )
+    y_naive_pred = df_reversed_naive_predictions.filter(regex="^power").values.reshape(
+        -1
+    )
+    y_naive_true = df_reversed_naive_predictions.filter(
+        regex="real_power"
+    ).values.reshape(-1)
+    mask_nan = ~np.isnan(y_naive_pred) & ~np.isnan(y_naive_true)
+    y_naive_pred = y_naive_pred[mask_nan]
+    y_naive_true = y_naive_true[mask_nan]
+
+    losses = compute_losses(
+        y_pred, y_true, model_parameters.get("alpha", ALPHA), y_naive_pred, y_naive_true
+    )
     print(
         f"{model_choice}: ",
         *[
             f"{loss_type.upper()}: {loss_value:.1f};"
             for loss_type, loss_value in losses.items()
         ],
-        f"for around {data_length_days} days of predictions",
     )
 
     if verbose:
-        visualize_forecast(
-            test, df_reversed_predictions, data_length_days, model.model_str_name
-        )
+        visualize_forecast(test, df_reversed_predictions, model.model_str_name)
 
     model_parameters["dataset"] = dataset
 
