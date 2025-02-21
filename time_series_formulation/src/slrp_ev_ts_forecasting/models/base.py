@@ -15,7 +15,9 @@ from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.default_parameters import (
     NUMBER_OF_DAYS_FOR_PACF,
+    PEAK_PREDICTION_MODE,
     RANDOM_SEED,
+    TYPE_PEAK_PREDICTION_MODE,
     VERBOSE,
     TypeOptimizeLags,
     TypeScalingMode,
@@ -690,7 +692,7 @@ class Base:
     def transform_X_y_for_peak_prediction(
         self,
         merged_inputs_dates_sessions: pd.DataFrame,
-        mode: Literal["peak_of_day", "peak_next_8h"] = "peak_next_8h",
+        mode: TYPE_PEAK_PREDICTION_MODE = PEAK_PREDICTION_MODE,
     ) -> pd.DataFrame:
         if mode == "peak_of_day":
             # Extract dates from 'startChargeTime'
@@ -750,13 +752,14 @@ class Base:
             )
 
         elif mode == "peak_next_8h":
-            # Get the peak power of the next 12 hours
+            # Get the peak power of the next hours
+            number_next_hours = 8
             label_columns = [
                 col
                 for col in merged_inputs_dates_sessions.filter(
                     regex=r"(power)_(\d+)_label"
                 ).columns
-                if int(col.split("_")[1]) < 8 * 4
+                if int(col.split("_")[1]) < number_next_hours * 4
             ]
             flat_labels = (
                 merged_inputs_dates_sessions[label_columns].max(axis=1).to_frame()
@@ -876,7 +879,7 @@ class Base:
                 subtitle += f"Scaled number of EVSEs available: {flat_inputs['number_of_evses_available'].iloc[i]}\n"
             for workday_column in self.list_workday_column_names:
                 if workday_column in flat_inputs.columns:
-                    subtitle += f"Workday: {flat_inputs[workday_column].iloc[i]}\n"
+                    subtitle += f"{workday_column.capitalize().replace("_", " ")}: {flat_inputs[workday_column].iloc[i]}\n"
 
             fig.add_annotation(
                 text=subtitle,

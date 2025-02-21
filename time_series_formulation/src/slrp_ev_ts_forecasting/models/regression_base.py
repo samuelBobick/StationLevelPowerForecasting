@@ -208,13 +208,6 @@ class RegressionBaseModel(Base):
                 model = self.models[row["workday_0"]]
                 forecasts.append(self.predict_model(model, input))
 
-        # forecast = np.array(forecasts).squeeze().flatten()
-        # real = y_test.to_numpy().flatten()
-        # losses = compute_losses(forecast, real, self.alpha)
-
-        # if not self.peak_prediction:
-        #     reals = None
-        # else:
         reals = y_test.to_numpy()
         df_predictions = prepare_df_predictions(np.array(forecasts), y_dates, reals)
         return df_predictions

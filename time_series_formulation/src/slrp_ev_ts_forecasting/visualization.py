@@ -6,7 +6,6 @@ from slrp_ev_data.feature_engineering import add_missing_timesteps
 def visualize_forecast(
     test_data: pd.DataFrame,
     df_predictions: pd.DataFrame,
-    number_of_days: int,
     model_name: str,
 ) -> None:
     """
@@ -63,7 +62,7 @@ def visualize_forecast(
         )
 
     fig.update_layout(
-        title=f"{model_name} - Forecast for {number_of_days} days",
+        title=f"{model_name}",
         xaxis_title="Date",
         yaxis_title="Value",
     )
