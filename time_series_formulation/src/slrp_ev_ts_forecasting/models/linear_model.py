@@ -68,9 +68,24 @@ class LinearModel(RegressionBaseModel):
         # TODO: Do no forget to normalize the "next user power profile", dividing it by the max power (6.6)
         self.rs = np.random.RandomState(self.rng.bit_generator._seed_seq.entropy)  # type: ignore
 
-        # TODO: find smart way to get all the parameters of the class
-        # and put them in a dict (without having to list them manually)
-        self.parameters_dict = {}
+        # get all the parameters of the class
+        # and put them in a dict for when we save the model
+        parameters_to_not_save = [
+            "verbose",
+            "rng",
+            "pacf_top_values",
+            "cols_to_drop_for_model",
+            "rs",
+        ]
+        self.parameters_dict = {
+            k: v
+            for k, v in vars(self).items()
+            if (
+                not k.startswith("_")
+                and k not in parameters_to_not_save
+                and type(v) in [int, float, str, bool, list, dict]
+            )
+        }
 
     @property
     def model_str_name(self):
@@ -127,6 +142,7 @@ class LinearModel(RegressionBaseModel):
 
         # Extract parameters
         params = {
+            "model_parameters": self.parameters_dict,
             "intercept": (
                 model.intercept_.tolist()
                 if hasattr(model.intercept_, "tolist")

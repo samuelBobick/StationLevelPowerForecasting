@@ -432,10 +432,6 @@ class TorchBaseModel(Base):
             y_pred_test_tensor = y_pred_test_tensor.squeeze(-1)
         y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
-        # losses = compute_torch_losses(
-        #     y_pred_test_tensor.flatten(), y_test_tensor.flatten(), self.alpha
-        # )
-
         forecasts = y_pred_test_tensor.detach().numpy()
         reals = y_test_tensor.cpu().numpy()
         if len(y_dates.shape) == 1:
