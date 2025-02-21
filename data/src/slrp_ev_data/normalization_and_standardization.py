@@ -174,10 +174,14 @@ def get_rolling_scaling_column(
         raise ValueError(f"Unsupported frequency: {freq}, please update the code")
 
     lookback_min_steps_min = lookback_15min_steps * 15 * freq_factor
-    rolling_power = df.set_index("date")[COLS_TO_NORMALIZE].rolling(
-        pd.Timedelta(minutes=lookback_min_steps_min),
-        min_periods=int(lookback_15min_steps * freq_factor * 0.7),
-        closed="left",
+    rolling_power = (
+        df.set_index("date")
+        .asfreq(freq)[COLS_TO_NORMALIZE]
+        .rolling(
+            pd.Timedelta(minutes=lookback_min_steps_min),
+            min_periods=int(lookback_15min_steps * freq_factor * 0.7),
+            # closed="left",
+        )
     )
 
     df_scaling_columns = pd.DataFrame(index=df["date"])
@@ -211,6 +215,14 @@ def get_rolling_scaling_column(
                 rolling_power[column_name]
                 .max()
                 .shift(lookahead_15min_steps * freq_factor, freq=freq)
+            )
+            # fix the issue when the max is equal to the min (then we will have a division by 0 during the scaling)
+            df_scaling_columns.loc[
+                df_scaling_columns[("max_power_for_diff", column_name)]
+                == df_scaling_columns[("min_power_for_diff", column_name)],
+                [("max_power_for_diff", column_name)],
+            ] = (
+                df_scaling_columns[("max_power_for_diff", column_name)] + 1
             )
         else:
             raise ValueError(f"Unsupported scaling mode: {scaling_mode}")
