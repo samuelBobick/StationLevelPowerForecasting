@@ -10,10 +10,11 @@ from constants.tariffs import MODIFIED_DC, TypeTariffName
 from cvxpy.atoms.affine.hstack import Hstack
 from slrp_ev_data.normalization_and_standardization import (
     SINGLE_EVSE_NORMALIZATION_PARAM,
+    get_rolling_scaling_column,
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
-from utils import get_total_e_need, round_up_to_nearest_timestep
+from utils import get_aggregate_reg_profiles, get_total_e_need, round_up_to_nearest_timestep
 
 
 class PeakForecastSimulator(BaselineSimulator):
@@ -146,7 +147,13 @@ class PeakForecastSimulator(BaselineSimulator):
             cp.Expression: current scheduled peak
         """
         next_session_profile = cp.reshape(u[:96], (96,))
-        # divide by 1000 to convert from W to kW
+
+        u_reshaped = cp.reshape(u, (u.shape[0] // self.var_dim_constant, self.var_dim_constant))
+        next_session_profile = cp.sum(u_reshaped, axis=0)
+        aggregate_reg_profiles = get_aggregate_reg_profiles(self.test_df, time, self.power_profiles, self.delta_t)
+        
+        next_session_profile += aggregate_reg_profiles
+
         return (
             self.get_current_peak(
                 next_session_profile, num_reg_user + num_sch_user - 1, time
@@ -173,11 +180,18 @@ class PeakForecastSimulator(BaselineSimulator):
             cp.Expression: current scheduled peak
         """
         e_need = get_total_e_need(row, self.delta_t, self.flexibility_constant)
-
         N_reg = int(
             e_need // self.power_rate
         )  # how many time steps would it take the user to charge if they chose regular?
         next_session_profile = np.array([self.power_rate] * N_reg + [0] * (96 - N_reg))
+
+        u_sliced = u[96:]
+        if u_sliced.shape[0] > 0:
+            u_reshaped = cp.reshape(u_sliced, ((u_sliced.shape[0]) // 96, 96))
+            next_session_profile += cp.sum(u_reshaped, axis=0)
+
+        next_session_profile += get_aggregate_reg_profiles(self.test_df, time, self.power_profiles, self.delta_t)
+
         # divide by 1000 to convert from W to kW
         return (
             self.get_current_peak(
@@ -233,7 +247,7 @@ class PeakForecastSimulator(BaselineSimulator):
             [
                 historical_power_profile * 1000,
                 workday,
-                8,  # number EVSEs available (always 8 in SLRP-EV)
+                8,  # number EVSEs available (always 8 in SLRP-EV) TODO standardize?
                 time_features,
                 next_session_profile * 1000,
                 num_active_sessions,

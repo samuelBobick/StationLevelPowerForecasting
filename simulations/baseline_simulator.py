@@ -111,7 +111,7 @@ class BaselineSimulator:
             hour=23, minute=59, second=59
         )
         intervals = pd.date_range(start=start_of_month, end=end_of_month, freq="15min")
-        self.aggregate_power_profile = pd.DataFrame({"date": intervals, "power": 0})
+        self.aggregate_power_profile = pd.DataFrame({"date": intervals, "power": 0.0})
         self.power_profiles = {}
 
         cal = USAcademicHolidayCalendar()

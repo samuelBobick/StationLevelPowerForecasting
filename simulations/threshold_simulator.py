@@ -63,7 +63,6 @@ class ThresholdSimulator(BaselineSimulator):
         sub_df: pd.DataFrame,
         current_time: pd.Timestamp,
         running_peak: float,
-        power_profiles: dict,
         prices: dict,
     ):
         """
@@ -76,7 +75,6 @@ class ThresholdSimulator(BaselineSimulator):
                 sessions at the time of optimization
             current_time: time of optimization
             running_peak: running peak power this billing cycle
-            power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
         (
@@ -88,7 +86,7 @@ class ThresholdSimulator(BaselineSimulator):
             current_peak_reg,
             constraints,
         ) = self.initialize_problem(
-            z, v, sub_df, current_time, running_peak, power_profiles, prices
+            z, v, sub_df, current_time, running_peak, prices
         )
 
         # Hard threshold constraint
