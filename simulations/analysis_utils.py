@@ -8,6 +8,7 @@ from constants.tariffs import MODIFIED_DC, TypeTariffName
 from peak_forecast_simulator import PeakForecastSimulator
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
+from timeseries_forecast_simulator import TimeseriesForecastSimulator
 from utils import get_profit, get_session_results
 
 TypeScenario = Literal[
@@ -17,6 +18,7 @@ TypeScenario = Literal[
     "smooth_dc_penalty",
     "threshold",
     "peak_forecast",
+    "timeseries_forecast",
 ]
 
 
@@ -119,6 +121,18 @@ def get_simulator(
             monte_carlo,
             verbose,
         )
+    elif scenario == "timeseries_forecast":
+        return TimeseriesForecastSimulator(
+            data,
+            var_dim_constant,
+            delta_t,
+            power_rate,
+            flexibility_constant,
+            tariff_name,
+            custom_cost_dc,
+            monte_carlo,
+            verbose,
+        )
     else:
         raise ValueError(
             "Invalid scenario name in get_simulator. Please refer to TypeScenario."
@@ -126,7 +140,13 @@ def get_simulator(
 
 
 def generate_session_results(
-    sim, month, results_file_name, summary_file_name, aggregate_power_profile_file_name, verbose=False, visualize=False
+    sim,
+    month,
+    results_file_name,
+    summary_file_name,
+    aggregate_power_profile_file_name,
+    verbose=False,
+    visualize=False,
 ):
     """Simulate. Save the simulation in results_file_name and append to summary file located at summary_file_name
 
@@ -148,7 +168,7 @@ def generate_session_results(
         sim.test_df, power_profiles, prices, sim.delta_t, sim.TOU
     )
 
-    demand_charge_kw = round(max(sim.aggregate_power_profile['power']), 2)
+    demand_charge_kw = round(max(sim.aggregate_power_profile["power"]), 2)
     demand_charge_cents = round(sim.cost_dc * demand_charge_kw, 2)
     total_profit = round(charging_revenue - TOU_cost - demand_charge_cents, 2)
     charging_revenue = round(charging_revenue, 2)
@@ -162,7 +182,7 @@ def generate_session_results(
         "TOU Cost (cents)": TOU_cost,
         "Demand Charge (cents)": demand_charge_cents,
         "Peak Power (kW)": demand_charge_kw,
-        "Energy Delivered (kWh)": energy_delivered
+        "Energy Delivered (kWh)": energy_delivered,
     }
 
     if os.path.exists(summary_file_name):
@@ -179,7 +199,7 @@ def generate_session_results(
             "TOU Cost (cents)",
             "Demand Charge (cents)",
             "Peak Power (kW)",
-            "Energy Delivered (kWh)"
+            "Energy Delivered (kWh)",
         ]
 
         summary_df = pd.DataFrame([row_data], columns=columns)
@@ -194,9 +214,8 @@ def generate_session_results(
     if visualize:
         visualize_simulation(sim.aggregate_power_profile)
 
-def visualize_simulation(
-    aggregate_power_profile: pd.DataFrame
-) -> None:
+
+def visualize_simulation(aggregate_power_profile: pd.DataFrame) -> None:
     """
     Visualize the results of the simulation values.
 
@@ -207,7 +226,10 @@ def visualize_simulation(
 
     fig.add_trace(
         go.Scatter(
-            x=aggregate_power_profile["date"], y=aggregate_power_profile["power"], mode="lines", name="Power Profile"
+            x=aggregate_power_profile["date"],
+            y=aggregate_power_profile["power"],
+            mode="lines",
+            name="Power Profile",
         )
     )
 
