@@ -324,4 +324,11 @@ def get_aggregate_reg_profiles(test_df, current_time, power_profiles, delta_t):
         )
 
     return output
+
+def get_next_reg_profile(row, delta_t, flexibility_constant, power_rate):
+    e_need = get_total_e_need(row, delta_t, flexibility_constant)
+    N_reg = int(
+        e_need // power_rate
+    )  # how many time steps would it take the user to charge if they chose regular?
+    return np.array([power_rate] * N_reg + [0] * (96 - N_reg))
     

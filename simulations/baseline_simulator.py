@@ -201,7 +201,7 @@ class BaselineSimulator:
         new_leave_obj = 0
 
         current_peak_sch = self.get_current_peak_sch(
-            num_reg_user, num_sch_user, u, current_time
+            num_reg_user, num_sch_user, u, current_time, last_row
         )
         current_peak_reg = self.get_current_peak_reg(
             num_reg_user, num_sch_user, u, current_time, last_row
@@ -245,7 +245,7 @@ class BaselineSimulator:
         )
 
     def get_current_peak_sch(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None, last_row=None
     ) -> cp.Expression:
         """Helper function to get the peak, accounting for the optimized scheduled power profiles
 
@@ -326,9 +326,7 @@ class BaselineSimulator:
             current_peak_sch,
             current_peak_reg,
             constraints,
-        ) = self.initialize_problem(
-            z, v, sub_df, current_time, running_peak, prices
-        )
+        ) = self.initialize_problem(z, v, sub_df, current_time, running_peak, prices)
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
@@ -379,9 +377,7 @@ class BaselineSimulator:
                 current_peak_reg,
                 J,
                 J_array,
-            ) = self.argmin_u(
-                zk, vk, sub_df, current_time, running_peak, prices
-            )
+            ) = self.argmin_u(zk, vk, sub_df, current_time, running_peak, prices)
             grid_search_results[(z_sch_k, z_reg_k)] = {
                 "J": J.value[0] if isinstance(J.value, np.ndarray) else J.value,
                 # value of the objective function (the array is of length 1)
@@ -636,7 +632,7 @@ class BaselineSimulator:
                 print("Total daily cost so far", min_J)
 
                 # visualize the predictions for peak_simulator
-                self.get_current_peak(
+                self.get_timeseries(
                     self.power_profiles[last_row["dcosId"]],
                     len(sub_df),
                     startChargeTime,
@@ -784,6 +780,6 @@ class BaselineSimulator:
             constraints,
         )
 
-    def get_current_peak(self, u, time, verbose):
+    def get_timeseries(self, u, time, verbose):
         # This function is not implemented in the baseline simulator
         pass
