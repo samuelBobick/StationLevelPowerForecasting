@@ -3,18 +3,15 @@ from typing import Optional
 
 import cvxpy as cp
 import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from cvxpy.atoms.affine.hstack import Hstack
 from slrp_ev_data.normalization_and_standardization import (
     SINGLE_EVSE_NORMALIZATION_PARAM,
-    get_rolling_scaling_column,
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
-from utils import get_aggregate_reg_profiles, get_total_e_need, round_up_to_nearest_timestep
 
 
 class ForecastSimulator(BaselineSimulator):
@@ -53,7 +50,6 @@ class ForecastSimulator(BaselineSimulator):
         self.labels_name = self.forecasting_models[0]["label_names"]
         # get normalization parameters
         self.get_normalization_parameters(self.features_name, self.labels_name)
-
 
     def load_model_parameters(self, filename):
         with open(SAVED_MODELS_PATH / filename, "r") as json_file:
@@ -101,7 +97,6 @@ class ForecastSimulator(BaselineSimulator):
         self.labels_norm_parameters_min = np.array(labels_norm_parameters_min)
         self.labels_norm_parameters_max = np.array(labels_norm_parameters_max)
 
-
     def make_prediction(
         self, features: np.ndarray | Hstack, workday: int
     ) -> cp.Expression:
@@ -134,3 +129,53 @@ class ForecastSimulator(BaselineSimulator):
         )
 
         return reversed_prediction
+
+    def visualize_samples(
+        self, sample: np.ndarray, prediction: Optional[np.ndarray] = None
+    ):
+        power_indexes = []
+        u_indexes = []
+        for i, name in enumerate(self.features_name):
+            if name.startswith("power"):
+                power_indexes.append(i)
+            elif name.startswith("u"):
+                u_indexes.append(i)
+
+        fig = go.Figure()
+
+        power = sample[power_indexes]
+        u = sample[u_indexes]
+        time_power = np.arange(len(power)) * self.delta_t
+        time_u = time_power + 24
+        fig.add_trace(
+            go.Scatter(
+                x=time_power,
+                y=power,
+                mode="lines",
+                name="Aggregated Power until now",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=time_u,
+                y=u + power[-1],
+                mode="lines",
+                name="Next User Profile",
+                line=dict(dash="dash"),
+            )
+        )
+        if prediction:
+            fig.add_trace(
+                go.Scatter(
+                    x=[time_u[0]],
+                    y=prediction,
+                    mode="markers",
+                    name="Predicted Peak",
+                )
+            )
+        fig.update_layout(
+            title="Sample Visualization",
+            xaxis_title="Time",
+            yaxis_title="Power",
+        )
+        fig.show()

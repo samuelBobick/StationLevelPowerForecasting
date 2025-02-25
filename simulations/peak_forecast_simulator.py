@@ -3,9 +3,7 @@ from typing import Optional
 import cvxpy as cp
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 from constants.tariffs import MODIFIED_DC, TypeTariffName
-from cvxpy.atoms.affine.hstack import Hstack
 from forecast_simulator import ForecastSimulator
 from utils import (
     get_aggregate_reg_profiles,
@@ -39,7 +37,6 @@ class PeakForecastSimulator(ForecastSimulator):
             monte_carlo,
             verbose,
         )
-        
 
     def get_current_peak_sch(
         self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
@@ -116,7 +113,7 @@ class PeakForecastSimulator(ForecastSimulator):
         )
 
     def get_current_peak(
-        self, next_session_profile, num_active_sessions, time, verbose=False
+        self, aggregate_future_profile, num_active_sessions, time, verbose=False
     ) -> cp.Expression:
         """Make a forecast for the peak given the optimized power profile
 
@@ -164,14 +161,9 @@ class PeakForecastSimulator(ForecastSimulator):
                 workday,
                 8,  # number EVSEs available (always 8 in SLRP-EV) TODO standardize?
                 time_features,
-                next_session_profile * 1000,
+                aggregate_future_profile * 1000,
                 num_active_sessions,
             ]
-        )
-
-        # TODO Thibaud can you review this and make sure I am doing it right? Also make it less hardcoded
-        features = (features - self.features_norm_parameters_min) / (
-            self.features_norm_parameters_max - self.features_norm_parameters_min
         )
 
         prediction = self.make_prediction(features, workday)
@@ -180,53 +172,3 @@ class PeakForecastSimulator(ForecastSimulator):
             self.visualize_samples(features.value, prediction.value)  # type: ignore
 
         return prediction
-
-    def visualize_samples(
-        self, sample: np.ndarray, prediction: Optional[np.ndarray] = None
-    ):
-        power_indexes = []
-        u_indexes = []
-        for i, name in enumerate(self.features_name):
-            if name.startswith("power"):
-                power_indexes.append(i)
-            elif name.startswith("u"):
-                u_indexes.append(i)
-
-        fig = go.Figure()
-
-        power = sample[power_indexes]
-        u = sample[u_indexes]
-        time_power = np.arange(len(power)) * self.delta_t
-        time_u = time_power + 24
-        fig.add_trace(
-            go.Scatter(
-                x=time_power,
-                y=power,
-                mode="lines",
-                name="Aggregated Power until now",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=time_u,
-                y=u + power[-1],
-                mode="lines",
-                name="Next User Profile",
-                line=dict(dash="dash"),
-            )
-        )
-        if prediction:
-            fig.add_trace(
-                go.Scatter(
-                    x=[time_u[0]],
-                    y=prediction,
-                    mode="markers",
-                    name="Predicted Peak",
-                )
-            )
-        fig.update_layout(
-            title="Sample Visualization",
-            xaxis_title="Time",
-            yaxis_title="Power",
-        )
-        fig.show()
