@@ -66,7 +66,10 @@ class LinearModel(RegressionBaseModel):
         self.alpha = alpha
         self.time_mode = time_mode
         # TODO: Do no forget to normalize the "next user power profile", dividing it by the max power (6.6)
-        self.rs = np.random.RandomState(self.rng.bit_generator._seed_seq.entropy)  # type: ignore
+        if default_parameters.RANDOM_SEED is not None:
+            self.rs = np.random.RandomState(self.rng.bit_generator._seed_seq.entropy)  # type: ignore
+        else:
+            self.rs = None
 
         # get all the parameters of the class
         # and put them in a dict for when we save the model
