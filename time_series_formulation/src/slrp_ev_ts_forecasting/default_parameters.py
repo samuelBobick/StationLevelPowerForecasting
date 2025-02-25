@@ -16,7 +16,7 @@ BATCH_NORM: bool = True
 
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = (
-    "short_opt"  # for regression models, such as Basic_NN or XGBoost
+    None  # for regression models, such as Basic_NN or XGBoost
 )
 NUMBER_OF_DAYS_FOR_PACF = 35  # 70 was the old parameter, but it is too big for
 # datasets with missing data
@@ -37,14 +37,16 @@ TypeScalingMode = Literal[
 ]
 SCALING_MODE: TypeScalingMode = "rolling_standardize"
 
-SESSION_BASED_MODE = True
-PEAK_PREDICTION = True
+SESSION_BASED_MODE = False
+PEAK_PREDICTION = False
+TYPE_PEAK_PREDICTION_MODE = Literal["peak_of_day", "peak_next_8h"]
+PEAK_PREDICTION_MODE = "peak_next_8h"
 ADD_NUMBER_OF_SESSIONS = True
 ADD_FRACTION_OF_REGULAR_SESSIONS = False
 USE_ALL_ACTIVE_SESSIONS = True
 
 # parameters to generate random sessions
-NUMBER_OF_ARTIFICIAL_DATASETS = 2
+NUMBER_OF_ARTIFICIAL_DATASETS = 0
 RANDOM_START_TIME = True
 SHUFFLE_POWER_PROFILES = (
     True  # SHUFFLE_POWER_PROFILES and RANDOM_POWER_PROFILE_SHAPES can't be both True
