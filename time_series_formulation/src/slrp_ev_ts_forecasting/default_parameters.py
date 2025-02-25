@@ -12,6 +12,7 @@ ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 BATCH_SIZE = 32
 DROPOUT = 0.4
+
 BATCH_NORM: bool = True
 
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
@@ -85,5 +86,5 @@ else:
     print("CUDA is not available. Using CPU.")
     DEVICE = "cpu"
 
-RANDOM_SEED: int | None = 42  # int(pd.Timestamp.now().timestamp())
+RANDOM_SEED: int | None = None  # 42  # int(pd.Timestamp.now().timestamp())
 VERBOSE = False
