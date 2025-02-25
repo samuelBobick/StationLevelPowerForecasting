@@ -139,11 +139,6 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             ]
         )
 
-        # TODO Thibaud can you review this and make sure I am doing it right? Also make it less hardcoded
-        features = (features - self.features_norm_parameters_min) / (
-            self.features_norm_parameters_max - self.features_norm_parameters_min
-        )
-
         # TODO plug in model from Thibaud and delete my dummy prediction
         prediction = self.make_prediction(features, workday)
         prediction = np.zeros(self.var_dim_constant)
