@@ -19,6 +19,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
     GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     LOOKAHEAD,
     SCALING_MODE,
+    VERBOSE,
     TypeDataSet,
     TypeModelChoice,
 )
@@ -37,7 +38,7 @@ from slrp_ev_ts_forecasting.visualization import visualize_forecast
 def run_one_model(
     model_choice: TypeModelChoice,
     model_parameters={},
-    verbose: bool = True,
+    verbose: bool = VERBOSE,
     save_results_filename: str = DEFAULT_RESULTS_FILENAME,
     dataset: TypeDataSet = DATASET,
 ) -> None:
