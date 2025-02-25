@@ -122,11 +122,16 @@ class LinearModel(RegressionBaseModel):
             # for peak prediction, the model is faster to train
             # and we predict a single value
             # Therefore, ElasticNetCV runs fairly quickly
-            lm = linear_model.ElasticNetCV(random_state=self.rs, n_alphas=50)
+            lm = linear_model.ElasticNetCV(
+                random_state=self.rs,
+                n_alphas=50,
+                l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95],
+            )
         else:
-            # for multi-output modes, ElasticNetCV takes too
-            # much time to run
-            lm = linear_model.LinearRegression()
+            # for multi-output modes, we cannot have as many alphas
+            # in the CV search
+            lm = linear_model.MultiTaskElasticNetCV(random_state=self.rs, n_alphas=10)
+            # lm = linear_model.LinearRegression()
         lm.fit(X_input, y_input)
         return lm
 
