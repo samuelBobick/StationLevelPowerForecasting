@@ -5,16 +5,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm.auto import tqdm
 
 from slrp_ev_ts_forecasting.default_parameters import (
+    RANDOM_SEED,
+    VERBOSE,
     TypeDataSet,
     TypeModelChoice,
 )
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
-list_model_choices: list[TypeModelChoice] = [
-    "LinearRegression",
-]
-
+list_model_choices: list[TypeModelChoice] = ["XGBoost", "Basic_NN"]
 dataset: TypeDataSet = "slrp-ev_new"
 
 search_space = {
@@ -24,7 +23,8 @@ search_space = {
     "hidden_size": [64, 128, 256],
     "num_hidden_layers": [2, 3, 4],
     "num_lstm_layers": [1, 2, 3],
-    "kernel_size": [3, 5, 7],
+    "kernel_size": [3, 5, 7],  # TCN
+    "max_depth": [4, 6, 8],  # XGBoost
     "epochs": [5, 10],
     "batch_size": [32, 64, 128],
     "batch_norm": [True, False],
@@ -52,7 +52,7 @@ search_space = {
 }
 
 
-number_of_models_per_config = 2
+number_of_models_per_config = 3
 n_random_samples = 100  # Number of random samples to evaluate
 parallelize = False
 
@@ -142,14 +142,14 @@ def get_random_all_configs_filtered(model_choice):
 
 
 if __name__ == "__main__":
-    # assert RANDOM_SEED is None, (
-    #     "Please set RANDOM_SEED to None before running "
-    #     "hyperparameter search to add randomness."
-    # )
-    # assert VERBOSE is False, (
-    #     "Please set VERBOSE to False before running "
-    #     "hyperparameter search to avoid printing."
-    # )
+    assert RANDOM_SEED is None, (
+        "Please set RANDOM_SEED to None before running "
+        "hyperparameter search to add randomness."
+    )
+    assert VERBOSE is False, (
+        "Please set VERBOSE to False before running "
+        "hyperparameter search to avoid printing."
+    )
     if parallelize:
         with ThreadPoolExecutor() as executor:
             futures = []
@@ -172,5 +172,7 @@ if __name__ == "__main__":
         for model_choice in list_model_choices:
             random_configs = get_random_all_configs_filtered(model_choice)
 
-            for model_parameters in tqdm(random_configs, desc=model_choice):
+            for model_parameters in tqdm(
+                random_configs, desc=f"Search optimal {model_choice}"
+            ):
                 evaluate_model(model_choice, model_parameters, dataset)

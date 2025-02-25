@@ -17,6 +17,7 @@ class XGBoost(RegressionBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         dropout: float = default_parameters.DROPOUT,
+        max_depth: int = 6,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
         scaling_mode: default_parameters.TypeScalingMode = default_parameters.SCALING_MODE,
         scaling_parameters: tuple | pd.DataFrame | None = None,
@@ -67,10 +68,16 @@ class XGBoost(RegressionBaseModel):
         self.alpha = alpha
         self.time_mode = time_mode
         self.dropout = dropout
+        self.max_depth = max_depth
 
     @property
     def model_str_name(self):
-        return "XGBoost" + f"_dropout{self.dropout}" + self.model_str_name_suffix
+        return (
+            "XGBoost"
+            + f"_dropout{self.dropout}"
+            + f"_max_depth{self.max_depth}"
+            + self.model_str_name_suffix
+        )
 
     def fit_model(
         self,
@@ -103,7 +110,7 @@ class XGBoost(RegressionBaseModel):
         xgb_params = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
-            # "max_depth": 6,
+            "max_depth": self.max_depth,  # default is 6
             "eta": 0.1,  # learning rate, default 0.3
             "subsample": 1
             - self.dropout,  # fraction of training set to randomly sample for =
