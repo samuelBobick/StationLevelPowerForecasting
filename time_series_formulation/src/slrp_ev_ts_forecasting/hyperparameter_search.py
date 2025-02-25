@@ -13,7 +13,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
-list_model_choices: list[TypeModelChoice] = ["XGBoost", "Basic_NN"]
+list_model_choices: list[TypeModelChoice] = ["XGBoost"]
 dataset: TypeDataSet = "slrp-ev_new"
 
 search_space = {
