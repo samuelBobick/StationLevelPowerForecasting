@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from constants.tariffs import MODIFIED_DC, TypeTariffName
-from cvxpy.atoms.affine.hstack import Hstack
 from forecast_simulator import ForecastSimulator
 from utils import (
     get_aggregate_reg_profiles,
@@ -39,7 +38,6 @@ class PeakForecastSimulator(ForecastSimulator):
             monte_carlo,
             verbose,
         )
-        
 
     def get_current_peak_sch(
         self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
@@ -65,7 +63,7 @@ class PeakForecastSimulator(ForecastSimulator):
             self.test_df, time, self.power_profiles, self.delta_t
         )
 
-        next_session_profile += aggregate_reg_profiles
+        next_session_profile = next_session_profile + aggregate_reg_profiles
 
         return (
             self.get_current_peak(
@@ -101,9 +99,9 @@ class PeakForecastSimulator(ForecastSimulator):
         u_sliced = u[96:]
         if u_sliced.shape[0] > 0:
             u_reshaped = cp.reshape(u_sliced, ((u_sliced.shape[0]) // 96, 96))
-            next_session_profile += cp.sum(u_reshaped, axis=0)
+            next_session_profile = next_session_profile + cp.sum(u_reshaped, axis=0)
 
-        next_session_profile += get_aggregate_reg_profiles(
+        next_session_profile = next_session_profile + get_aggregate_reg_profiles(
             self.test_df, time, self.power_profiles, self.delta_t
         )
 
