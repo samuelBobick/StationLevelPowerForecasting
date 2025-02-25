@@ -432,8 +432,8 @@ class TorchBaseModel(Base):
             y_pred_test_tensor = y_pred_test_tensor.squeeze(-1)
         y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
-        forecasts = y_pred_test_tensor.detach().numpy()
-        reals = y_test_tensor.cpu().numpy()
+        forecasts = y_pred_test_tensor.detach().cpu().numpy()
+        reals = y_test_tensor.detach().cpu().numpy()
         if len(y_dates.shape) == 1:
             y_dates = y_dates.to_frame()  # type: ignore
         y_dates = y_dates.iloc[:, self.first_prediction_index :]
