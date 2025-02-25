@@ -59,6 +59,6 @@ if __name__ == "__main__":
                                         "session_based_mode": session_based_mode,
                                         "peak_prediction": peak_prediction,
                                     },
-                                    save_results_filename="experiment_basic_benchmark_202502",
+                                    save_results_filename="test_hpc",
                                     dataset=dataset,
                                 )
