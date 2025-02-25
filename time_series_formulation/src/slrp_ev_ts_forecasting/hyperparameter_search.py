@@ -24,13 +24,13 @@ search_space = {
     "num_hidden_layers": [2, 3, 4],
     "num_lstm_layers": [1, 2, 3],
     "kernel_size": [3, 5, 7],  # TCN
-    "max_depth": [4, 6, 8],  # XGBoost
+    "max_depth": [4],  # [4, 6, 8],  # XGBoost
     "epochs": [5, 10],
     "batch_size": [32, 64, 128],
     "batch_norm": [True, False],
-    "optimize_lags": [None, "long_opt"],
+    "optimize_lags": ["long_opt"],  # [None, "long_opt"],
     "dropout": [0, 0.2, 0.4, 0.6],
-    "get_val_from_shuffled_train": [True, False],
+    "get_val_data_from_shuffled_train": [True, False],
     "scaling_mode": [
         "normalize",
         "standardize",
@@ -62,7 +62,7 @@ def evaluate_model(model_choice, model_parameters, dataset):
         run_one_model(
             model_choice=model_choice,
             model_parameters=model_parameters,
-            save_results_filename=f"hyperparameter_search_{model_choice}",
+            save_results_filename=f"hyperparameter_search_{model_choice}_dropout",
             dataset=dataset,
             verbose=False,
         )
