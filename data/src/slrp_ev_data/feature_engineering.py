@@ -99,12 +99,12 @@ def feature_engineering(
     # shift the workday column by 1, so that each timesteps knows the workday status of the next timestep
     # useful for regression models, when we make a prediction starting 00:00, knowing everything
     # up to 23:45 of the previous day
-    workday_next_timestep = data["workday_0"].shift(-1).ffill()
+    workday_next_timestep = data["workday_0"].shift(-1).ffill().astype("Int32")
     # we are going to have 1 workday column for all the days we have to predict + 1
     list_workday_column_names = get_workday_column_names(lookahead)
     for i, workday_column_name in enumerate(list_workday_column_names):
         data[workday_column_name] = (
-            workday_next_timestep.shift(-i * 96).ffill().astype(int)
+            workday_next_timestep.shift(-i * 96).ffill().astype("Int32")
         )
     # drop the few timesteps where we don't know the workday status of the next timestep
     rows_to_exclude = (len(list_workday_column_names) - 1) * 96 + 1
