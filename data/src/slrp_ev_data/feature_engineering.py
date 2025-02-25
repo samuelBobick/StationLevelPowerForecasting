@@ -112,7 +112,7 @@ def feature_engineering(
 
     # Add the 4 hour time window
     data["time_window"] = data["date"].dt.hour // 4
-    data["time_window"] = data["time_window"].shift(-1).ffill().astype(int)
+    data["time_window"] = data["time_window"].shift(-1).ffill().astype("Int32")
 
     # Convert the date to an int
     # we choose int instead of having a float, because the date magnitude (10**9)
