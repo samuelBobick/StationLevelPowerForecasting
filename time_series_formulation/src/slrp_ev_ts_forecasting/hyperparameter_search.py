@@ -16,14 +16,14 @@ from slrp_ev_ts_forecasting.run_one_model import run_one_model
 # ==================
 # Start of USER INPUTS
 
-list_model_choices: list[TypeModelChoice] = ["XGBoost"]
+list_model_choices: list[TypeModelChoice] = ["LSTM", "TCN", "Basic_NN"]
 dataset: TypeDataSet = "slrp-ev_new"
 
 search_space = {
-    "x_dim": [96 * 2],
+    "x_dim": [96, 96 * 2, 96 * 4],
     "lookahead": [96],
     # torch models
-    "hidden_size": [64, 128, 256],
+    "hidden_size": [16, 32, 64, 128],
     "num_hidden_layers": [2, 3, 4],
     "num_lstm_layers": [1, 2, 3],
     "kernel_size": [3, 5, 7],  # TCN
@@ -33,31 +33,35 @@ search_space = {
     "batch_norm": [True, False],
     "optimize_lags": [None],  # [None, "long_opt"],
     "dropout": [0, 0.2, 0.4, 0.6],
-    "get_val_data_from_shuffled_train": [False],
+    "get_val_data_from_shuffled_train": [True, False],
     "scaling_mode": [
         "normalize",
         "standardize",
         "rolling_standardize",
         "rolling_normalize",
     ],
+    # parameters for session based forecasting
     "session_based_mode": [False],
     "peak_prediction": [False],
     "add_number_of_sessions": [True, False],
     "add_fraction_of_regular_sessions": [True, False],
     "use_all_active_sessions": [True],
+    # parameters to generate random sessions
     "number_of_artificial_datasets": [0],
     "random_start_time": [True, False],
     "shuffle_power_profiles": [True, False],
     "random_power_profile_shapes": [True, False],
     "random_user_needs": [True, False],
     "random_choices": [True, False],
-    "add_number_of_evses_available": [True, False],
+    # parameter for extra features
+    "add_number_of_evses_available": [False],
 }
 
 
-number_of_models_per_config = 3
+number_of_models_per_config = 4
 n_random_samples = 100  # Number of random samples to evaluate
 parallelize = False
+filename_suffix = "initial_models"
 
 # End of USER INPUTS
 # ==================
@@ -68,7 +72,7 @@ def evaluate_model(model_choice, model_parameters, dataset):
         run_one_model(
             model_choice=model_choice,
             model_parameters=model_parameters,
-            save_results_filename=f"hyperparameter_search_{model_choice}_dropout",
+            save_results_filename=f"hyperparameter_search_{model_choice}_{filename_suffix}",
             dataset=dataset,
             verbose=False,
         )
