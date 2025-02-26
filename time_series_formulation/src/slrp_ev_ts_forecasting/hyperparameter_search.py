@@ -99,7 +99,7 @@ def filter_all_configs(all_configs, search_space):
                 config_index_to_remove.append(i)
         if config["shuffle_power_profiles"] and config["random_power_profile_shapes"]:
             config_index_to_remove.append(i)
-        if not config["session_based_mode"]:
+        if ("session_based_mode" in config) and (not config["session_based_mode"]):
             session_based_config = {
                 "peak_prediction": config["peak_prediction"],
                 "add_number_of_sessions": config["add_number_of_sessions"],
