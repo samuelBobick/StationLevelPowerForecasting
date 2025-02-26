@@ -764,6 +764,7 @@ class Base:
             flat_labels = (
                 merged_inputs_dates_sessions[label_columns].max(axis=1).to_frame()
             )
+            flat_labels.columns = ["peak_power"]
 
         else:
             raise ValueError("mode should be 'peak_of_day' or 'peak_next_12h'")

@@ -30,12 +30,12 @@ list_model_choices: list[TypeModelChoice] = ["LinearRegression"]
 
 number_of_models_per_config = 1
 dataset: TypeDataSet = "slrp-ev_new"
-list_xdim = [96 * 2]
-session_based_mode = False
-peak_prediction = False
+list_xdim = [96]
+session_based_mode = True
+peak_prediction = True
 list_optimize_lags = [None]  # ["short_opt", "long_opt"]
 list_scaling_mode: list[TypeScalingMode] = [
-    "rolling_standardize",
+    "normalize",
 ]
 
 if __name__ == "__main__":

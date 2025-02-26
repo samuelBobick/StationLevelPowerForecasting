@@ -130,6 +130,9 @@ class LinearModel(RegressionBaseModel):
                 n_alphas=50,
                 l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95],
             )
+            # for peak_prediction, we only predict a single value, so to avoid
+            # a warning, we convert the y_input to a 1D array
+            y_input = y_input["peak_power"]
         else:
             # for multi-output modes, we cannot have as many alphas
             # in the CV search
@@ -160,6 +163,10 @@ class LinearModel(RegressionBaseModel):
             "feature_names": self.feature_names,
             "label_names": self.label_names,
         }
+
+        # make sure that the intercept is a list (even if it is a single value, as for peak prediction)
+        if isinstance(params["intercept"], float):
+            params["intercept"] = [params["intercept"]]
 
         # Save to JSON file
         with open(saved_model_filename, "w") as json_file:

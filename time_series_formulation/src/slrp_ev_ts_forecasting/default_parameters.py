@@ -86,4 +86,4 @@ else:
     DEVICE = "cpu"
 
 RANDOM_SEED: int | None = None  # 42  # int(pd.Timestamp.now().timestamp())
-VERBOSE = False
+VERBOSE = True
