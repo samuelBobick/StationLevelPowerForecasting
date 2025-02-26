@@ -13,6 +13,9 @@ from slrp_ev_ts_forecasting.default_parameters import (
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
+# ==================
+# Start of USER INPUTS
+
 list_model_choices: list[TypeModelChoice] = ["XGBoost"]
 dataset: TypeDataSet = "slrp-ev_new"
 
@@ -28,9 +31,9 @@ search_space = {
     "epochs": [5, 10],
     "batch_size": [32, 64, 128],
     "batch_norm": [True, False],
-    "optimize_lags": ["long_opt"],  # [None, "long_opt"],
+    "optimize_lags": [None],  # [None, "long_opt"],
     "dropout": [0, 0.2, 0.4, 0.6],
-    "get_val_data_from_shuffled_train": [True, False],
+    "get_val_data_from_shuffled_train": [False],
     "scaling_mode": [
         "normalize",
         "standardize",
@@ -55,6 +58,9 @@ search_space = {
 number_of_models_per_config = 3
 n_random_samples = 100  # Number of random samples to evaluate
 parallelize = False
+
+# End of USER INPUTS
+# ==================
 
 
 def evaluate_model(model_choice, model_parameters, dataset):

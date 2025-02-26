@@ -136,6 +136,7 @@ class XGBoost(RegressionBaseModel):
             # each tree (has a similar effect as dropout)
             "colsample_bytree": 1 - self.dropout,  # fraction of features to consider
             "device": default_parameters.DEVICE,
+            "max_bin": 128,  # default is 256
             "seed": int(time.time()),  # add random seed, otherwise default is 0
         }
         num_round = 100
