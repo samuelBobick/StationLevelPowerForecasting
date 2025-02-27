@@ -458,6 +458,8 @@ class BaselineSimulator:
         # the following line modifies the active_sessions list in place
         active_sessions.append(new_session)
 
+        return active_sessions
+
     def simulate(self) -> tuple[dict, dict, dict, dict]:
         """
         Replay self.test_df and simulate the real-time optimization and control decisions
@@ -474,7 +476,7 @@ class BaselineSimulator:
             pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
         ):
             # Update the aggregate power profile and the running peak
-            self.update_aggregate_power_profile(
+            active_sessions = self.update_aggregate_power_profile(
                 previousStartChargeTime,
                 startChargeTime,
                 active_sessions,
