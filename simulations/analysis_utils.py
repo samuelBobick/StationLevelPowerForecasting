@@ -1,8 +1,9 @@
 import os
 from typing import Literal, Optional
 
+import numpy as np
 import pandas as pd
-import plotly.express as px
+import plotly
 import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
@@ -236,6 +237,7 @@ def visualize_simulation(
     Args:
         aggregate_power_profile: dataframe with columns "date" and "power"
     """
+    # turn dictionaries into dataframe for easier manipulation
     df_user_computed_data_for_visualization = pd.DataFrame(
         user_computed_data_for_visualization
     ).T
@@ -256,34 +258,55 @@ def visualize_simulation(
             [user_power_profiles_dfs, power_profiles_df]
         )
 
-    fig = px.area(
-        user_power_profiles_dfs,
-        x="date",
-        y="power",
-        color="user_id",
-        title="Simulated Individual Power Profiles",
-        labels={"power": "Power (kWh)"},
-    )
+    fig = go.Figure()
 
+    # Create a color map for user IDs
+    user_ids = user_power_profiles_dfs["user_id"].unique()
+    color_scale = plotly.colors.qualitative.Pastel1
+    color_scale_darker = (
+        plotly.colors.qualitative.Set1
+    )  # same colors as pastel palette but darker
+    length_color_scale = len(color_scale)
+    colors = {
+        user_id: color_scale[i % length_color_scale]
+        for i, user_id in enumerate(user_ids)
+    }
+
+    # Create stacked area plots for each user
+    for i, (user_id, user_power_profile_df) in enumerate(
+        user_power_profiles_dfs.groupby("user_id")
+    ):
+        fig.add_trace(
+            go.Scatter(
+                x=user_power_profile_df["date"],
+                y=user_power_profile_df["power"],
+                mode="none",
+                name=f"User {user_id}",
+                line_shape="hv",
+                # this parameter will make the line go horizontally first and then vertically (steps)
+                stackgroup="one",
+                fillcolor=colors[user_id],
+            )
+        )
+
+    # Aggregate power profile
     fig.add_trace(
         go.Scatter(
             x=aggregate_power_profile["date"],
             y=aggregate_power_profile["power"],
             mode="lines",
             name="Power Profile",
-        )
-    )
-
-    # Add second y-axis for prices
-    fig.update_layout(
-        yaxis2=dict(
-            title="Prices (cents/kWh)",
-            overlaying="y",
-            side="right",
+            line=dict(color=color_scale_darker[1], shape="hv"),  # blue
         )
     )
 
     # Add price data to the second y-axis
+    fig.update_layout(
+        yaxis2=dict(
+            title="Prices (cents/kWh)", overlaying="y", side="right", range=[0, None]
+        )
+    )
+
     fig.add_trace(
         go.Scatter(
             x=df_user_computed_data_for_visualization["Start charge time"],
@@ -291,7 +314,7 @@ def visualize_simulation(
             mode="lines",
             name="Scheduled Price",
             yaxis="y2",
-            line=dict(dash="dash"),
+            line=dict(dash="dash", color=color_scale_darker[2]),  # green
         ),
     )
 
@@ -302,7 +325,7 @@ def visualize_simulation(
             mode="lines",
             name="Regular Price",
             yaxis="y2",
-            line=dict(dash="dash"),
+            line=dict(dash="dash", color=color_scale_darker[0]),  # red
         )
     )
 
@@ -313,19 +336,31 @@ def visualize_simulation(
             y=[0] * len(df_user_computed_data_for_visualization),
             mode="markers",
             marker=dict(
-                size=5,
+                size=10,
+                color=[
+                    colors[user_id]
+                    for user_id in df_user_computed_data_for_visualization.index
+                ],
             ),
             showlegend=False,
-            hovertemplate=("{text}"),
-            text=[
-                f"User ID: %{index}<br>"
-                f"Start Charge Time: %{row["Start charge time"]}<br>"
-                f"Energy needed: %{row["Energy needed"]}<br>"
-                f"Duration (hours): %{row["Duration (hours)"]}"
-                for index, row in df_user_computed_data_for_visualization.iterrows()
-            ],
+            hovertemplate=(
+                "User ID: %{customdata[0]}<br>"
+                "Start Charge Time: %{x}<br>"
+                "Energy needed: %{customdata[1]}<br>"
+                "Duration (hours): %{customdata[2]}<br>"
+                "Choice: %{customdata[3]}<extra></extra>"
+            ),
+            customdata=np.array(
+                [
+                    df_user_computed_data_for_visualization.index,
+                    df_user_computed_data_for_visualization["Energy needed"],
+                    df_user_computed_data_for_visualization["Duration (hours)"],
+                    df_user_computed_data_for_visualization["Choice"],
+                ]
+            ).T,
         )
     )
+
     fig.update_layout(
         title=f"Simulated Aggregate Power Profile: {min(aggregate_power_profile['date'].dt.date)} to {max(aggregate_power_profile['date'].dt.date)}",
         xaxis_title="Date",
