@@ -472,6 +472,8 @@ class BaselineSimulator:
                 startChargeTime,
                 active_sessions,
             )
+            timeseries_forecast = self.get_timeseries_forecast(active_sessions[-1], len(active_sessions), startChargeTime)
+
             running_peak = self.aggregate_power_profile["power"].max()
 
             grid_search_results, sub_df = self.grid_search(
@@ -783,3 +785,8 @@ class BaselineSimulator:
     def get_timeseries(self, u, time, verbose):
         # This function is not implemented in the baseline simulator
         pass
+
+    def get_timeseries_forecast(self, current_row, num_active_sessions, time):
+        # This function is not implemented in the baseline simulator
+        pass
+    

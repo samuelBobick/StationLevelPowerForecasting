@@ -84,7 +84,7 @@ class PeakForecastSimulator(ForecastSimulator):
             num_reg_user (int): number of regular users
             num_sch_user (int): number of scheduled users
             u (cp.Variable): scheduled power profile
-            time (pd.datetime): timf of optimization
+            time (pd.datetime): time of optimization
 
         Returns:
             cp.Expression: current scheduled peak
@@ -95,7 +95,7 @@ class PeakForecastSimulator(ForecastSimulator):
         )  # how many time steps would it take the user to charge if they chose regular?
         next_session_profile = np.array([self.power_rate] * N_reg + [0] * (96 - N_reg))
 
-        u_sliced = u[96:]
+        u_sliced = u[self.var_dim_constant:]
         if u_sliced.shape[0] > 0:
             u_reshaped = cp.reshape(u_sliced, ((u_sliced.shape[0]) // 96, 96))
             next_session_profile = next_session_profile + cp.sum(u_reshaped, axis=0)
@@ -151,22 +151,28 @@ class PeakForecastSimulator(ForecastSimulator):
             ]
         )
 
-        workday = int(time.dayofweek < 5)
-        if time.date() in self.holidays.date:
-            workday = 0
+        time_tomorrow = time + pd.Timedelta(hours=24)
+        tomorrow_workday = int(time_tomorrow.dayofweek < 5)
+        if time_tomorrow.date() in self.holidays.date:
+            tomorrow_workday = 0
+
+        time_in_15_min = time + pd.Timedelta(minutes=15)
+        time_in_15_min_workday = int(time_in_15_min.dayofweek < 5)
+        if time_in_15_min.date() in self.holidays.date:
+            time_in_15_min_workday = 0
 
         features = cp.hstack(
             [
                 historical_power_profile * 1000,
-                workday,
-                8,  # number EVSEs available (always 8 in SLRP-EV) TODO standardize?
+                tomorrow_workday,
+                8, # TODO normalize
                 time_features,
                 aggregate_future_profile * 1000,
                 num_active_sessions,
             ]
         )
 
-        prediction = self.make_prediction(features, workday)
+        prediction = self.make_prediction(features, time_in_15_min_workday)
 
         if verbose:
             self.visualize_samples(features.value, prediction.value)  # type: ignore
