@@ -40,6 +40,7 @@ class BaselineSimulator:
         Initialize the BaselineSimulator with default or user-defined parameters.
 
         Args:
+            test_df
             var_dim_constant: 24-hour lookahead. Default is 96 (96 timesteps in a day with 15min data).
             delta_t: Size, in hour, of a timestep (e.g. 15min interval are 0.25h intervals). Default is 0.25.
             power_rate: Maximum power in kW of the chargers. Default is 6.6 kW.
@@ -245,7 +246,12 @@ class BaselineSimulator:
         )
 
     def get_current_peak_sch(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None, last_row=None
+        self,
+        num_reg_user: int,
+        num_sch_user: int,
+        u: cp.Variable,
+        time=None,
+        last_row=None,
     ) -> cp.Expression:
         """Helper function to get the peak, accounting for the optimized scheduled power profiles
 
@@ -445,22 +451,25 @@ class BaselineSimulator:
                     a for a in active_sessions if a["dcosId"] != row["dcosId"]
                 ]
 
-        new_session = self.test_df[
+        # get the row of the new (next) session
+        new_session: pd.Series = self.test_df[
             pd.to_datetime(self.test_df["startChargeTime"]) == startChargeTime
         ].iloc[0]
+        # the following line modifies the active_sessions list in place
         active_sessions.append(new_session)
 
         return active_sessions
 
-    def simulate(self) -> tuple[dict, dict, dict]:
+    def simulate(self) -> tuple[dict, dict, dict, dict]:
         """
         Replay self.test_df and simulate the real-time optimization and control decisions
         """
         self.power_profiles = {c: np.array([]) for c in self.test_df["dcosId"]}
-        prices = {c: () for c in self.test_df["dcosId"]}
-        hourly_prices = {c: () for c in self.test_df["dcosId"]}
+        prices = {c: (None, None) for c in self.test_df["dcosId"]}
+        hourly_prices = {c: (None, None) for c in self.test_df["dcosId"]}
+        user_computed_data_for_visualization = {c: {} for c in self.test_df["dcosId"]}
         # active_sessions = [{dcosId : start_time},......] TODO
-        active_sessions = []
+        active_sessions: list[pd.Series] = []
 
         previousStartChargeTime = None
         for startChargeTime in tqdm(
@@ -480,6 +489,7 @@ class BaselineSimulator:
                 startChargeTime, running_peak, prices
             )
 
+            # Retrieve info for the optimal prices
             optimal_prices = min(
                 grid_search_results, key=lambda k: grid_search_results[k]["J"]
             )
@@ -494,6 +504,7 @@ class BaselineSimulator:
                 "current_peak_reg"
             ].item()
 
+            # update the power profiles of other active scheduled users
             num_sch_user = 0
             for index, row in (
                 sub_df.iloc[:-1].loc[sub_df["choice"] == "SCHEDULED"].iterrows()
@@ -511,6 +522,7 @@ class BaselineSimulator:
                     + N_remain
                 ] = u[adj_constant : (adj_constant + N_remain)].flatten()
 
+            # Save hourly prices and choice of the new user
             last_row = sub_df.iloc[-1]
             prices[last_row["dcosId"]] = optimal_prices
 
@@ -528,6 +540,7 @@ class BaselineSimulator:
             )
             hourly_prices[last_row["dcosId"]] = hourly_optimal_prices
 
+            # Simulate next user's choice and update test_df if needed
             zk = [optimal_prices[0], optimal_prices[1], 1, 1]
             vk = get_dcm_v(zk, self.theta)
             if self.monte_carlo:
@@ -541,7 +554,7 @@ class BaselineSimulator:
             else:
                 choice = last_row["choice"]
 
-            previous_running_peak = running_peak
+            # Save the power profile of the new user
             if choice == "SCHEDULED":
                 self.power_profiles[last_row["dcosId"]] = u[
                     : self.var_dim_constant
@@ -566,6 +579,15 @@ class BaselineSimulator:
                     [self.power_rate] * N_reg
                 )
 
+            # Save other user data for visualization
+            user_computed_data_for_visualization[last_row["dcosId"]] = {
+                "Start charge time": startChargeTime,
+                "Choice": choice,
+                "Energy needed": e_need,
+                "Duration (hours)": last_row["DurationHrs"],
+            }
+
+            previous_running_peak = running_peak
             previousStartChargeTime = startChargeTime
 
             if self.verbose:
@@ -672,7 +694,12 @@ class BaselineSimulator:
                 # print('TOU slice', self.TOU[TOU_start_idx : TOU_end_idx])
                 # print('')
 
-        return self.power_profiles, prices, hourly_prices
+        return (
+            self.power_profiles,
+            prices,
+            hourly_prices,
+            user_computed_data_for_visualization,
+        )
 
     def initialize_problem(self, z, v, sub_df, current_time, running_peak, prices):
         """Helper function to return the cvxpy variables to solve the optimization problem.
@@ -782,7 +809,7 @@ class BaselineSimulator:
             constraints,
         )
 
-    def get_timeseries(self, u, time, verbose):
+    def get_timeseries(self, row, num_active_sessions, time, verbose=False):
         # This function is not implemented in the baseline simulator
         pass
 
