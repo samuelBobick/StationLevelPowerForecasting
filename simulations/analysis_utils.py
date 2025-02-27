@@ -192,7 +192,7 @@ def generate_session_results(
     if os.path.exists(summary_file_name):
         summary_df = pd.read_csv(summary_file_name)
         summary_df = pd.concat(
-            [summary_df, pd.DataFrame(row_data)],
+            [summary_df, pd.DataFrame([row_data])],
             ignore_index=True,
         )
     else:
