@@ -296,7 +296,7 @@ def round_up_to_nearest_timestep(ts, delta_t):
 
 def get_sub_df(test_df, current_time):
     """
-    Given current time and the DataFrame to simulate on, return the number of rows of all active sessions.
+    Given current time and the DataFrame to simulate on, return a sub DataFrame with only the active sessions
     """
     sub_df = test_df[pd.to_datetime(test_df["startChargeTime"]) <= current_time]
     end_charge_times = (
@@ -325,10 +325,10 @@ def get_aggregate_reg_profiles(test_df, current_time, power_profiles, delta_t):
 
     return output
 
+
 def get_next_reg_profile(row, delta_t, flexibility_constant, power_rate):
     e_need = get_total_e_need(row, delta_t, flexibility_constant)
     N_reg = int(
         e_need // power_rate
     )  # how many time steps would it take the user to charge if they chose regular?
     return np.array([power_rate] * N_reg + [0] * (96 - N_reg))
-    
