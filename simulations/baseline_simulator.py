@@ -482,7 +482,7 @@ class BaselineSimulator:
                 startChargeTime,
                 active_sessions,
             )
-            # only used for timeseries_forecast
+            # only used for timeseries_forecast TODO should we use self.power_profiles instead, using Thibaud's new utils function.
             timeseries_forecast = self.get_timeseries_forecast(active_sessions[-1], u, previousStartChargeTime, len(active_sessions), startChargeTime)
 
             running_peak = self.aggregate_power_profile["power"].max()

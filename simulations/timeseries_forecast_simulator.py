@@ -191,7 +191,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         if (
             u is not None
         ):  # on the first iteration, u will be None - there is no prior session
-            u_sliced = u[self.var_dim_constant :]
+            u_sliced = u[self.var_dim_constant :] # TODO if scheduled, do not slice.
             if u_sliced.shape[0] > 0:
                 u_reshaped = np.reshape(u_sliced, (u_sliced.shape[0] // 96, 96))
                 u_reshaped = np.sum(u_reshaped, axis=0)
