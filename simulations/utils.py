@@ -6,24 +6,37 @@ import numpy as np
 import pandas as pd
 
 
+def convert_time_to_index(timestep, delta_t: float):
+    """
+    Helper function to convert a timestep to an index in the power profile
+
+        timestep (pd.Timestamp | pd.Timedelta): timestep or timedelta to convert
+        delta_t: timestep size, in hours. E.g. 0.25 for 15-minute timesteps
+    """
+    try:
+        return int(np.ceil((timestep.hour + timestep.minute / 60) / delta_t))
+    except AttributeError:
+        return int(np.ceil((timestep.total_seconds() / 3600) / delta_t))
+
+
 def get_timestep_info(row, current_time, delta_t):
     """
-    Helper function to convert information from a row in sessions_df to array indices
+    Helper function to convert information from a row in sessions_df to array indices.
+    Index 0 means midnight, index 1 means 15 minutes past midnight, etc.
 
         row: row from sessions_df
         current_time: time of optimization as a pd.datetime object
         delta_t: timestep size, in hours
     """
-    TOU_current_idx = int(
-        np.ceil((current_time.hour + current_time.minute / 60) / delta_t)
+    TOU_current_idx = convert_time_to_index(
+        current_time, delta_t
     )  # current time, beginning of optimization horizon
     start_time = pd.to_datetime(row["startChargeTime"])
-    TOU_start_idx = int(np.ceil((start_time.hour + start_time.minute / 60) / delta_t))
+    TOU_start_idx = convert_time_to_index(start_time, delta_t)
     # TODO: change np.floor to np.ceil below here, because ran into an issue
     # if N_remain is 0
-    TOU_end_idx = int(
-        np.ceil(TOU_start_idx + row["DurationHrs"] / delta_t)
-    )  # end time index
+    TOU_end_idx = convert_time_to_index(get_end_charge_time_row(row), delta_t)
+    # end time index
     N_remain = TOU_end_idx - TOU_current_idx  # number of timesteps remaining
     return TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain
 
@@ -31,6 +44,8 @@ def get_timestep_info(row, current_time, delta_t):
 def get_new_sch_obj(row, z, u, delta_t, TOU):
     """
     Helper function to generate the scheduled objective for the newest EV arrival if they choose scheduled.
+    This objective is the cost of charging (TOU cost - charging revenue).
+    If it is negative, the station operator is making money.
 
         row: row from sessions_df
         z: tuple of (p_sch, p_reg)
@@ -41,14 +56,22 @@ def get_new_sch_obj(row, z, u, delta_t, TOU):
     TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
         row, pd.to_datetime(row["startChargeTime"]), delta_t
     )
-    power_profile = u[:N_remain]
-    power_profile = cp.reshape(power_profile, (power_profile.shape[0],)).T
-    return delta_t * power_profile @ (TOU[TOU_start_idx:TOU_end_idx] - z[0]).reshape(-1)
+    next_session_profile = u[:N_remain]
+    next_session_profile = cp.reshape(
+        next_session_profile, (next_session_profile.shape[0],)
+    ).T
+    return (
+        delta_t
+        * next_session_profile
+        @ (TOU[TOU_start_idx:TOU_end_idx] - z[0]).reshape(-1)
+    )
 
 
 def get_new_reg_obj(row, z, delta_t, TOU, power_rate, flexibility_constant):
     """
     Helper function to generate the objective for the newest EV arrival if they choose regular.
+    This objective is the cost of charging (TOU cost - charging revenue).
+    If it is negative, the station operator is making money.
 
         row: row from sessions_df
         z: tuple of (p_sch, p_reg)
@@ -81,9 +104,11 @@ def get_power_profile_idx(row, current_time, delta_t):
         delta_t: timestep size, in hours
     """
     start_time = pd.to_datetime(row["startChargeTime"])
-    current_time = (current_time + pd.Timedelta(minutes=15)).floor("15min")
-    power_profile_current_idx = int(
-        np.ceil((current_time - start_time).total_seconds() / 3600 / delta_t)
+    # TODO @Sam: I think we don't need this. It makes power_profile_current_idx equal to
+    # 1 even at the first timestep
+    # current_time = (current_time + pd.Timedelta(minutes=15)).floor("15min")
+    power_profile_current_idx = convert_time_to_index(
+        current_time - start_time, delta_t
     )
     return power_profile_current_idx
 
@@ -103,10 +128,11 @@ def get_remaining_e_need(
     """
     e_need = get_total_e_need(row, delta_t, flexibility_constant)
 
-    power_profile_current_idx = get_power_profile_idx(row, current_time, delta_t)
     TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
         row, current_time, delta_t
     )
+    # power_profile_current_idx = get_power_profile_idx(row, current_time, delta_t)
+    power_profile_current_idx = TOU_current_idx - TOU_start_idx
 
     if len(power_profiles[row["dcosId"]]) > 0:
         e_need -= sum(
@@ -156,6 +182,7 @@ def aggregate_power_profiles(test_df, power_profiles, delta_t):
         start_of_month = start_time.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
+        # TODO: convert_timestep_to_index here
         i = int(np.ceil((start_time - start_of_month).total_seconds() / (15 * 60)))
         agg_power_profile[i : i + len(power_profile)] += power_profile
 
@@ -206,18 +233,12 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
     """
 
     filtered_power_profiles = {k: v for k, v in power_profiles.items() if len(v) > 0}
-    agg_power_profile = np.zeros(int(32 * 24 / delta_t))
 
     df = pd.DataFrame()
     for dcosId, power_profile in filtered_power_profiles.items():
         matching_row = test_df.loc[test_df["dcosId"] == dcosId]
         row = matching_row.squeeze()
         start_time = pd.to_datetime(row["startChargeTime"])
-        start_of_month = start_time.replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
-        i = int(np.ceil((start_time - start_of_month).total_seconds() / (15 * 60)))
-        agg_power_profile[i : i + len(power_profile)] += power_profile
 
         z_sch = prices[dcosId][0]
         z_reg = prices[dcosId][1]
@@ -283,15 +304,7 @@ def round_up_to_nearest_timestep(ts, delta_t):
     """
     Round pd.datetime object forward in time to the next 15-minute interval
     """
-    round_interval = 60 * delta_t
-    # Find the number of seconds since the last 15-minute interval
-    seconds_to_next = (round_interval * 60) - (
-        ts.minute % round_interval * 60 + ts.second
-    )
-
-    # Add the remaining seconds to the original timestamp
-    rounded_ts = ts + pd.Timedelta(seconds=seconds_to_next)
-    return rounded_ts.replace(second=0, microsecond=0)
+    return ts.ceil(f"{int(delta_t * 60)}min")
 
 
 def get_sub_df(test_df, current_time):
@@ -299,29 +312,49 @@ def get_sub_df(test_df, current_time):
     Given current time and the DataFrame to simulate on, return a sub DataFrame with only the active sessions
     """
     sub_df = test_df[pd.to_datetime(test_df["startChargeTime"]) <= current_time]
-    end_charge_times = (
-        pd.to_datetime(sub_df["startChargeTime"])
-        + pd.to_timedelta(sub_df["DurationHrs"], unit="h")
-        - pd.Timedelta(minutes=15)
-    ).dt.floor("15min")
+    end_charge_times = get_end_charge_times(sub_df)
     sub_df = sub_df[end_charge_times >= current_time]
 
     return sub_df
 
 
-def get_aggregate_reg_profiles(test_df, current_time, power_profiles, delta_t):
+def get_end_charge_time_row(row: pd.Series) -> pd.Timestamp:
+    return (
+        pd.to_datetime(row["startChargeTime"])
+        + pd.to_timedelta(row["DurationHrs"], unit="h")
+        # - pd.Timedelta(
+        #     minutes=15
+        # )  # TODO: @Sam, wy do we subtract 15 minutes here - since we are also rounding down?
+    ).floor("15min")
+
+
+def get_end_charge_times(df: pd.DataFrame) -> pd.Series:
+    """
+    Given a DataFrame, return the end charge times of each session
+
+    Args:
+        df: Must have the columns "startChargeTime" and "DurationHrs"
+
+    """
+    return df.apply(get_end_charge_time_row, axis=1)
+
+
+def get_aggregate_active_reg_future_profiles(
+    test_df, current_time, power_profiles, delta_t
+):
     sub_df = get_sub_df(test_df, current_time)[:-1]
     output = np.zeros(96)
 
     for index, row in sub_df.iterrows():
-        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
-            row, pd.to_datetime(row["startChargeTime"]), delta_t
-        )
+        if row["choice"] == "REGULAR":
+            TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+                row, current_time, delta_t
+            )
 
-        p = power_profiles[row["dcosId"]][TOU_current_idx:]
-        output += np.pad(
-            p, (0, max(0, 96 - len(p))), mode="constant", constant_values=0
-        )
+            p = power_profiles[row["dcosId"]][(TOU_current_idx - TOU_start_idx) :]
+            output += np.pad(
+                p, (0, max(0, 96 - len(p))), mode="constant", constant_values=0
+            )
 
     return output
 

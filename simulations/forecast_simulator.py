@@ -3,15 +3,16 @@ from typing import Optional
 
 import cvxpy as cp
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from cvxpy.atoms.affine.hstack import Hstack
 from slrp_ev_data.normalization_and_standardization import (
-    SINGLE_EVSE_NORMALIZATION_PARAM,
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
+from utils import round_up_to_nearest_timestep
 
 
 class ForecastSimulator(BaselineSimulator):
@@ -61,21 +62,25 @@ class ForecastSimulator(BaselineSimulator):
     def get_normalization_parameters(
         self, feature_names: list[str], label_names: list[str]
     ):
+        # TODO: later we might need to put the time values between 0 and 1 (currently between -1 and 1)
         norm_params_min, norm_params_max = retrieve_train_min_and_max("slrp-ev_new")
-        norm_power_min = norm_params_min["power"]
-        norm_power_max = norm_params_max["power"]
-        norm_u_min = 0
-        norm_u_max = SINGLE_EVSE_NORMALIZATION_PARAM
 
         features_norm_parameters_min = []
         features_norm_parameters_max = []
         for name in feature_names:
             if name.startswith("power"):
-                features_norm_parameters_min.append(norm_power_min)
-                features_norm_parameters_max.append(norm_power_max)
+                features_norm_parameters_min.append(norm_params_min["power"])
+                features_norm_parameters_max.append(norm_params_max["power"])
+            elif name == "number_of_evses_available":
+                features_norm_parameters_min.append(
+                    norm_params_min["number_of_evses_available"]
+                )
+                features_norm_parameters_max.append(
+                    norm_params_max["number_of_evses_available"]
+                )
             elif name.startswith("u"):
-                features_norm_parameters_min.append(norm_u_min)
-                features_norm_parameters_max.append(norm_u_max)
+                features_norm_parameters_min.append(norm_params_min["power"])
+                features_norm_parameters_max.append(norm_params_max["power"])
             else:
                 features_norm_parameters_min.append(0)
                 features_norm_parameters_max.append(1)
@@ -86,11 +91,11 @@ class ForecastSimulator(BaselineSimulator):
         labels_norm_parameters_max = []
         for name in label_names:
             if name.startswith("power") or name == "peak_power":
-                labels_norm_parameters_min.append(norm_power_min)
-                labels_norm_parameters_max.append(norm_power_max)
+                labels_norm_parameters_min.append(norm_params_min["power"])
+                labels_norm_parameters_max.append(norm_params_max["power"])
             elif name.startswith("u"):
-                labels_norm_parameters_min.append(norm_u_min)
-                labels_norm_parameters_max.append(norm_u_max)
+                labels_norm_parameters_min.append(norm_params_min["power"])
+                labels_norm_parameters_max.append(norm_params_max["power"])
             else:
                 labels_norm_parameters_min.append(0)
                 labels_norm_parameters_max.append(1)
@@ -131,22 +136,33 @@ class ForecastSimulator(BaselineSimulator):
         return reversed_prediction
 
     def visualize_samples(
-        self, sample: np.ndarray, prediction: Optional[np.ndarray] = None
+        self,
+        time: pd.Timestamp,
+        sample: np.ndarray,
+        prediction: Optional[np.ndarray] = None,
     ):
         power_indexes = []
         u_indexes = []
+        other_indexes = []
         for i, name in enumerate(self.features_name):
             if name.startswith("power"):
                 power_indexes.append(i)
             elif name.startswith("u"):
                 u_indexes.append(i)
+            else:
+                other_indexes.append(i)
 
         fig = go.Figure()
 
         power = sample[power_indexes]
         u = sample[u_indexes]
-        time_power = np.arange(len(power)) * self.delta_t
-        time_u = time_power + 24
+        time = round_up_to_nearest_timestep(time, self.delta_t)
+        time_power = pd.date_range(
+            end=time - pd.Timedelta(minutes=15),
+            periods=len(power),
+            freq=f"{self.delta_t}H",
+        )
+        time_u = pd.date_range(start=time, periods=len(u), freq=f"{self.delta_t}H")
         fig.add_trace(
             go.Scatter(
                 x=time_power,
@@ -158,9 +174,9 @@ class ForecastSimulator(BaselineSimulator):
         fig.add_trace(
             go.Scatter(
                 x=time_u,
-                y=u + power[-1],
+                y=u,
                 mode="lines",
-                name="Next User Profile",
+                name="Active Sessions Current Profile (u)",
                 line=dict(dash="dash"),
             )
         )
@@ -173,9 +189,23 @@ class ForecastSimulator(BaselineSimulator):
                     name="Predicted Peak",
                 )
             )
+
+        other_information = ""
+        for i in other_indexes:
+            other_information += f"{self.features_name[i]}: {sample[i]}<br>"
+
+        fig.add_annotation(
+            x=0.5,
+            y=1.1,
+            xref="paper",
+            yref="paper",
+            text=other_information,
+            showarrow=False,
+        )
+
         fig.update_layout(
             title="Sample Visualization",
             xaxis_title="Time",
-            yaxis_title="Power",
+            yaxis_title="Power (W)",
         )
         fig.show()

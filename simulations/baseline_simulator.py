@@ -10,6 +10,7 @@ from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
 from slrp_ev_data.data_utils import USAcademicHolidayCalendar
 from tqdm.auto import tqdm
 from utils import (
+    get_end_charge_time_row,
     get_new_reg_obj,
     get_new_sch_obj,
     get_remaining_e_need,
@@ -170,15 +171,14 @@ class BaselineSimulator:
                 )
             else:  # Assumes we know exactly how long they will stay
                 price = prices[row["dcosId"]][1]
-                if (
-                    len(self.power_profiles[row["dcosId"]]) > 0
-                    and TOU_end_idx - TOU_current_idx > 0
-                ):
+                if len(self.power_profiles[row["dcosId"]]) > 0 and N_remain > 0:
                     existing_reg_obj += (
                         self.delta_t
                         * self.power_profiles[row["dcosId"]][
-                            -(TOU_end_idx - TOU_current_idx) :
-                        ]
+                            (TOU_current_idx - TOU_start_idx) : (
+                                TOU_end_idx - TOU_start_idx
+                            )
+                        ]  # TODO: check if this is correct
                         @ (self.TOU[TOU_current_idx:TOU_end_idx] - price)
                     )
                 else:
@@ -202,7 +202,7 @@ class BaselineSimulator:
         new_leave_obj = 0
 
         current_peak_sch = self.get_current_peak_sch(
-            num_reg_user, num_sch_user, u, current_time, last_row
+            num_reg_user, num_sch_user, u, current_time
         )
         current_peak_reg = self.get_current_peak_reg(
             num_reg_user, num_sch_user, u, current_time, last_row
@@ -251,7 +251,7 @@ class BaselineSimulator:
         num_sch_user: int,
         u: cp.Variable,
         time=None,
-        last_row=None,
+        verbose=False,
     ) -> cp.Expression:
         """Helper function to get the peak, accounting for the optimized scheduled power profiles
 
@@ -344,7 +344,7 @@ class BaselineSimulator:
             raise Exception(f"Optimization failed with status {prob.status}")
 
         return (
-            u.value,
+            u,
             e_delivered.value,
             current_peak_sch.value,
             current_peak_reg.value,
@@ -422,11 +422,7 @@ class BaselineSimulator:
                 }
             )
 
-            end_charge_time = (
-                pd.to_datetime(row["startChargeTime"])
-                + pd.to_timedelta(row["DurationHrs"], unit="h")
-                - pd.Timedelta(minutes=15)
-            ).floor("15min")
+            end_charge_time = get_end_charge_time_row(row)
 
             rounded_prev_time = round_up_to_nearest_timestep(
                 previousStartChargeTime, self.delta_t
@@ -493,8 +489,9 @@ class BaselineSimulator:
             )
             min_J = grid_search_results[optimal_prices]["J"]
             min_J_arr = grid_search_results[optimal_prices]["J_arr"]
-            u = grid_search_results[optimal_prices]["u"]
-            grid_search_results[optimal_prices]["v"]
+            u_cvxpy = grid_search_results[optimal_prices]["u"]
+            u = u_cvxpy.value
+            v = grid_search_results[optimal_prices]["v"]
             current_peak_sch = grid_search_results[optimal_prices][
                 "current_peak_sch"
             ].item()
@@ -618,45 +615,58 @@ class BaselineSimulator:
                 )
                 print(
                     "Profit options (scheduled, regular, leave):",
-                    min_J_arr[0].value,
+                    np.round(min_J_arr[0].value),
                     (
                         min_J_arr[1]
                         if isinstance(min_J_arr[1], np.ndarray)
-                        else min_J_arr[1].value
+                        else np.round(min_J_arr[1].value)
                     ),
                     (
                         min_J_arr[2]
                         if isinstance(min_J_arr[2], np.ndarray)
-                        else min_J_arr[2].value
+                        else np.round(min_J_arr[2].value)
                     ),
                 )
                 print("If scheduled user:")
-                print("  new_sch_obj (TOU-EV revenue) =", min_J_arr[3].value)
+                print("  new_sch_obj (TOU-EV revenue) =", np.round(min_J_arr[3].value))
                 print(
                     "  Demand charge penalty sch =",
-                    self.get_dc_penalty(current_peak_sch, previous_running_peak).value,
+                    np.round(
+                        self.get_dc_penalty(
+                            current_peak_sch, previous_running_peak
+                        ).value
+                    ),
                 )
                 print("If regular user:")
                 print("  new_reg_obj (TOU-EV revenue) =", min_J_arr[4])
                 print(
                     "  Demand charge penalty reg =",
-                    self.get_dc_penalty(current_peak_reg, previous_running_peak).value,
+                    np.round(
+                        self.get_dc_penalty(
+                            current_peak_reg, previous_running_peak
+                        ).value
+                    ),
                 )
                 print(
                     "existing_sch_obj",
                     (
                         min_J_arr[5]
                         if isinstance(min_J_arr[5], int)
-                        else min_J_arr[5].value
+                        else np.round(min_J_arr[5].value)
                     ),
                 )
-                print("existing_reg_obj", min_J_arr[6])
-                print("Total daily cost so far", min_J)
+                print("existing_reg_obj", np.round(min_J_arr[6]))
+                print("Total daily cost so far", np.round(min_J))
 
                 # visualize the predictions for peak_simulator
-                self.get_timeseries(
-                    self.power_profiles[last_row["dcosId"]],
-                    len(sub_df),
+                num_reg_user_without_next = (
+                    sub_df.iloc[:-1].loc[sub_df["choice"] == "REGULAR"].shape[0]
+                )
+                num_sch_user_without_next = num_sch_user - (choice == "SCHEDULED")
+                self.get_current_peak_sch(
+                    num_reg_user_without_next,
+                    num_sch_user_without_next,
+                    u_cvxpy,
                     startChargeTime,
                     verbose=True,
                 )
@@ -666,7 +676,7 @@ class BaselineSimulator:
                 data = []
                 for z_sch, z_reg in grid_search_results.keys():
                     J = grid_search_results[(z_sch, z_reg)]["J"]
-                    data.append([z_sch, z_reg, J])
+                    data.append([z_sch, z_reg, round(J)])
 
                 # Create a DataFrame with the correct column names
                 df = pd.DataFrame(data, columns=["z_sch", "z_reg", "Cost"])
@@ -714,7 +724,6 @@ class BaselineSimulator:
 
         e_need_lst = []
         N_remain_lst = []
-        price_lst = []
 
         last_row = sub_df.iloc[-1]
         TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
@@ -731,6 +740,7 @@ class BaselineSimulator:
         e_need_lst.append(e_need)
         N_remain_lst.append(N_remain)
 
+        # Iter through all of the active scheduled sessions (except the new one)
         for index, row in (
             sub_df.iloc[:-1].loc[sub_df["choice"] == "SCHEDULED"].iterrows()
         ):
@@ -748,12 +758,7 @@ class BaselineSimulator:
             e_need_lst.append(e_need)
             N_remain_lst.append(N_remain)
 
-            if prices[row["dcosId"]]:
-                price_lst.append(prices[row["dcosId"]])
-            else:
-                price_lst.append(row["sch_centsPerHr"])
-
-        num_sch_user = len(e_need_lst)
+        num_sch_user = len(e_need_lst)  # This considers the next user is scheduled
 
         ### Decision Variables
         e_delivered = cp.Variable(
@@ -761,12 +766,12 @@ class BaselineSimulator:
         )  # energy delivered
         u = cp.Variable(
             shape=(self.var_dim_constant * num_sch_user, 1)
-        )  # charging profile (extra scheduled user profile added in case new user chooses scheduled
+        )  # charging profile (extra scheduled user profile included in case new user chooses scheduled
 
         ### Constraints incorporate all SCH users
         constraints = [u >= 0, u <= self.power_rate]
 
-        # Iterate through all existing flex users
+        # Iterate through all existing scheduled users (considering the next one is also scheduled)
         for i in range(num_sch_user):
             e_need = e_need_lst[i]
             N_remain = N_remain_lst[i]
