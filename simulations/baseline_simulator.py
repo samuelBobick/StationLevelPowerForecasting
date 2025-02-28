@@ -561,6 +561,7 @@ class BaselineSimulator:
         active_sessions: list[pd.Series] = []
 
         previousStartChargeTime = None
+        u = None
         for startChargeTime in tqdm(
             pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
         ):
@@ -570,6 +571,15 @@ class BaselineSimulator:
                 startChargeTime,
                 active_sessions,
             )
+            # only used for timeseries_forecast TODO should we use self.power_profiles instead, using Thibaud's new utils function.
+            timeseries_forecast = self.get_timeseries_forecast(
+                active_sessions[-1],
+                u,
+                previousStartChargeTime,
+                len(active_sessions),
+                startChargeTime,
+            )
+
             running_peak = self.aggregate_power_profile["power"].max()
 
             grid_search_results, sub_df = self.grid_search(
@@ -760,6 +770,12 @@ class BaselineSimulator:
         )
 
     def get_timeseries(self, row, num_active_sessions, time, verbose=False):
+        # This function is not implemented in the baseline simulator
+        pass
+
+    def get_timeseries_forecast(
+        self, current_row, u, prev_start_charge_time, num_active_sessions, time
+    ):
         # This function is not implemented in the baseline simulator
         pass
 
