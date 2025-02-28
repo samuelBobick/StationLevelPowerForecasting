@@ -59,11 +59,11 @@ def get_new_sch_obj(row, z, u, delta_t, TOU):
     next_session_profile = u[:N_remain]
     next_session_profile = cp.reshape(
         next_session_profile, (next_session_profile.shape[0],)
-    ).T
+    )  # .T
     return (
         delta_t
         * next_session_profile
-        @ (TOU[TOU_start_idx:TOU_end_idx] - z[0]).reshape(-1)
+        @ (TOU[TOU_start_idx:TOU_end_idx] - z[0])  # .reshape(-1)
     )
 
 
@@ -85,19 +85,29 @@ def get_new_reg_obj(row, z, delta_t, TOU, power_rate, flexibility_constant):
         row, pd.to_datetime(row["startChargeTime"]), delta_t
     )
 
-    e_need = get_total_e_need(row, delta_t, flexibility_constant)
-
-    N_reg = int(
-        e_need // power_rate
-    )  # how many time steps would it take the user to charge if they chose regular?
+    N_reg = get_number_timesteps_for_regular(
+        row, power_rate, delta_t, flexibility_constant
+    )
     return delta_t * np.sum(
         power_rate * (TOU[TOU_start_idx : TOU_start_idx + N_reg] - z[1])
     )
 
 
+def get_number_timesteps_for_regular(row, power_rate, delta_t, flexibility_constant):
+    """
+    Helper function to get the number of timesteps needed to charge the EV if the user chose regular
+    """
+    e_need = get_total_e_need(row, delta_t, flexibility_constant, power_rate)
+    N_reg = int(
+        np.round(e_need / power_rate)
+    )  # how many time steps would it take the user to charge if they chose regular?
+    return N_reg
+
+
 def get_power_profile_idx(row, current_time, delta_t):
     """
     Helper function to get the current index of the power profile (i.e. how many timesteps has the EV been charging so far)
+    INFO: this is the same as doing TOU_current_idx - TOU_start_idx
 
         row: row from sessions_df
         current_time: time of optimization as a pd.datetime object
@@ -118,6 +128,8 @@ def get_remaining_e_need(
 ):
     """
     Helper function to calculate the energy demand of a particular session.
+    This e_need represent more the power needed at each timestep than the
+    total energy needed for the session.
 
         row: row from sessions_df
         current_time: time of optimization as a pd.datetime object
@@ -126,7 +138,7 @@ def get_remaining_e_need(
         power_rate: max power of a single EV charger, in kW
         flexibility_constant: proportion of regular demand that a user would have demanded if they chose scheduled
     """
-    e_need = get_total_e_need(row, delta_t, flexibility_constant)
+    e_need = get_total_e_need(row, delta_t, flexibility_constant, power_rate)
 
     TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
         row, current_time, delta_t
@@ -135,20 +147,28 @@ def get_remaining_e_need(
     power_profile_current_idx = TOU_current_idx - TOU_start_idx
 
     if len(power_profiles[row["dcosId"]]) > 0:
-        e_need -= sum(
-            power_profiles[row["dcosId"]][:power_profile_current_idx]
-        )  # if user has already consumed some power, subtract it from their demand
+        e_need -= sum(power_profiles[row["dcosId"]][:power_profile_current_idx])
+        # if user has already consumed some power, subtract it from their demand
         if (
             e_need < 0
         ):  # handle numerical imprecision and set completed charging sessions to exactly zero
             e_need = 0
-    if e_need > N_remain * power_rate:  # if user requests an infeasible amount of power
-        e_need = N_remain * power_rate
+
+        # Check if user requests an infeasible amount of power. TODO remove if no bug
+        # need to add 1 to avoid numerical imprecision leading to infeasible results
+        assert e_need <= N_remain * power_rate + 1, (
+            f"remaining energy is infeasible e_need: {e_need}, "
+            f"max energy possible: {N_remain * power_rate}"
+        )
 
     return e_need
 
 
-def get_total_e_need(row, delta_t, flexibility_constant):
+def get_total_e_need(row, delta_t, flexibility_constant, power_rate):
+    """Returns the total energy need, DIVIDED BY delta_t (in hour, e.g. 0.25)
+    This e_need represent more the power needed at each timestep than the
+    total energy needed for the session.
+    """
     if row["choice"] == "SCHEDULED" and not pd.isna(row["energyReq_Wh"]):
         # Case where the session was really scheduled and we have the energy needed
         # for the session given by the user
@@ -159,6 +179,14 @@ def get_total_e_need(row, delta_t, flexibility_constant):
         e_need = flexibility_constant * row["cumEnergy_Wh"] / 1000 / delta_t
     else:
         e_need = row["cumEnergy_Wh"] / 1000 / delta_t
+
+    # make sure that the energy need is not infeasible
+    TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+        row, pd.to_datetime(row["startChargeTime"]), delta_t
+    )
+    if e_need > N_remain * power_rate:
+        e_need = N_remain * power_rate
+
     return e_need
 
 
@@ -307,13 +335,20 @@ def round_up_to_nearest_timestep(ts, delta_t):
     return ts.ceil(f"{int(delta_t * 60)}min")
 
 
-def get_sub_df(test_df, current_time):
+def get_sub_df(test_df, current_time, delta_t):
     """
     Given current time and the DataFrame to simulate on, return a sub DataFrame with only the active sessions
+    and the current session being optimized as the last row
     """
     sub_df = test_df[pd.to_datetime(test_df["startChargeTime"]) <= current_time]
     end_charge_times = get_end_charge_times(sub_df)
     sub_df = sub_df[end_charge_times >= current_time]
+
+    # we also want to drop the sessions that do not have any timestep remaining
+    remaining_timesteps = sub_df.apply(
+        lambda row: get_timestep_info(row, current_time, delta_t)[3], axis=1
+    )
+    sub_df = sub_df[remaining_timesteps > 0]
 
     return sub_df
 
@@ -342,7 +377,7 @@ def get_end_charge_times(df: pd.DataFrame) -> pd.Series:
 def get_aggregate_active_reg_future_profiles(
     test_df, current_time, power_profiles, delta_t
 ):
-    sub_df = get_sub_df(test_df, current_time)[:-1]
+    sub_df = get_sub_df(test_df, current_time, delta_t)[:-1]
     output = np.zeros(96)
 
     for index, row in sub_df.iterrows():
@@ -360,8 +395,20 @@ def get_aggregate_active_reg_future_profiles(
 
 
 def get_next_reg_profile(row, delta_t, flexibility_constant, power_rate):
-    e_need = get_total_e_need(row, delta_t, flexibility_constant)
-    N_reg = int(
-        e_need // power_rate
-    )  # how many time steps would it take the user to charge if they chose regular?
+    N_reg = get_number_timesteps_for_regular(
+        row, power_rate, delta_t, flexibility_constant
+    )
     return np.array([power_rate] * N_reg + [0] * (96 - N_reg))
+
+
+def convert_power_profile_to_df(
+    power_profile: np.ndarray, start_charge_time: pd.Timestamp, delta_t: float
+) -> pd.DataFrame:
+    power_profile_start_time = round_up_to_nearest_timestep(start_charge_time, delta_t)
+    date_index = pd.date_range(
+        start=power_profile_start_time,
+        periods=len(power_profile),
+        freq=f"{int(delta_t * 60)}min",
+    )
+    power_profiles_df = pd.DataFrame({"date": date_index, "power": power_profile})
+    return power_profiles_df
