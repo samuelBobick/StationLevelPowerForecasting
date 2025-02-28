@@ -10,12 +10,15 @@ from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
 from slrp_ev_data.data_utils import USAcademicHolidayCalendar
 from tqdm.auto import tqdm
 from utils import (
+    convert_power_profile_to_df,
     get_end_charge_time_row,
     get_new_reg_obj,
     get_new_sch_obj,
+    get_next_reg_profile,
     get_remaining_e_need,
     get_sub_df,
     get_timestep_info,
+    get_total_e_need,
     round_up_to_nearest_timestep,
 )
 
@@ -123,6 +126,64 @@ class BaselineSimulator:
         # having to use cp.maximum is much slower than putting this max into inequality constraints
         return cp.Constant(self.cost_dc) * cp.maximum(
             current_daily_peak - running_monthly_peak, 0
+        )
+
+    def get_current_peak_sch(
+        self,
+        num_reg_user: int,
+        num_sch_user: int,
+        u: cp.Variable,
+        time=None,
+        verbose=False,
+    ) -> cp.Expression:
+        """Helper function to get the peak, accounting for the optimized scheduled power profiles
+
+        Args:
+            num_reg_user (int): number of regular users
+            num_reg_user (int): number of scheduled users
+            u (cp.Variable): scheduled power profile
+
+        Returns:
+            cp.Expression: current scheduled peak
+        """
+        # We add the +1 here because we haven't counted the new user yet (below we imagine
+        # that the new user is scheduled)
+        # initial shape of u: (self.var_dim_constant * (num_sch_user + 1), 1). The
+        # first self.var_dim_constant elements of u are for the next session, that
+        # we are trying to optimize
+        sch_power_sum_profile = cp.reshape(
+            u, (self.var_dim_constant, num_sch_user + 1)
+        ).T  # Shape: (num_sch_user + 1, self.var_dim_constant)
+        sch_power_sum_profile = cp.sum(
+            sch_power_sum_profile, axis=0
+        )  # Shape: (self.var_dim_constant,)
+
+        return self.power_rate * num_reg_user + cp.max(sch_power_sum_profile)
+
+    def get_current_peak_reg(
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None, row=None
+    ) -> cp.Expression:
+        """Helper function to get the peak, accounting for the optimized scheduled power profiles
+
+            add the + 1 because we imagine that the new user is regular here
+            the second term is basically the max power from the current scheduled users
+            (without considering that the new user is scheduled)
+
+        Args:
+            num_reg_user (int): number of regular users
+            num_reg_user (int): number of scheduled users
+            u (cp.Variable): scheduled power profile
+
+        Returns:
+            cp.Expression: current scheduled peak
+        """
+        return self.power_rate * (num_reg_user + 1) + cp.max(
+            cp.sum(
+                cp.reshape(
+                    u[self.var_dim_constant :], (self.var_dim_constant, num_sch_user)
+                ).T,
+                axis=0,
+            )
         )
 
     def get_J(
@@ -245,62 +306,103 @@ class BaselineSimulator:
             current_peak_reg,
         )
 
-    def get_current_peak_sch(
-        self,
-        num_reg_user: int,
-        num_sch_user: int,
-        u: cp.Variable,
-        time=None,
-        verbose=False,
-    ) -> cp.Expression:
-        """Helper function to get the peak, accounting for the optimized scheduled power profiles
+    def initialize_problem(self, z, v, sub_df, current_time, running_peak, prices):
+        """Helper function to return the cvxpy variables to solve the optimization problem.
 
-        Args:
-            num_reg_user (int): number of regular users
-            num_reg_user (int): number of scheduled users
-            u (cp.Variable): scheduled power profile
-
-        Returns:
-            cp.Expression: current scheduled peak
+        Inputs:
+            z: array where [tariff_flex, tariff_asap, tariff_overstay, leave = 1]
+            v: array with softmax results [sm_c, sm_uc, sm_y] (sm_y = leave)
+            sub_df: dataframe containing rows of sessions_df that represent active \
+                sessions at the time of optimization
+            current_time: time of optimization
+            running_peak: running peak power this billing cycle
+            prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
-        # We add the +1 here because we haven't counted the new user yet (below we imagine
-        # that the new user is scheduled)
-        # initial shape of u: (self.var_dim_constant * (num_sch_user + 1), 1). The
-        # first self.var_dim_constant elements of u are for the next session, that
-        # we are trying to optimize
-        sch_power_sum_profile = cp.reshape(
-            u, (self.var_dim_constant, num_sch_user + 1)
-        ).T  # Shape: (num_sch_user + 1, self.var_dim_constant)
-        sch_power_sum_profile = cp.sum(
-            sch_power_sum_profile, axis=0
-        )  # Shape: (self.var_dim_constant,)
 
-        return self.power_rate * num_reg_user + cp.max(sch_power_sum_profile)
+        e_need_lst = []
+        N_remain_lst = []
 
-    def get_current_peak_reg(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None, row=None
-    ) -> cp.Expression:
-        """Helper function to get the peak, accounting for the optimized scheduled power profiles
+        last_row = sub_df.iloc[-1]
+        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+            last_row, current_time, self.delta_t
+        )
+        e_need = get_total_e_need(
+            last_row, self.delta_t, self.flexibility_constant, self.power_rate
+        )
+        e_need_lst.append(e_need)
+        N_remain_lst.append(N_remain)
 
-            add the + 1 because we imagine that the new user is regular here
-            the second term is basically the max power from the current scheduled users
-            (without considering that the new user is scheduled)
-
-        Args:
-            num_reg_user (int): number of regular users
-            num_reg_user (int): number of scheduled users
-            u (cp.Variable): scheduled power profile
-
-        Returns:
-            cp.Expression: current scheduled peak
-        """
-        return self.power_rate * (num_reg_user + 1) + cp.max(
-            cp.sum(
-                cp.reshape(
-                    u[self.var_dim_constant :], (self.var_dim_constant, num_sch_user)
-                ).T,
-                axis=0,
+        # Iter through all of the active scheduled sessions (except the new one)
+        for index, row in (
+            sub_df.iloc[:-1].loc[sub_df["choice"] == "SCHEDULED"].iterrows()
+        ):
+            TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
+                row, current_time, self.delta_t
             )
+
+            e_need = get_remaining_e_need(
+                row,
+                current_time,
+                self.power_profiles,
+                self.delta_t,
+                self.power_rate,
+                self.flexibility_constant,
+            )
+            e_need_lst.append(e_need)
+            N_remain_lst.append(N_remain)
+
+        num_sch_user = len(e_need_lst)  # This considers the next user is scheduled
+
+        ### Decision Variables
+        e_delivered = cp.Variable(
+            shape=((self.var_dim_constant + 1) * num_sch_user, 1)
+        )  # energy delivered
+        u = cp.Variable(
+            shape=(self.var_dim_constant * num_sch_user, 1)
+        )  # charging profile (extra scheduled user profile included in case new user chooses scheduled
+
+        ### Constraints incorporate all SCH users
+        constraints = [u >= 0, u <= self.power_rate]
+
+        # Iterate through all existing scheduled users (considering the next one is also scheduled)
+        for i in range(num_sch_user):
+            e_need = e_need_lst[i]
+            N_remain = N_remain_lst[i]
+
+            # For now we don't have sessions longer than 1 day, but we
+            # add that check in case it happens in the future
+            assert N_remain <= self.var_dim_constant, (
+                f"This session lasts {N_remain} timesteps, which is longer than the power profile dimension {self.var_dim_constant}."
+                "Please check the length of the sessions or make the power profile longer in the optimizer."
+            )
+
+            u_start = int(i * self.var_dim_constant)
+            u_end = int(i * self.var_dim_constant + N_remain)
+
+            constraints += [cp.sum(u[u_start:u_end]) == e_need]
+            # The user is only plugged in between u_start and u_end so below,
+            # so we constraint the timesteps that the user is not plug in to 0
+            constraints += [u[u_end : u_start + self.var_dim_constant] == 0]
+
+        ### Solve
+        J, J_array, current_peak_sch, current_peak_reg = self.get_J(
+            u,
+            z,
+            v,
+            sub_df,
+            current_time,
+            running_peak,
+            prices,
+        )
+
+        return (
+            u,
+            e_delivered,
+            J,
+            J_array,
+            current_peak_sch,
+            current_peak_reg,
+            constraints,
         )
 
     def argmin_u(
@@ -366,7 +468,7 @@ class BaselineSimulator:
             running_peak: running peak power this billing cycle
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
-        sub_df = get_sub_df(self.test_df, current_time)
+        sub_df = get_sub_df(self.test_df, current_time, self.delta_t)
 
         assert len(sub_df) > 0, "sub_df is empty, nothing to grid search over!"
 
@@ -408,18 +510,9 @@ class BaselineSimulator:
         """
         for row in active_sessions:
             power_profile = self.power_profiles[row["dcosId"]]
-            power_profile_start_time = round_up_to_nearest_timestep(
-                pd.to_datetime(row["startChargeTime"]), self.delta_t
-            )
-            power_profile_df = pd.DataFrame(
-                {
-                    "date": pd.date_range(
-                        start=power_profile_start_time,
-                        periods=len(power_profile),
-                        freq="15min",
-                    ),
-                    "power": power_profile,
-                }
+
+            power_profile_df = convert_power_profile_to_df(
+                power_profile, pd.to_datetime(row["startChargeTime"]), self.delta_t
             )
 
             end_charge_time = get_end_charge_time_row(row)
@@ -556,22 +649,8 @@ class BaselineSimulator:
                 ].flatten()
                 num_sch_user += 1
             else:
-                TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = (
-                    get_timestep_info(last_row, startChargeTime, self.delta_t)
-                )
-
-                N_reg = (
-                    e_need / self.power_rate / self.delta_t
-                )  # how many time steps would it take the user to charge if they chose regular?
-                (
-                    N_reg % 1
-                )  # for that last timestep, what fraction of a timestep is charging needed to satisfy demand?
-                N_reg = int(N_reg)
-                self.power_profiles[last_row["dcosId"]] = np.zeros(
-                    self.var_dim_constant
-                )
-                self.power_profiles[last_row["dcosId"]][:N_reg] = np.array(
-                    [self.power_rate] * N_reg
+                self.power_profiles[last_row["dcosId"]] = get_next_reg_profile(
+                    last_row, self.delta_t, self.flexibility_constant, self.power_rate
                 )
 
             # Save other user data for visualization
@@ -638,7 +717,7 @@ class BaselineSimulator:
                     ),
                 )
                 print("If regular user:")
-                print("  new_reg_obj (TOU-EV revenue) =", min_J_arr[4])
+                print("  new_reg_obj (TOU-EV revenue) =", np.round(min_J_arr[4]))
                 print(
                     "  Demand charge penalty reg =",
                     np.round(
@@ -671,36 +750,7 @@ class BaselineSimulator:
                     verbose=True,
                 )
 
-                # TODO: put this in a separate function? (e.g. `plot_prices_grid_profit_heatmap`)
-                # Collect the data
-                data = []
-                for z_sch, z_reg in grid_search_results.keys():
-                    J = grid_search_results[(z_sch, z_reg)]["J"]
-                    data.append([z_sch, z_reg, round(J)])
-
-                # Create a DataFrame with the correct column names
-                df = pd.DataFrame(data, columns=["z_sch", "z_reg", "Cost"])
-
-                # Pivot the data correctly
-                pivot_table = df.pivot(index="z_sch", columns="z_reg", values="Cost")
-
-                # Plotting the heatmap
-                plt.figure(figsize=(5, 4))
-                sns.heatmap(
-                    pivot_table,
-                    annot=True,
-                    fmt=".2f",
-                    cmap="YlGnBu",
-                    cbar_kws={"label": "Cost"},
-                )
-                plt.title("Profit Heatmap")
-                plt.xlabel("z_reg")
-                plt.ylabel("z_sch")
-                plt.show()
-                # print('Profit grid', grid_search_results[])
-                # print('power_profile', u[:N_remain])
-                # print('TOU slice', self.TOU[TOU_start_idx : TOU_end_idx])
-                # print('')
+                plot_prices_grid_profit_heatmap(grid_search_results)
 
         return (
             self.power_profiles,
@@ -709,109 +759,40 @@ class BaselineSimulator:
             user_computed_data_for_visualization,
         )
 
-    def initialize_problem(self, z, v, sub_df, current_time, running_peak, prices):
-        """Helper function to return the cvxpy variables to solve the optimization problem.
-
-        Inputs:
-            z: array where [tariff_flex, tariff_asap, tariff_overstay, leave = 1]
-            v: array with softmax results [sm_c, sm_uc, sm_y] (sm_y = leave)
-            sub_df: dataframe containing rows of sessions_df that represent active \
-                sessions at the time of optimization
-            current_time: time of optimization
-            running_peak: running peak power this billing cycle
-            prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
-        """
-
-        e_need_lst = []
-        N_remain_lst = []
-
-        last_row = sub_df.iloc[-1]
-        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
-            last_row, current_time, self.delta_t
-        )
-        e_need = get_remaining_e_need(
-            last_row,
-            current_time,
-            self.power_profiles,
-            self.delta_t,
-            self.power_rate,
-            self.flexibility_constant,
-        )
-        e_need_lst.append(e_need)
-        N_remain_lst.append(N_remain)
-
-        # Iter through all of the active scheduled sessions (except the new one)
-        for index, row in (
-            sub_df.iloc[:-1].loc[sub_df["choice"] == "SCHEDULED"].iterrows()
-        ):
-            TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
-                row, current_time, self.delta_t
-            )
-            e_need = get_remaining_e_need(
-                row,
-                current_time,
-                self.power_profiles,
-                self.delta_t,
-                self.power_rate,
-                self.flexibility_constant,
-            )
-            e_need_lst.append(e_need)
-            N_remain_lst.append(N_remain)
-
-        num_sch_user = len(e_need_lst)  # This considers the next user is scheduled
-
-        ### Decision Variables
-        e_delivered = cp.Variable(
-            shape=((self.var_dim_constant + 1) * num_sch_user, 1)
-        )  # energy delivered
-        u = cp.Variable(
-            shape=(self.var_dim_constant * num_sch_user, 1)
-        )  # charging profile (extra scheduled user profile included in case new user chooses scheduled
-
-        ### Constraints incorporate all SCH users
-        constraints = [u >= 0, u <= self.power_rate]
-
-        # Iterate through all existing scheduled users (considering the next one is also scheduled)
-        for i in range(num_sch_user):
-            e_need = e_need_lst[i]
-            N_remain = N_remain_lst[i]
-
-            # For now we don't have sessions longer than 1 day, but we
-            # add that check in case it happens in the future
-            assert N_remain <= self.var_dim_constant, (
-                f"This session lasts {N_remain} timesteps, which is longer than the power profile dimension {self.var_dim_constant}."
-                "Please check the length of the sessions or make the power profile longer in the optimizer."
-            )
-
-            u_start = int(i * self.var_dim_constant)
-            u_end = int(i * self.var_dim_constant + N_remain)
-
-            constraints += [cp.sum(u[u_start:u_end]) == e_need]
-            # The user is only plugged in between u_start and u_end so below,
-            # so we constraint the timesteps that the user is not plug in to 0
-            constraints += [u[u_end : u_start + self.var_dim_constant] == 0]
-
-        ### Solve
-        J, J_array, current_peak_sch, current_peak_reg = self.get_J(
-            u,
-            z,
-            v,
-            sub_df,
-            current_time,
-            running_peak,
-            prices,
-        )
-
-        return (
-            u,
-            e_delivered,
-            J,
-            J_array,
-            current_peak_sch,
-            current_peak_reg,
-            constraints,
-        )
-
     def get_timeseries(self, row, num_active_sessions, time, verbose=False):
         # This function is not implemented in the baseline simulator
         pass
+
+
+def plot_prices_grid_profit_heatmap(grid_search_results: dict):
+    """
+    Function to plot a heatmap of the profit for each price combination
+
+    Inputs:
+        grid_search_results: dictionary containing the results of the grid search
+    """
+    # Collect the data
+    data = []
+    for z_sch, z_reg in grid_search_results.keys():
+        J = grid_search_results[(z_sch, z_reg)]["J"]
+        data.append([z_sch, z_reg, J])
+
+    # Create a DataFrame with the correct column names
+    df = pd.DataFrame(data, columns=["z_sch", "z_reg", "Cost"])
+
+    # Pivot the data correctly
+    pivot_table = df.pivot(index="z_sch", columns="z_reg", values="Cost")
+
+    # Plotting the heatmap
+    plt.figure(figsize=(5, 4))
+    sns.heatmap(
+        pivot_table,
+        annot=True,
+        fmt=".0f",
+        cmap="YlGnBu",
+        cbar_kws={"label": "Cost"},
+    )
+    plt.title("Profit Heatmap")
+    plt.xlabel("z_reg ($/kWh)")
+    plt.ylabel("z_sch ($/kWh)")
+    plt.show()

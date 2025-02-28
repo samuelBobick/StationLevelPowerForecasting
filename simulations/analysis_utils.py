@@ -11,7 +11,12 @@ from peak_forecast_simulator import PeakForecastSimulator
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
 from timeseries_forecast_simulator import TimeseriesForecastSimulator
-from utils import get_profit, get_session_results
+from utils import (
+    convert_power_profile_to_df,
+    get_end_charge_times,
+    get_profit,
+    get_session_results,
+)
 
 TypeScenario = Literal[
     "all_scheduled",
@@ -36,14 +41,20 @@ def filter_data(data, month, year, scenario: TypeScenario):
     Returns:
         test_df (pd.DataFrame): filtered dataframe
     """
-
+    # filter based on month and year inputs
     test_df = data[
         (pd.to_datetime(data["connectTime"]).dt.year == year)
         & (pd.to_datetime(data["connectTime"]).dt.month == month)
     ]
 
+    # Keep meaningful sessions
     test_df = test_df[test_df["DurationHrs"] > 0.5]
     test_df = test_df[test_df["cumEnergy_Wh"] > 0]
+
+    # Drop overnight sessions (so when the end charge time is the next day)
+    end_charge_time = get_end_charge_times(test_df)
+    start_charge_time = pd.to_datetime(test_df["connectTime"])
+    test_df = test_df[(end_charge_time.dt.day - start_charge_time.dt.day) == 0]
 
     if scenario == "all_scheduled":
         test_df["choice"] = "SCHEDULED"
@@ -222,6 +233,7 @@ def generate_session_results(
             power_profiles,
             user_computed_data_for_visualization,
             prices,
+            sim.delta_t,
         )
 
 
@@ -230,6 +242,7 @@ def visualize_simulation(
     power_profiles: dict,
     user_computed_data_for_visualization: dict,
     prices: dict,
+    delta_t: float,
 ) -> None:
     """
     Visualize the results of the simulation values. the x axis is time
@@ -247,15 +260,17 @@ def visualize_simulation(
         start_charge_time = df_user_computed_data_for_visualization.loc[
             user_id, "Start charge time"
         ]
-        date_index = pd.date_range(
-            start=start_charge_time, periods=len(user_power_profile), freq="15min"
-        ).ceil("15min")
-        power_profiles_df = pd.DataFrame(
-            {"date": date_index, "power": user_power_profile}
+        power_profiles_df = convert_power_profile_to_df(
+            user_power_profile, start_charge_time, delta_t=delta_t
         )
+
         power_profiles_df["user_id"] = user_id
         user_power_profiles_dfs = pd.concat(
             [user_power_profiles_dfs, power_profiles_df]
+        )
+
+        df_user_computed_data_for_visualization.loc[user_id, "Energy delivered"] = sum(
+            power_profiles_df["power"] * delta_t
         )
 
     fig = go.Figure()
@@ -347,13 +362,15 @@ def visualize_simulation(
                 "User ID: %{customdata[0]}<br>"
                 "Start Charge Time: %{x}<br>"
                 "Energy needed: %{customdata[1]}<br>"
-                "Duration (hours): %{customdata[2]}<br>"
-                "Choice: %{customdata[3]}<extra></extra>"
+                "Energy delivered: %{customdata[2]}<br>"
+                "Duration (hours): %{customdata[3]}<br>"
+                "Choice: %{customdata[4]}<extra></extra>"
             ),
             customdata=np.array(
                 [
                     df_user_computed_data_for_visualization.index,
                     df_user_computed_data_for_visualization["Energy needed"],
+                    df_user_computed_data_for_visualization["Energy delivered"],
                     df_user_computed_data_for_visualization["Duration (hours)"],
                     df_user_computed_data_for_visualization["Choice"],
                 ]

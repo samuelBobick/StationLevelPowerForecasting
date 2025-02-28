@@ -7,7 +7,7 @@ from constants.tariffs import MODIFIED_DC, TypeTariffName
 from forecast_simulator import ForecastSimulator
 from utils import (
     get_aggregate_active_reg_future_profiles,
-    get_total_e_need,
+    get_next_reg_profile,
     round_up_to_nearest_timestep,
 )
 
@@ -92,11 +92,9 @@ class PeakForecastSimulator(ForecastSimulator):
         Returns:
             cp.Expression: current scheduled peak
         """
-        e_need = get_total_e_need(row, self.delta_t, self.flexibility_constant)
-        N_reg = int(
-            e_need // self.power_rate
-        )  # how many time steps would it take the user to charge if they chose regular?
-        next_session_profile = np.array([self.power_rate] * N_reg + [0] * (96 - N_reg))
+        next_session_profile = get_next_reg_profile(
+            row, self.delta_t, self.flexibility_constant, self.power_rate
+        )
 
         u_sliced = u[
             self.var_dim_constant :
