@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
+from constants.global_parameters import VERBOSE_PREDICTIONS_NORMALIZED
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from cvxpy.atoms.affine.hstack import Hstack
 from slrp_ev_data.normalization_and_standardization import (
@@ -103,7 +104,11 @@ class ForecastSimulator(BaselineSimulator):
         self.labels_norm_parameters_max = np.array(labels_norm_parameters_max)
 
     def make_prediction(
-        self, features: np.ndarray | Hstack, workday: int
+        self,
+        features: np.ndarray | Hstack,
+        workday: int,
+        time: pd.Timestamp,
+        verbose: bool = False,
     ) -> cp.Expression:
         """Make a prediction using the linear model
 
@@ -126,6 +131,9 @@ class ForecastSimulator(BaselineSimulator):
         intercept = model["intercept"][0]
 
         prediction = (normalized_features @ coefficients) + intercept
+
+        if verbose and VERBOSE_PREDICTIONS_NORMALIZED:
+            self.visualize_samples(time, normalized_features.value, np.array(prediction.value))  # type: ignore
 
         reversed_prediction = (
             prediction
@@ -195,8 +203,8 @@ class ForecastSimulator(BaselineSimulator):
             other_information += f"{self.features_name[i]}: {sample[i]}<br>"
 
         fig.add_annotation(
-            x=0.5,
-            y=1.1,
+            x=0.8,
+            y=1,
             xref="paper",
             yref="paper",
             text=other_information,
@@ -204,8 +212,8 @@ class ForecastSimulator(BaselineSimulator):
         )
 
         fig.update_layout(
-            title="Sample Visualization",
+            title="Sample and Peak Prediction Visualization",
             xaxis_title="Time",
-            yaxis_title="Power (W)",
+            yaxis_title="Power (W or scaled)",
         )
         fig.show()

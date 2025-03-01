@@ -759,6 +759,7 @@ class BaselineSimulator:
                     sub_df.iloc[:-1].loc[sub_df["choice"] == "REGULAR"].shape[0]
                 )
                 num_sch_user_without_next = num_sch_user - (choice == "SCHEDULED")
+                print("Peak prediction plot if Scheduled user")
                 self.get_current_peak_sch(
                     num_reg_user_without_next,
                     num_sch_user_without_next,
@@ -766,6 +767,7 @@ class BaselineSimulator:
                     startChargeTime,
                     verbose=True,
                 )
+                print("Peak prediction plot if Regular user")
                 self.get_current_peak_reg(
                     num_reg_user_without_next,
                     num_sch_user_without_next,

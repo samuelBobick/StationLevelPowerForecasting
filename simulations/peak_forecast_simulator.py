@@ -3,9 +3,11 @@ from typing import Optional
 import cvxpy as cp
 import numpy as np
 import pandas as pd
+from constants.global_parameters import VERBOSE_PREDICTIONS_NORMALIZED
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from forecast_simulator import ForecastSimulator
 from utils.utils import (
+    aggregate_u_scheduled_profiles,
     get_aggregate_active_reg_future_profiles,
     get_next_reg_profile,
 )
@@ -53,10 +55,7 @@ class PeakForecastSimulator(ForecastSimulator):
         Returns:
             cp.Expression: current scheduled peak
         """
-        u_reshaped = cp.reshape(
-            u, (u.shape[0] // self.var_dim_constant, self.var_dim_constant), order="C"
-        )
-        next_session_profile = cp.sum(u_reshaped, axis=0)
+        next_session_profile = aggregate_u_scheduled_profiles(u, self.var_dim_constant)
 
         aggregate_reg_profiles = get_aggregate_active_reg_future_profiles(
             self.test_df, time, self.power_profiles, self.delta_t
@@ -102,16 +101,13 @@ class PeakForecastSimulator(ForecastSimulator):
             row, self.delta_t, self.flexibility_constant, self.power_rate
         )
 
-        u_sliced = u[
-            self.var_dim_constant :
-        ]  # to remove the part that considers the next user as scheduled
+        # to remove the part that considers the next user as scheduled
+        u_sliced: cp.Variable = u[self.var_dim_constant :]  # type: ignore
         if u_sliced.shape[0] > 0:
-            u_reshaped = cp.reshape(
-                u_sliced,
-                ((u_sliced.shape[0]) // self.var_dim_constant, self.var_dim_constant),
-                order="C",
+            next_session_profile = (
+                next_session_profile
+                + aggregate_u_scheduled_profiles(u_sliced, self.var_dim_constant)
             )
-            next_session_profile = next_session_profile + cp.sum(u_reshaped, axis=0)
 
         next_session_profile = (
             next_session_profile
@@ -191,9 +187,11 @@ class PeakForecastSimulator(ForecastSimulator):
             ]
         )
 
-        prediction = self.make_prediction(features, workday_in_15_minutes)
+        prediction = self.make_prediction(
+            features, workday_in_15_minutes, time, verbose
+        )
 
-        if verbose:
+        if verbose and not VERBOSE_PREDICTIONS_NORMALIZED:
             self.visualize_samples(time, sample=features.value, prediction=prediction.value)  # type: ignore
 
         return prediction

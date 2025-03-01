@@ -11,6 +11,15 @@ from utils.utils_time_and_indexes import (
 )
 
 
+def aggregate_u_scheduled_profiles(
+    u: cp.Variable, var_dim_constant: int
+) -> cp.Expression:
+    u_reshaped = cp.reshape(
+        u, (u.shape[0] // var_dim_constant, var_dim_constant), order="C"
+    )
+    return cp.sum(u_reshaped, axis=0)  # type: ignore
+
+
 def get_new_sch_obj(row, z, u, delta_t, TOU):
     """
     Helper function to generate the scheduled objective for the newest EV arrival if they choose scheduled.
