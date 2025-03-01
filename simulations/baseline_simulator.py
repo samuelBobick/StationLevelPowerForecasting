@@ -162,7 +162,13 @@ class BaselineSimulator:
         return self.power_rate * num_reg_user + cp.max(sch_power_sum_profile)
 
     def get_current_peak_reg(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time=None, row=None
+        self,
+        num_reg_user: int,
+        num_sch_user: int,
+        u: cp.Variable,
+        time=None,
+        row=None,
+        verbose=False,
     ) -> cp.Expression:
         """Helper function to get the peak, accounting for the optimized scheduled power profiles
 
@@ -758,6 +764,14 @@ class BaselineSimulator:
                     num_sch_user_without_next,
                     u_cvxpy,
                     startChargeTime,
+                    verbose=True,
+                )
+                self.get_current_peak_reg(
+                    num_reg_user_without_next,
+                    num_sch_user_without_next,
+                    u_cvxpy,
+                    startChargeTime,
+                    last_row,
                     verbose=True,
                 )
 
