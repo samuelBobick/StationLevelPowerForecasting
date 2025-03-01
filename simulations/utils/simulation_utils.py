@@ -11,11 +11,13 @@ from peak_forecast_simulator import PeakForecastSimulator
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
 from timeseries_forecast_simulator import TimeseriesForecastSimulator
-from utils import (
-    convert_power_profile_to_df,
-    get_end_charge_times,
+from utils.utils import (
     get_profit,
     get_session_results,
+)
+from utils.utils_time_and_indexes import (
+    convert_power_profile_to_df,
+    get_end_charge_times,
 )
 
 TypeScenario = Literal[

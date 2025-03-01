@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from forecast_simulator import ForecastSimulator
-from utils import (
-    get_aggregate_reg_profiles,
+from utils.utils import (
+    get_aggregate_active_reg_future_profiles,
     get_next_reg_profile,
-    round_up_to_nearest_timestep,
 )
+from utils.utils_time_and_indexes import round_up_to_nearest_timestep
 
 
 class TimeseriesForecastSimulator(ForecastSimulator):
@@ -191,7 +191,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         if (
             u is not None
         ):  # on the first iteration, u will be None - there is no prior session
-            u_sliced = u[self.var_dim_constant :] # TODO if scheduled, do not slice.
+            u_sliced = u[self.var_dim_constant :]  # TODO if scheduled, do not slice.
             if u_sliced.shape[0] > 0:
                 u_reshaped = np.reshape(u_sliced, (u_sliced.shape[0] // 96, 96))
                 u_reshaped = np.sum(u_reshaped, axis=0)
@@ -217,7 +217,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
 
         aggregate_future_profile = (
             aggregate_future_profile
-            + get_aggregate_reg_profiles(
+            + get_aggregate_active_reg_future_profiles(
                 self.test_df, time, self.power_profiles, self.delta_t
             )
         )

@@ -12,7 +12,7 @@ from slrp_ev_data.normalization_and_standardization import (
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
-from utils import round_up_to_nearest_timestep
+from utils.utils_time_and_indexes import round_up_to_nearest_timestep
 
 
 class ForecastSimulator(BaselineSimulator):
