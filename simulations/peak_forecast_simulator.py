@@ -75,7 +75,13 @@ class PeakForecastSimulator(ForecastSimulator):
         )
 
     def get_current_peak_reg(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
+        self,
+        num_reg_user: int,
+        num_sch_user: int,
+        u: cp.Variable,
+        time,
+        row,
+        verbose=False,
     ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
@@ -100,7 +106,11 @@ class PeakForecastSimulator(ForecastSimulator):
             self.var_dim_constant :
         ]  # to remove the part that considers the next user as scheduled
         if u_sliced.shape[0] > 0:
-            u_reshaped = cp.reshape(u_sliced, ((u_sliced.shape[0]) // 96, 96))
+            u_reshaped = cp.reshape(
+                u_sliced,
+                ((u_sliced.shape[0]) // self.var_dim_constant, self.var_dim_constant),
+                order="C",
+            )
             next_session_profile = next_session_profile + cp.sum(u_reshaped, axis=0)
 
         next_session_profile = (
@@ -113,7 +123,10 @@ class PeakForecastSimulator(ForecastSimulator):
         # divide by 1000 to convert from W to kW
         return (
             self.get_current_peak(
-                next_session_profile, num_reg_user + num_sch_user + 1, time
+                next_session_profile,
+                num_reg_user + num_sch_user + 1,
+                time,
+                verbose=verbose,
             )
             / 1000
         )
