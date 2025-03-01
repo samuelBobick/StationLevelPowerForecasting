@@ -9,16 +9,17 @@ from constants.dcm import get_dcm_theta, get_dcm_v
 from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
 from slrp_ev_data.data_utils import USAcademicHolidayCalendar
 from tqdm.auto import tqdm
-from utils import (
-    convert_power_profile_to_df,
-    get_end_charge_time_row,
+from utils.utils import (
     get_new_reg_obj,
     get_new_sch_obj,
     get_next_reg_profile,
-    get_remaining_e_need,
     get_sub_df,
+)
+from utils.utils_e_need import get_remaining_e_need, get_total_e_need
+from utils.utils_time_and_indexes import (
+    convert_power_profile_to_df,
+    get_end_charge_time_row,
     get_timestep_info,
-    get_total_e_need,
     round_up_to_nearest_timestep,
 )
 

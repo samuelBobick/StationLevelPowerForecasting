@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from forecast_simulator import ForecastSimulator
-from utils import (
+from utils.utils import (
     get_aggregate_active_reg_future_profiles,
     get_next_reg_profile,
-    round_up_to_nearest_timestep,
 )
+from utils.utils_time_and_indexes import round_up_to_nearest_timestep
 
 
 class PeakForecastSimulator(ForecastSimulator):
