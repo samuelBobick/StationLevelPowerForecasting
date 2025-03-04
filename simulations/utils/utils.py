@@ -14,6 +14,7 @@ from utils.utils_time_and_indexes import (
 def aggregate_u_scheduled_profiles(
     u: cp.Variable, var_dim_constant: int
 ) -> cp.Expression:
+    """Aggregate the scheduled power profiles of all users"""
     u_reshaped = cp.reshape(
         u, (u.shape[0] // var_dim_constant, var_dim_constant), order="C"
     )
