@@ -124,11 +124,14 @@ class LinearModel(RegressionBaseModel):
         if self.peak_prediction:
             # for peak prediction, the model is faster to train
             # and we predict a single value
-            # Therefore, ElasticNetCV runs fairly quickly
-            lm = linear_model.ElasticNetCV(
-                random_state=self.rs,
-                n_alphas=50,
-                l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95],
+            # ElasticNet, which combines L1 and L2 regularization, would give the best results
+            # however, since we use this model in the optimizer,
+            # we do not want too many values to be equal to zero
+            # therefore, we go with Ridge regression, which reduces the
+            # coefficients, but does not set them to zero
+            lm = linear_model.RidgeCV(
+                alphas=np.array([0.1, 0.5, 1.0]),
+                # We could go higher to 5.0, 10.0 but we avoid, for more stability in the optimizer
             )
             # for peak_prediction, we only predict a single value, so to avoid
             # a warning, we convert the y_input to a 1D array
@@ -139,6 +142,11 @@ class LinearModel(RegressionBaseModel):
             lm = linear_model.MultiTaskElasticNetCV(random_state=self.rs, n_alphas=10)
             # lm = linear_model.LinearRegression()
         lm.fit(X_input, y_input)
+
+        # print alpha and l1 parameters chosen for elastic net
+        if self.peak_prediction:
+            print(f"alpha: {lm.alpha_}")
+
         return lm
 
     def predict_model(self, model, X_test: pd.DataFrame):
