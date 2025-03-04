@@ -30,7 +30,12 @@ def convert_time_to_index(timestep, delta_t: float):
         delta_t: timestep size, in hours. E.g. 0.25 for 15-minute timesteps
     """
     try:
-        return int(np.ceil((timestep.hour + timestep.minute / 60) / delta_t))
+        return int(
+            np.ceil(
+                (timestep.hour + timestep.minute / 60 + timestep.second / 3600)
+                / delta_t
+            )
+        )
     except AttributeError:
         return int(np.ceil((timestep.total_seconds() / 3600) / delta_t))
 
