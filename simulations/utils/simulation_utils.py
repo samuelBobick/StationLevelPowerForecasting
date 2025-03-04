@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from peak_forecast_simulator import PeakForecastSimulator
+from sklearn.metrics import mean_squared_error
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
 from timeseries_forecast_simulator import TimeseriesForecastSimulator
@@ -252,6 +253,12 @@ def generate_session_results(
         for key in row_data:
             print(f"{key}: {row_data[key]}")
     if visualize:
+        rmse_scheduled_peak, rmse_regular_peak = compute_prediction_error(
+            sim.aggregate_power_profile, user_computed_data_for_visualization
+        )
+        print(f"RMSE Scheduled Peak: {rmse_scheduled_peak * 1000}")
+        print(f"RMSE Regular Peak: {rmse_regular_peak* 1000}")
+
         visualize_simulation(
             sim.aggregate_power_profile,
             power_profiles,
@@ -259,6 +266,62 @@ def generate_session_results(
             prices,
             sim.delta_t,
         )
+
+
+def compute_prediction_error(
+    aggregate_power_profile, user_computed_data_for_visualization
+):
+    # turn dictionaries into dataframe for easier manipulation
+    df_user_computed_data_for_visualization = pd.DataFrame(
+        user_computed_data_for_visualization
+    ).T.set_index("Start charge time")
+
+    scheduled_peak_predictions = df_user_computed_data_for_visualization[
+        "Peak pred (sch)"
+    ]
+    regular_peak_predictions = df_user_computed_data_for_visualization[
+        "Peak pred (reg)"
+    ]
+    real_values = df_user_computed_data_for_visualization.apply(
+        _apply_get_real_peak_value,
+        axis=1,
+        aggregate_power_profile=aggregate_power_profile,
+    )
+
+    # filter out the values for which the day is not over yet
+    last_day = real_values.index[-1].date()
+    real_values = real_values.loc[real_values.index.date < real_values.index.date.max()]
+    scheduled_peak_predictions = scheduled_peak_predictions.loc[
+        scheduled_peak_predictions.index.date < last_day
+    ]
+    regular_peak_predictions = regular_peak_predictions.loc[
+        regular_peak_predictions.index.date < last_day
+    ]
+
+    rmse_scheduled_peak = np.sqrt(
+        mean_squared_error(real_values, scheduled_peak_predictions)
+    )
+    rmse_regular_peak = np.sqrt(
+        mean_squared_error(real_values, regular_peak_predictions)
+    )
+    return rmse_scheduled_peak, rmse_regular_peak
+
+
+def _apply_get_real_peak_value(
+    row,
+    aggregate_power_profile,
+    mode: Literal["peak_of_day", "peak_next_8h"] = "peak_next_8h",
+):
+    if mode == "peak_of_day":
+        mask = aggregate_power_profile["date"].dt.date == row.name.date()
+    elif mode == "peak_next_8h":
+        mask = (aggregate_power_profile["date"] >= row.name) & (
+            aggregate_power_profile["date"] <= row.name + pd.Timedelta(hours=8)
+        )
+    else:
+        raise ValueError("Invalid peak prediction mode")
+
+    return aggregate_power_profile[mask]["power"].max()
 
 
 def visualize_simulation(

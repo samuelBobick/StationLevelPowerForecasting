@@ -682,6 +682,8 @@ class BaselineSimulator:
                 "Choice": choice,
                 "Energy needed": e_need,
                 "Duration (hours)": last_row["DurationHrs"],
+                "Peak pred (sch)": current_peak_sch,
+                "Peak pred (reg)": current_peak_reg,
             }
 
             previous_running_peak = running_peak
