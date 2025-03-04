@@ -2,10 +2,6 @@ from typing import Literal
 
 import pandas as pd
 import slrp_ev_ts_forecasting.default_parameters as default_parameters
-from slrp_ev_data.normalization_and_standardization import (
-    SINGLE_EVSE_NORMALIZATION_PARAM,
-    retrieve_train_min_and_max,
-)
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 
 
@@ -79,36 +75,54 @@ class PeakPersistence(RegressionBaseModel):
     ):
         return None
 
-    def predict_model(self, model, X_test: pd.DataFrame):
-        # We have the information of the max before the current time
-        # it's in the last 10 hours of the station power
-        lookback_timesteps_for_peak = min(10 * 4, self.x_dim)
-        max_before_current_time = (
-            X_test[
-                [
-                    f"power_{i}"
-                    for i in range(self.x_dim - lookback_timesteps_for_peak, self.x_dim)
+    def predict_model(
+        self,
+        model,
+        X_test: pd.DataFrame,
+        mode: default_parameters.TYPE_PEAK_PREDICTION_MODE = default_parameters.PEAK_PREDICTION_MODE,
+    ):
+        if mode == "peak_of_day":
+            # We have the information of the max before the current time
+            # it's in the last 10 hours of the station power
+            lookback_timesteps_for_peak = min(10 * 4, self.x_dim)
+            max_before_current_time = (
+                X_test[
+                    [
+                        f"power_{i}"
+                        for i in range(
+                            self.x_dim - lookback_timesteps_for_peak, self.x_dim
+                        )
+                    ]
                 ]
+                .max(axis=1)
+                .iloc[0]
+            )
+            # After the current time, we don't have the exact load.
+            # Therefore, we predict that the max after now is going to be
+            # the load of the last known timestep + the max of the next session profile
+            # We have to pu the max of the next session profile in the same scale as the load
+            max_after_current_time = X_test.filter(regex=r"u_").max(axis=1).iloc[0]
+
+            scale_factor = 8
+            if not self.use_all_active_sessions:
+                max_after_current_time += X_test[f"power_{self.x_dim - 1}"].iloc[0]
+                scale_factor = 1
+
+            # _, train_max = retrieve_train_min_and_max("slrp-ev_new")
+            # max_after_current_time = (
+            #     max_after_current_time
+            #     * SINGLE_EVSE_NORMALIZATION_PARAM
+            #     * scale_factor
+            #     / train_max.iloc[0]
+            # )
+            return max(max_before_current_time, max_after_current_time)
+
+        else:
+            number_next_hours = 8
+
+            column_names_for_peak = [
+                col
+                for col in X_test.filter(regex=r"u_(\d+)").columns
+                if int(col.split("_")[1]) < number_next_hours * 4
             ]
-            .max(axis=1)
-            .iloc[0]
-        )
-        # After the current time, we don't have the exact load.
-        # Therefore, we predict that the max after now is going to be
-        # the load of the last known timestep + the max of the next session profile
-        # We have to pu the max of the next session profile in the same scale as the load
-        max_after_current_time = X_test.filter(regex=r"u_").max(axis=1).iloc[0]
-
-        scale_factor = 8
-        if not self.use_all_active_sessions:
-            max_after_current_time += X_test[f"power_{self.x_dim - 1}"].iloc[0]
-            scale_factor = 1
-
-        _, train_max = retrieve_train_min_and_max("slrp-ev_new")
-        max_after_current_time = (
-            max_after_current_time
-            * SINGLE_EVSE_NORMALIZATION_PARAM
-            * scale_factor
-            / train_max.iloc[0]
-        )
-        return max(max_before_current_time, max_after_current_time)
+            return X_test[column_names_for_peak].iloc[0].max()
