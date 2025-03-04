@@ -98,3 +98,23 @@ def save_losses(
 
         results_file_path.parent.mkdir(exist_ok=True)
         df_results.to_csv(results_file_path, index=False)
+
+
+def print_losses(
+    losses: Losses, model_name: str | None = None, data_length_days: float | None = None
+):
+    model_choice_str = f"{model_name}: " if model_name is not None else "Losses: "
+    data_length_days_str = (
+        f"for around {data_length_days} days of predictions"
+        if data_length_days is not None
+        else ""
+    )
+
+    print(
+        model_choice_str,
+        *[
+            f"{loss_type.upper()}: {loss_value:.1f};"
+            for loss_type, loss_value in losses.items()
+        ],
+        data_length_days_str,
+    )

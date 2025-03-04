@@ -628,9 +628,8 @@ class BaselineSimulator:
                 num_sch_user += 1
                 self.power_profiles[row["dcosId"]][
                     (TOU_current_idx - TOU_start_idx) : (
-                        TOU_current_idx - TOU_start_idx
+                        TOU_current_idx - TOU_start_idx + N_remain
                     )
-                    + N_remain
                 ] = u[adj_constant : (adj_constant + N_remain)].flatten()
 
             # Save hourly prices and choice of the new user

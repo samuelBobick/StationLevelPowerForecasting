@@ -110,34 +110,18 @@ def aggregate_power_profiles(test_df, power_profiles, delta_t):
     return agg_power_profile
 
 
-def get_profit(test_df, power_profiles, prices, delta_t, TOU):
+def get_profit(session_results: pd.DataFrame):
     """
-    Aggregate the profit from a simulation
+    Aggregate the TOU cost and charging revenue from a simulation
 
-        Inputs:
-        test_df: the pandas DataFrame used in the simulation
-        power_profiles: dictionary mapping dcosIds to power_profiles
-        prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
-        delta_t: timestep size, in hours
-        TOU: electricity price time series, with TOU[0] representing the price at midnight, in units of cents/kWh
+    Inputs:
+        session_results: results of the simulation by session
     """
 
-    charging_revenue = 0
-    TOU_costs = 0
-    for index, row in test_df.iterrows():
-        current_time = pd.to_datetime(row["startChargeTime"])
-        TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
-            row, current_time, delta_t
-        )
-        power_profile = power_profiles[row["dcosId"]]
-        if row["choice"] == "SCHEDULED":
-            charging_revenue += sum(power_profile[:N_remain] * prices[row["dcosId"]][0])
-        else:
-            charging_revenue += sum(power_profile[:N_remain] * prices[row["dcosId"]][1])
+    charging_revenue = session_results["charging_revenue"].sum()
+    TOU_cost = session_results["TOU_cost"].sum()
 
-        TOU_costs += sum(power_profile[:N_remain] * TOU[TOU_start_idx:TOU_end_idx])
-
-    return charging_revenue, TOU_costs
+    return charging_revenue, TOU_cost
 
 
 def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_t):
@@ -155,11 +139,10 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
 
     filtered_power_profiles = {k: v for k, v in power_profiles.items() if len(v) > 0}
 
-    df = pd.DataFrame()
+    session_results = pd.DataFrame()
     for dcosId, power_profile in filtered_power_profiles.items():
         matching_row = test_df.loc[test_df["dcosId"] == dcosId]
         row = matching_row.squeeze()
-        start_time = pd.to_datetime(row["startChargeTime"])
 
         z_sch = prices[dcosId][0]
         z_reg = prices[dcosId][1]
@@ -169,7 +152,6 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
             row, start_time, delta_t
         )
 
-        power_profile = power_profiles[row["dcosId"]]
         if row["choice"] == "SCHEDULED":
             charging_revenue = sum(power_profile[:N_remain] * z_sch)
         else:
@@ -180,7 +162,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
 
         hours_if_reg = (
             energy_delivered / power_rate
-        )  # how many time steps would it take the user to charge if they chose regular?
+        )  # how many hours would it take the user to charge if they chose regular?
 
         # convert the optimal prices from $/kWh to $/hour
         z_sch_hourly = float(z_sch * energy_delivered / (N_remain * delta_t))
@@ -198,9 +180,11 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
             "power_profile": np.round(power_profile, 2),
         }
 
-        df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
+        session_results = pd.concat(
+            [session_results, pd.DataFrame([row_data])], ignore_index=True
+        )
 
-    return df
+    return session_results
 
 
 def get_session_historical_power_profile(row) -> pd.DataFrame:

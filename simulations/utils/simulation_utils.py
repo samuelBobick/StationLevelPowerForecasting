@@ -8,7 +8,8 @@ import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from peak_forecast_simulator import PeakForecastSimulator
-from sklearn.metrics import mean_squared_error
+from slrp_ev_ts_forecasting.compute_losses import Losses, compute_losses
+from slrp_ev_ts_forecasting.save_losses import print_losses
 from smooth_dc_penalty_simulator import SmoothDCPenaltySimulator
 from threshold_simulator import ThresholdSimulator
 from timeseries_forecast_simulator import TimeseriesForecastSimulator
@@ -55,6 +56,8 @@ def filter_data(
     # handle case where date_greater_than is None
     if date_greater_than is None:
         date_greater_than = date_connect_time.min()
+    else:
+        print(f"INFO: using sessions starting AFTER {date_greater_than}")
 
     # filter based on month and year inputs
     test_df = data[
@@ -104,7 +107,10 @@ def get_simulator(
     Args:
         scenario (_type_): _description_
     """
-    # TODO this function returns different children of BaselineSimulator once we implement them (conditioned on scenario)
+    if initial_running_peak > 0:
+        print(f"INFO: Using initial running peak of {initial_running_peak} kW")
+        print("---------------- Starting simulation ----------------")
+
     if scenario in ["all_scheduled", "all_regular", "standard"]:
         return BaselineSimulator(
             data,
@@ -205,23 +211,24 @@ def generate_session_results(
     )
     session_results.to_csv(results_file_name, index=False)
 
-    charging_revenue, TOU_cost = get_profit(
-        sim.test_df, power_profiles, prices, sim.delta_t, sim.TOU
-    )
+    charging_revenue_cents, TOU_cost_cents = get_profit(session_results)
 
     demand_charge_kw = round(max(sim.aggregate_power_profile["power"]), 2)
-    demand_charge_cents = round(sim.cost_dc * demand_charge_kw, 2)
-    total_profit = round(charging_revenue - TOU_cost - demand_charge_cents, 2)
-    charging_revenue = round(charging_revenue, 2)
-    TOU_cost = round(TOU_cost, 2)
+    demand_charge_cents = sim.cost_dc * demand_charge_kw
+    total_profit = round(
+        (charging_revenue_cents - TOU_cost_cents - demand_charge_cents) / 100, 2
+    )
+    charging_revenue = round(charging_revenue_cents / 100, 2)
+    TOU_cost = round(TOU_cost_cents / 100, 2)
+    demand_charge = round(demand_charge_cents / 100, 2)
     energy_delivered = round(sum(session_results["energy_delivered"]), 2)
 
     row_data = {
         "Month": month,
-        "Total Profit (cents)": total_profit,
-        "Charging Revenue (cents)": charging_revenue,
-        "TOU Cost (cents)": TOU_cost,
-        "Demand Charge (cents)": demand_charge_cents,
+        "Total Profit ($)": total_profit,
+        "Charging Revenue ($)": charging_revenue,
+        "TOU Cost ($)": TOU_cost,
+        "Demand Charge ($)": demand_charge,
         "Peak Power (kW)": demand_charge_kw,
         "Energy Delivered (kWh)": energy_delivered,
     }
@@ -235,10 +242,10 @@ def generate_session_results(
     else:
         columns = [
             "Month",
-            "Total Profit (cents)",
-            "Charging Revenue (cents)",
-            "TOU Cost (cents)",
-            "Demand Charge (cents)",
+            "Total Profit ($)",
+            "Charging Revenue ($)",
+            "TOU Cost ($)",
+            "Demand Charge ($)",
             "Peak Power (kW)",
             "Energy Delivered (kWh)",
         ]
@@ -249,15 +256,15 @@ def generate_session_results(
     summary_df.to_csv(summary_file_name, index=False)
 
     if verbose:
-        print("------------------------------------------------------------")
+        print("---------------- Summary results ----------------")
         for key in row_data:
             print(f"{key}: {row_data[key]}")
     if visualize:
-        rmse_scheduled_peak, rmse_regular_peak = compute_prediction_error(
+        sch_losses, reg_losses = compute_prediction_error(
             sim.aggregate_power_profile, user_computed_data_for_visualization
         )
-        print(f"RMSE Scheduled Peak: {rmse_scheduled_peak * 1000}")
-        print(f"RMSE Regular Peak: {rmse_regular_peak* 1000}")
+        print_losses(sch_losses, "Scheduled Peak Prediction: ")
+        print_losses(reg_losses, "Regular Peak Prediction: ")
 
         visualize_simulation(
             sim.aggregate_power_profile,
@@ -270,7 +277,7 @@ def generate_session_results(
 
 def compute_prediction_error(
     aggregate_power_profile, user_computed_data_for_visualization
-):
+) -> tuple[Losses, Losses]:
     # turn dictionaries into dataframe for easier manipulation
     df_user_computed_data_for_visualization = pd.DataFrame(
         user_computed_data_for_visualization
@@ -298,13 +305,14 @@ def compute_prediction_error(
         regular_peak_predictions.index.date < last_day
     ]
 
-    rmse_scheduled_peak = np.sqrt(
-        mean_squared_error(real_values, scheduled_peak_predictions)
+    sch_losses = compute_losses(
+        scheduled_peak_predictions.values, real_values.values, alpha=2
     )
-    rmse_regular_peak = np.sqrt(
-        mean_squared_error(real_values, regular_peak_predictions)
+    reg_losses = compute_losses(
+        regular_peak_predictions.values, real_values.values, alpha=2
     )
-    return rmse_scheduled_peak, rmse_regular_peak
+
+    return sch_losses, reg_losses
 
 
 def _apply_get_real_peak_value(
@@ -356,8 +364,8 @@ def visualize_simulation(
             [user_power_profiles_dfs, power_profiles_df]
         )
 
-        df_user_computed_data_for_visualization.loc[user_id, "Energy delivered"] = sum(
-            power_profiles_df["power"] * delta_t
+        df_user_computed_data_for_visualization.loc[user_id, "Energy delivered"] = (
+            np.round(sum(power_profiles_df["power"] * delta_t), 2)
         )
 
     fig = go.Figure()
