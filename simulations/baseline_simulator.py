@@ -10,6 +10,7 @@ from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
 from slrp_ev_data.data_utils import USAcademicHolidayCalendar
 from tqdm.auto import tqdm
 from utils.utils import (
+    aggregate_u_scheduled_profiles,
     get_new_reg_obj,
     get_new_sch_obj,
     get_next_reg_profile,
@@ -156,12 +157,7 @@ class BaselineSimulator:
         # initial shape of u: (self.var_dim_constant * (num_sch_user + 1), 1). The
         # first self.var_dim_constant elements of u are for the next session, that
         # we are trying to optimize
-        sch_power_sum_profile = cp.reshape(
-            u, (self.var_dim_constant, num_sch_user + 1)
-        ).T  # Shape: (num_sch_user + 1, self.var_dim_constant)
-        sch_power_sum_profile = cp.sum(
-            sch_power_sum_profile, axis=0
-        )  # Shape: (self.var_dim_constant,)
+        sch_power_sum_profile = aggregate_u_scheduled_profiles(u, self.var_dim_constant)
 
         return self.power_rate * num_reg_user + cp.max(sch_power_sum_profile)
 
@@ -188,13 +184,9 @@ class BaselineSimulator:
         Returns:
             cp.Expression: current scheduled peak
         """
+        u_sliced: cp.Variable = u[self.var_dim_constant :]  # type: ignore
         return self.power_rate * (num_reg_user + 1) + cp.max(
-            cp.sum(
-                cp.reshape(
-                    u[self.var_dim_constant :], (self.var_dim_constant, num_sch_user)
-                ).T,
-                axis=0,
-            )
+            aggregate_u_scheduled_profiles(u_sliced, self.var_dim_constant)
         )
 
     def get_J(
