@@ -25,6 +25,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
+        model_name: str = "LinearModel_SessionBased_WithNbSessions_WithAllActiveSessions",
     ):
         """_summary_"""
         super().__init__(
@@ -38,6 +39,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             initial_running_peak,
             monte_carlo,
             verbose,
+            model_name,
         )
 
     def get_current_peak_sch(
