@@ -23,7 +23,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
-from slrp_ev_ts_forecasting.save_losses import save_losses
+from slrp_ev_ts_forecasting.save_losses import print_losses, save_losses
 from slrp_ev_ts_forecasting.utils_data_processing import (
     get_scaling_parameters,
     reverse_engineer_forecast,
@@ -144,14 +144,7 @@ def run_one_model(
     y_true = y_true[mask_nan]
 
     losses = compute_losses(y_pred, y_true, model_parameters.get("alpha", ALPHA))
-    print(
-        f"{model_choice}: ",
-        *[
-            f"{loss_type.upper()}: {loss_value:.1f};"
-            for loss_type, loss_value in losses.items()
-        ],
-        f"for around {data_length_days} days of predictions",
-    )
+    print_losses(losses, model_name, data_length_days)
 
     if verbose:
         visualize_forecast(
