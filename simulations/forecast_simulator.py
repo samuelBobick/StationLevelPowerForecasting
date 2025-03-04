@@ -26,6 +26,7 @@ class ForecastSimulator(BaselineSimulator):
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
         custom_cost_dc: Optional[float] = MODIFIED_DC,
+        initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
     ):
@@ -38,6 +39,7 @@ class ForecastSimulator(BaselineSimulator):
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
+            initial_running_peak,
             monte_carlo,
             verbose,
         )

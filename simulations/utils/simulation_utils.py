@@ -31,7 +31,13 @@ TypeScenario = Literal[
 ]
 
 
-def filter_data(data, month, year, scenario: TypeScenario):
+def filter_data(
+    data,
+    month,
+    year,
+    scenario: TypeScenario,
+    date_greater_than: Optional[pd.Timestamp] = None,
+):
     """Helper function to filter the sessions dataframe
 
     Args:
@@ -43,10 +49,17 @@ def filter_data(data, month, year, scenario: TypeScenario):
     Returns:
         test_df (pd.DataFrame): filtered dataframe
     """
+    date_connect_time = pd.to_datetime(data["connectTime"])
+
+    # handle case where date_greater_than is None
+    if date_greater_than is None:
+        date_greater_than = date_connect_time.min()
+
     # filter based on month and year inputs
     test_df = data[
-        (pd.to_datetime(data["connectTime"]).dt.year == year)
-        & (pd.to_datetime(data["connectTime"]).dt.month == month)
+        (date_connect_time.dt.year == year)
+        & (date_connect_time.dt.month == month)
+        & (date_connect_time > date_greater_than)
     ]
 
     # Keep meaningful sessions
@@ -56,6 +69,9 @@ def filter_data(data, month, year, scenario: TypeScenario):
     # Drop overnight sessions (so when the end charge time is the next day)
     end_charge_time = get_end_charge_times(test_df)
     start_charge_time = pd.to_datetime(test_df["connectTime"])
+    print(
+        f"INFO: Dropping {len(test_df) - len(test_df[(end_charge_time.dt.day - start_charge_time.dt.day) == 0])} overnight sessions"
+    )
     test_df = test_df[(end_charge_time.dt.day - start_charge_time.dt.day) == 0]
 
     if scenario == "all_scheduled":
@@ -80,6 +96,7 @@ def get_simulator(
     step: float = 1,
     monte_carlo: bool = False,
     verbose: bool = False,
+    initial_running_peak: float = 0,
 ):
     """_summary_
 
@@ -96,6 +113,7 @@ def get_simulator(
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
+            initial_running_peak,
             monte_carlo,
             verbose,
         )
@@ -108,6 +126,7 @@ def get_simulator(
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
+            initial_running_peak,
             monte_carlo,
             verbose,
         )
@@ -120,6 +139,7 @@ def get_simulator(
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
+            initial_running_peak,
             monte_carlo,
             verbose,
             step,
@@ -133,6 +153,7 @@ def get_simulator(
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
+            initial_running_peak,
             monte_carlo,
             verbose,
         )
@@ -145,6 +166,7 @@ def get_simulator(
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
+            initial_running_peak,
             monte_carlo,
             verbose,
         )
