@@ -134,6 +134,9 @@ class ForecastSimulator(BaselineSimulator):
 
         prediction = (normalized_features @ coefficients) + intercept
 
+        # the prediction can sometimes be negative, we need to make sure it is positive
+        # prediction = cp.maximum(prediction, 0)
+
         if verbose and VERBOSE_PREDICTIONS_NORMALIZED:
             self.visualize_samples(time, normalized_features.value, np.array(prediction.value))  # type: ignore
 
