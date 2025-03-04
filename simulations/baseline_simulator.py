@@ -38,6 +38,7 @@ class BaselineSimulator:
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
         custom_cost_dc: Optional[float] = MODIFIED_DC,
+        initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
     ):
@@ -60,6 +61,7 @@ class BaselineSimulator:
                 If False, we assume the charging choice of each session is the one historical done. \
                 If True, we will use the DCM to simulate the choice. Default is False.
             verbose: Print optimization information. Default is False.
+            initial_running_peak: Initial running peak power this billing cycle. Default is 0.
 
         """
         self.test_df = test_df
@@ -122,6 +124,8 @@ class BaselineSimulator:
 
         cal = USAcademicHolidayCalendar()
         self.holidays = cal.holidays(start=start_of_month, end=end_of_month)
+
+        self.initial_running_peak = initial_running_peak
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
         # having to use cp.maximum is much slower than putting this max into inequality constraints
@@ -587,7 +591,9 @@ class BaselineSimulator:
                 startChargeTime,
             )
 
-            running_peak = self.aggregate_power_profile["power"].max()
+            running_peak = max(
+                self.aggregate_power_profile["power"].max(), self.initial_running_peak
+            )
 
             grid_search_results, sub_df = self.grid_search(
                 startChargeTime, running_peak, prices
