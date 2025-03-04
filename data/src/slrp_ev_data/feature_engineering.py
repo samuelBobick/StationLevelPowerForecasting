@@ -71,6 +71,9 @@ def feature_engineering(
     Returns:
         pd.DataFrame: Data ready to be used in the models and tensorflow.
     """
+    # TODO: if we normalize, put workday between 0 and 1 and time features between 0 and 1
+    # if we standardize, put workday between -1 and 1 and time features between -1 and 1
+
     data = data_input.copy()
     # Check that the data is in the correct format
     DataSchema.validate(data)
