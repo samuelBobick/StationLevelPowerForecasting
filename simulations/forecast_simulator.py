@@ -29,6 +29,7 @@ class ForecastSimulator(BaselineSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
+        model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions",
     ):
         """_summary_"""
         super().__init__(
@@ -46,8 +47,7 @@ class ForecastSimulator(BaselineSimulator):
 
         self.forecasting_models = {}
         for workday in [0, 1]:
-            # TODO edit filename
-            filename = f"LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions_{workday}.json"
+            filename = f"{model_name}_{workday}.json"
             self.forecasting_models[workday] = self.load_model_parameters(filename)
 
         self.features_name = self.forecasting_models[0]["feature_names"]
@@ -132,7 +132,7 @@ class ForecastSimulator(BaselineSimulator):
         coefficients = model["coefficients"].squeeze()
         intercept = model["intercept"][0]
 
-        prediction = (normalized_features @ coefficients) + intercept
+        prediction = (coefficients @ normalized_features) + intercept
 
         # the prediction can sometimes be negative, we need to make sure it is positive
         # prediction = cp.maximum(prediction, 0)
@@ -193,7 +193,9 @@ class ForecastSimulator(BaselineSimulator):
                 line=dict(dash="dash"),
             )
         )
-        if prediction:
+        if (
+            prediction
+        ):  # TODO if predicition is scalar, plot a point. Else, plot a time series.
             fig.add_trace(
                 go.Scatter(
                     x=[time_u[0]],

@@ -136,16 +136,14 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         if time.date() in self.holidays.date:
             workday = 0
 
-        features = cp.hstack(
-            [
-                historical_power_profile * 1000,
-                workday,
-                8,  # number EVSEs available (always 8 in SLRP-EV) TODO standardize?
-                time_features,
-                next_reg_profile * 1000,
-                num_active_sessions,
-            ]
-        )
+        features = np.hstack([
+            historical_power_profile * 1000,
+            workday,
+            8,  # number EVSEs available (always 8 in SLRP-EV) TODO standardize?
+            time_features,
+            next_reg_profile * 1000,
+            num_active_sessions,
+        ])
 
         # TODO plug in model from Thibaud and delete my dummy prediction
         prediction = self.make_prediction(features, workday)
@@ -255,7 +253,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         if time_in_15_min.date() in self.holidays.date:
             time_in_15_min_workday = 0
 
-        features = cp.hstack(
+        features = np.hstack(
             [
                 historical_power_profile * 1000,
                 tomorrow_workday,
@@ -267,7 +265,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         )
 
         # TODO plug in model from Thibaud and delete my dummy prediction
-        prediction = self.make_prediction(features, time_in_15_min_workday)
+        prediction = self.make_prediction(features, time_in_15_min_workday, time)
         prediction = np.zeros(self.var_dim_constant)
 
         if verbose:
