@@ -583,7 +583,7 @@ class BaselineSimulator:
                 startChargeTime,
                 active_sessions,
             )
-            # only used for timeseries_forecast TODO should we use self.power_profiles instead, using Thibaud's new utils function.
+            # TODO what is going on here?
             timeseries_forecast = self.get_timeseries_forecast(
                 active_sessions[-1],
                 u,

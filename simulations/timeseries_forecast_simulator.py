@@ -168,8 +168,8 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             ]
         )
 
-        # TODO plug in model from Thibaud and delete my dummy prediction
         prediction = self.make_prediction(features, workday, time)
+        prediction = np.maximum(prediction, 0)
 
         if verbose:
             self.visualize_samples(time, features, prediction)  # type: ignore
