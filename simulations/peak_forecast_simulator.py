@@ -27,7 +27,7 @@ class PeakForecastSimulator(ForecastSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions.json",
+        model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions",
     ):
         """_summary_"""
         super().__init__(
