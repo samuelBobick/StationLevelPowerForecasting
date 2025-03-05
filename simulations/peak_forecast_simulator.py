@@ -46,7 +46,7 @@ class PeakForecastSimulator(ForecastSimulator):
         self.forecast_historical_input_dim = 96
 
     def get_current_peak_sch(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, verbose=False
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row, verbose=False
     ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 

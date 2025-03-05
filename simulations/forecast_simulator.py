@@ -125,7 +125,7 @@ class ForecastSimulator(BaselineSimulator):
             predictions
         """
         normalized_features = (features - self.features_norm_parameters_min) / (
-            self.features_norm_parameters_max - self.features_norm_parameters_min
+            self.features_norm_parameters_max - self.features_norm_parameters_min + 1
         )
 
         model = self.forecasting_models[workday]
@@ -194,7 +194,7 @@ class ForecastSimulator(BaselineSimulator):
             )
         )
         if (
-            prediction
+            type(prediction) is int
         ):  # TODO if predicition is scalar, plot a point. Else, plot a time series.
             fig.add_trace(
                 go.Scatter(
@@ -202,6 +202,15 @@ class ForecastSimulator(BaselineSimulator):
                     y=prediction,
                     mode="markers",
                     name="Predicted Peak",
+                )
+            )
+        else:
+            fig.add_trace(
+                go.Scatter(
+                    x=time_u,
+                    y=prediction,
+                    mode="lines+markers",
+                    name="Predicted Power",
                 )
             )
 
