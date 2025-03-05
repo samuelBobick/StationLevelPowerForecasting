@@ -138,7 +138,8 @@ class BaselineSimulator:
         num_reg_user: int,
         num_sch_user: int,
         u: cp.Variable,
-        time=None,
+        time,
+        row,
         verbose=False,
     ) -> cp.Expression:
         """Helper function to get the peak, accounting for the optimized scheduled power profiles
@@ -170,8 +171,8 @@ class BaselineSimulator:
         num_reg_user: int,
         num_sch_user: int,
         u: cp.Variable,
-        time=None,
-        row=None,
+        time,
+        row,
         verbose=False,
     ) -> cp.Expression:
         """Helper function to get the peak, accounting for the optimized scheduled power profiles
@@ -274,7 +275,7 @@ class BaselineSimulator:
         new_leave_obj = 0
 
         current_peak_sch = self.get_current_peak_sch(
-            num_reg_user, num_sch_user, u, current_time
+            num_reg_user, num_sch_user, u, current_time, last_row
         )
         current_peak_reg = self.get_current_peak_reg(
             num_reg_user, num_sch_user, u, current_time, last_row
@@ -773,6 +774,7 @@ class BaselineSimulator:
                     num_sch_user_without_next,
                     u_cvxpy,
                     startChargeTime,
+                    last_row,
                     verbose=True,
                 )
                 print("Peak prediction plot if Regular user")

@@ -43,7 +43,13 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         )
 
     def get_current_peak_sch(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
+        self,
+        num_reg_user: int,
+        num_sch_user: int,
+        u: cp.Variable,
+        time,
+        row,
+        verbose=False,
     ) -> cp.Expression:
         """Helper fuction to get the peak, assuming the new user chooses scheduled
 
@@ -58,20 +64,30 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             cp.Expression: current scheduled peak
         """
         timeseries = (
-            self.get_timeseries(row, num_reg_user + num_sch_user - 1, time) / 1000
+            self.get_timeseries(
+                row, num_reg_user + num_sch_user - 1, time, verbose=verbose
+            )
+            / 1000
         )
+
         next_reg_profile = get_next_reg_profile(
             row, self.delta_t, self.flexibility_constant, self.power_rate
         )
 
         return cp.max(
-            timeseries
+            timeseries[0]
             - next_reg_profile
             + cp.reshape(u[: self.var_dim_constant], (self.var_dim_constant,))
         )
 
     def get_current_peak_reg(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
+        self,
+        num_reg_user: int,
+        num_sch_user: int,
+        u: cp.Variable,
+        time,
+        row,
+        verbose=False,
     ) -> cp.Expression:
         """Helper fuction to get the peak, assuming the new user chooses regular
 
@@ -87,7 +103,12 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         """
         # Wrap with cp.constant so we can call .value on it
         return cp.Constant(
-            max(self.get_timeseries(row, num_reg_user + num_sch_user - 1, time) / 1000)
+            max(
+                self.get_timeseries(
+                    row, num_reg_user + num_sch_user - 1, time, verbose=verbose
+                )
+                / 1000,
+            )
         )
 
     def get_timeseries(
@@ -136,29 +157,24 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         if time.date() in self.holidays.date:
             workday = 0
 
-        features = np.hstack([
-            historical_power_profile * 1000,
-            workday,
-            8,  # number EVSEs available (always 8 in SLRP-EV) TODO standardize?
-            time_features,
-            next_reg_profile * 1000,
-            num_active_sessions,
-        ])
+        features = np.hstack(
+            [
+                historical_power_profile * 1000,
+                workday,
+                8,  # number EVSEs available (always 8 in SLRP-EV) TODO standardize?
+                time_features,
+                next_reg_profile * 1000,
+                num_active_sessions,
+            ]
+        )
 
         # TODO plug in model from Thibaud and delete my dummy prediction
-        prediction = self.make_prediction(features, workday)
-        prediction = np.zeros(self.var_dim_constant)
+        prediction = self.make_prediction(features, workday, time)
 
         if verbose:
-            self.visualize_samples(features.value, prediction.value)  # type: ignore
+            self.visualize_samples(time, features, prediction)  # type: ignore
 
         return prediction
-
-    def visualize_samples(
-        self, sample: np.ndarray, prediction: Optional[np.ndarray] = None
-    ):
-        # TODO
-        pass
 
     def get_timeseries_forecast(
         self,
