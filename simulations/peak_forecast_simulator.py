@@ -30,7 +30,7 @@ class PeakForecastSimulator(ForecastSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions.json",
+        model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions",
         smooth_power_features: bool = SMOOTH_POWER_FEATURES,
         smooth_window_size: int = 5,
     ):
@@ -56,7 +56,13 @@ class PeakForecastSimulator(ForecastSimulator):
         self.smooth_window_size = smooth_window_size
 
     def get_current_peak_sch(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, verbose=False
+        self,
+        num_reg_user: int,
+        num_sch_user: int,
+        u: cp.Variable,
+        time,
+        row,
+        verbose=False,
     ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
