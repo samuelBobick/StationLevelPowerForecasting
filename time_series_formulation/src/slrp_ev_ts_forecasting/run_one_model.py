@@ -10,6 +10,7 @@ from slrp_ev_data import (
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
 )
+from slrp_ev_data.normalization_and_standardization import get_scaling_parameters
 
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import (
@@ -27,9 +28,8 @@ from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
 from slrp_ev_ts_forecasting.models.last_week import LastWeek
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
-from slrp_ev_ts_forecasting.save_losses import save_losses
+from slrp_ev_ts_forecasting.save_losses import print_losses, save_losses
 from slrp_ev_ts_forecasting.utils_data_processing import (
-    get_scaling_parameters,
     reverse_engineer_forecast,
 )
 from slrp_ev_ts_forecasting.visualization import visualize_forecast
@@ -170,13 +170,8 @@ def run_one_model(
     losses = compute_losses(
         y_pred, y_true, model_parameters.get("alpha", ALPHA), y_naive_pred, y_naive_true
     )
-    print(
-        f"{model_choice}: ",
-        *[
-            f"{loss_type.upper()}: {loss_value:.1f};"
-            for loss_type, loss_value in losses.items()
-        ],
-    )
+
+    print_losses(losses, model_name)
 
     if verbose:
         visualize_forecast(test, df_reversed_predictions, model.model_str_name)

@@ -11,6 +11,7 @@ from slrp_ev_data.feature_engineering import (
     get_workday_column_names,
     one_hot_encoding,
 )
+from slrp_ev_data.normalization_and_standardization import get_scaling_parameters
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.default_parameters import (
@@ -620,7 +621,8 @@ class Base:
         Generate a DataFrame of sessions from a power DataFrame.
         The data frame has the dcosId (session ID) as index, and the future power \
         profile of the session as `self.lookahead` columns. It also has \
-        the start and end charge times of the session.
+        the start and end charge times of the session, and some additional features
+        generated based on the class inputs.
 
         Args:
             power_df (pd.DataFrame): dataframe read from the function `read_new_slrpev_data`.
@@ -644,17 +646,44 @@ class Base:
         )
 
         reverted_power_df = revert_power_df(raw_df_sessions)
+
+        # get additional features
         additional_session_features = extract_features(
             reverted_power_df=reverted_power_df
-        ).drop(columns=["power"])
-        if not self.add_number_of_sessions:
-            additional_session_features = additional_session_features.drop(
-                columns=["numberOfActiveSessions"]
-            )
-        if not self.add_fraction_of_regular_sessions:
-            additional_session_features = additional_session_features.drop(
-                columns=["fractionOfRegularSessions"]
-            )
+        )
+
+        # keep only the ones we are interested in
+        additional_feature_names = []
+        if self.add_number_of_sessions:
+            additional_feature_names.append("numberOfActiveSessions")
+        if self.add_fraction_of_regular_sessions:
+            additional_feature_names.append("fractionOfRegularSessions")
+        additional_session_features = additional_session_features.drop(
+            columns=[
+                col
+                for col in additional_session_features.columns
+                if col not in additional_feature_names + ["startChargeTime"]
+            ]
+        )
+
+        # scale those additional features
+        scaling_parameters_additional_features = get_scaling_parameters(
+            additional_session_features,
+            additional_session_features,
+            data_scaling_mode=scaling_mode,
+            lookahead_15min_steps=self.lookahead,
+            dataset="slrp-ev_new",
+            retrieve_from_saved=scaling_mode in ["normalize", "standardize"],
+            bypass_validation=True,
+            cols_to_normalize=additional_feature_names,
+        )
+
+        additional_session_features = apply_scaling(
+            additional_session_features,
+            scaling_mode,
+            scaling_parameters_additional_features,
+            additional_feature_names,
+        )
 
         print("Generating future session power profiles")
         df_sessions = raw_df_sessions.progress_apply(
@@ -873,11 +902,11 @@ class Base:
             # column_names_of_non_lagged_features = flat_inputs.filter(regex=r"^(?!power_\d+$|u_\d+$)")
             subtitle = ""
             if "fractionOfRegularSessions" in flat_inputs.columns:
-                subtitle += f"Fraction of regular sessions: {flat_inputs['fractionOfRegularSessions'].iloc[i]:.2f}\n"
+                subtitle += f"Scaled Fraction of regular sessions: {flat_inputs['fractionOfRegularSessions'].iloc[i]:.2f}\n"
             if "numberOfActiveSessions" in flat_inputs.columns:
-                subtitle += f"Number of active sessions: {flat_inputs['numberOfActiveSessions'].iloc[i] * 8}\n"
+                subtitle += f"Scaled Number of active sessions: {flat_inputs['numberOfActiveSessions'].iloc[i]:.2f}\n"
             if "number_of_evses_available" in flat_inputs.columns:
-                subtitle += f"Scaled number of EVSEs available: {flat_inputs['number_of_evses_available'].iloc[i]}\n"
+                subtitle += f"Scaled number of EVSEs available: {flat_inputs['number_of_evses_available'].iloc[i]:.2f}\n"
             for workday_column in self.list_workday_column_names:
                 if workday_column in flat_inputs.columns:
                     subtitle += f"{workday_column.capitalize().replace("_", " ")}: {flat_inputs[workday_column].iloc[i]}\n"
@@ -895,7 +924,7 @@ class Base:
             )
 
         fig.update_layout(
-            title_text=f"Example sample of the {data_type} data for date {date}",
+            title_text=f"Example sample of the scaled {data_type} data for date {date}",
             showlegend=True,
             yaxis_title="Normalized Power",
         )
