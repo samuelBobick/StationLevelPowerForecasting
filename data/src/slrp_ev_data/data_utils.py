@@ -12,17 +12,38 @@ from pandas.tseries.holiday import (
 )
 
 
-def get_data_frequency(df, _data_size_for_freq_lookup=None) -> str:
+def get_date_column_name(df: pd.DataFrame) -> str:
+    """Check if the column name of this DataFrame for the date is 'date' or 'startChargeTime'."""
+    list_possible_date_columns = ["date", "startChargeTime"]
+    for possible_date_column in list_possible_date_columns:
+        if possible_date_column in df.columns:
+            return possible_date_column
+
+    raise KeyError(
+        "This DataFrame does not have a column named 'date' or 'startChargeTime'."
+    )
+
+
+def get_data_frequency(
+    df, _data_size_for_freq_lookup=None, _date_column_name=None
+) -> str:
     """Get the data frequency from the DataFrame.
-    Leave _data_size_for_freq_lookup to None, it is used for recursion."""
+    Leave `_data_size_for_freq_lookup` and `_date_column_name` to None, it is used for recursion.
+    """
     if _data_size_for_freq_lookup is None:
         _data_size_for_freq_lookup = df.shape[0]
+    if _date_column_name is None:
+        _date_column_name = get_date_column_name(df)
 
-    if isinstance(df["date"].iloc[0], pd.Timestamp):
-        data_freq = pd.infer_freq(df["date"].iloc[-_data_size_for_freq_lookup:])
+    if isinstance(df[_date_column_name].iloc[0], pd.Timestamp):
+        data_freq = pd.infer_freq(
+            df[_date_column_name].iloc[-_data_size_for_freq_lookup:]
+        )
     else:
         data_freq = pd.infer_freq(
-            pd.to_datetime(df["date"].iloc[-_data_size_for_freq_lookup:], unit="s")
+            pd.to_datetime(
+                df[_date_column_name].iloc[-_data_size_for_freq_lookup:], unit="s"
+            )
         )
 
     # if the data frequency is not found, it might be because we have gaps.
@@ -33,7 +54,7 @@ def get_data_frequency(df, _data_size_for_freq_lookup=None) -> str:
             raise ValueError("The data frequency could not be inferred.")
         else:
             _data_size_for_freq_lookup = int(_data_size_for_freq_lookup / 2)
-            return get_data_frequency(df, _data_size_for_freq_lookup)
+            return get_data_frequency(df, _data_size_for_freq_lookup, _date_column_name)
     return data_freq
 
 

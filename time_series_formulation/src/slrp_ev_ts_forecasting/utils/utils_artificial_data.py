@@ -277,9 +277,9 @@ def get_artificial_data(
     scaling_parameters = get_scaling_parameters(
         artificial_power_df,
         artificial_power_df,
-        data_scaling_mode=scaling_mode,
+        scaling_mode=scaling_mode,
         lookahead_15min_steps=lookahead,
-        dataset="slrp-ev_new",
+        dataset_name="slrp-ev_new",
         retrieve_from_saved=scaling_mode in ["normalize", "standardize"],
     )
     artificial_train_data = feature_engineering(

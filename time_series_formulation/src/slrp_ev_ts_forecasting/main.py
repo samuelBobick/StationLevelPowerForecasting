@@ -2,7 +2,7 @@ import cProfile
 import pstats
 
 from slrp_ev_ts_forecasting.default_parameters import (
-    TypeDataSet,
+    TypeDatasetName,
     TypeModelChoice,
     TypeScalingMode,
 )
@@ -29,13 +29,13 @@ def run_one_model_profiled(*args, **kwargs):
 list_model_choices: list[TypeModelChoice] = ["LinearRegression"]
 
 number_of_models_per_config = 1
-dataset: TypeDataSet = "slrp-ev_new"
+dataset: TypeDatasetName = "slrp-ev_new"
 list_xdim = [96]
 session_based_mode = True
 peak_prediction = True
 list_optimize_lags = [None]  # ["short_opt", "long_opt"]
 list_scaling_mode: list[TypeScalingMode] = [
-    "normalize",
+    "rolling_normalize",
 ]
 
 if __name__ == "__main__":

@@ -674,9 +674,9 @@ class Base:
         scaling_parameters_additional_features = get_scaling_parameters(
             additional_session_features,
             additional_session_features,
-            data_scaling_mode=scaling_mode,
+            scaling_mode=scaling_mode,
             lookahead_15min_steps=self.lookahead,
-            dataset="slrp-ev_new",
+            dataset_name="slrp-ev_new",
             retrieve_from_saved=scaling_mode in ["normalize", "standardize"],
             bypass_validation=True,
             cols_to_normalize=additional_feature_names,
