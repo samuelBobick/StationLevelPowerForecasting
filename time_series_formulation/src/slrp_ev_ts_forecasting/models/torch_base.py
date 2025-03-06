@@ -17,8 +17,8 @@ from slrp_ev_ts_forecasting.default_parameters import (
     TypeOptimizeLags,
     TypeScalingMode,
 )
-from slrp_ev_ts_forecasting.helper_session_forecasting import get_artificial_data
 from slrp_ev_ts_forecasting.models.base import Base, prepare_df_predictions
+from slrp_ev_ts_forecasting.utils.utils_artificial_data import get_artificial_data
 from torch.optim.adamw import AdamW
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard.writer import SummaryWriter
