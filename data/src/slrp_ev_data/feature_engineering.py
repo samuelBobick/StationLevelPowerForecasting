@@ -8,8 +8,10 @@ from slrp_ev_ts_forecasting.default_parameters import TypeScalingMode
 
 from slrp_ev_data.utils.data_utils import (
     add_missing_timesteps,
+    convert_data_freq_to_minutes,
     convert_date_from_datetime_to_int,
     convert_date_from_int_to_datetime,
+    get_data_frequency,
     get_workday_column_names,
 )
 from slrp_ev_data.utils.scaling_main import apply_scaling, reverse_scaling
@@ -67,6 +69,29 @@ def feature_engineering(
     if add_nans_for_missing_data:
         data = add_missing_timesteps(data)
 
+    # We are going to add timesteps to the data, so that we can add the future workday
+    # status for the last bit of the data
+    data_freq = get_data_frequency(data)
+    initial_data_end_date = data["date"].max()
+    list_workday_column_names = get_workday_column_names(lookahead)
+    number_of_rows_to_add = (len(list_workday_column_names) - 1) * 96 + 1
+    data = pd.concat(
+        [
+            data,
+            pd.DataFrame(
+                data={
+                    "date": pd.date_range(
+                        start=initial_data_end_date
+                        + pd.Timedelta(minutes=convert_data_freq_to_minutes(data_freq)),
+                        periods=number_of_rows_to_add,
+                        freq=data_freq,
+                    )
+                }
+            ),
+        ],
+        ignore_index=True,
+    )
+
     data["workday_0"] = (data["date"].dt.dayofweek < 5).astype(int)
     # set public holidays to 0 (non workday)
     if holiday_calendar == "USAcademic":
@@ -84,14 +109,12 @@ def feature_engineering(
     # up to 23:45 of the previous day
     workday_next_timestep = data["workday_0"].shift(-1).ffill().astype("Int32")
     # we are going to have 1 workday column for all the days we have to predict + 1
-    list_workday_column_names = get_workday_column_names(lookahead)
     for i, workday_column_name in enumerate(list_workday_column_names):
         data[workday_column_name] = (
             workday_next_timestep.shift(-i * 96).ffill().astype("Int32")
         )
-    # drop the few timesteps where we don't know the workday status of the next timestep
-    rows_to_exclude = (len(list_workday_column_names) - 1) * 96 + 1
-    data = data.iloc[:-rows_to_exclude].copy()
+    # drop the few timesteps that we added at the beginning
+    data = data.iloc[:-number_of_rows_to_add].copy()
 
     # Add the 4 hour time window
     data["time_window"] = data["date"].dt.hour // 4
