@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from slrp_ev_data.feature_engineering import (
+from slrp_ev_data.utils.data_utils import (
     convert_date_from_datetime_to_int,
     convert_date_from_int_to_datetime,
 )

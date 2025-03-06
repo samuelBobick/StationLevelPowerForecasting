@@ -7,7 +7,7 @@ import pandas as pd
 import seaborn as sns
 from constants.dcm import get_dcm_theta, get_dcm_v
 from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
-from slrp_ev_data.data_utils import USAcademicHolidayCalendar
+from slrp_ev_data.utils.USAcademicHolidayCalendar import USAcademicHolidayCalendar
 from tqdm.auto import tqdm
 from utils.utils import (
     aggregate_u_scheduled_profiles,
