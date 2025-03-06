@@ -59,6 +59,14 @@ class ForecastSimulator(BaselineSimulator):
     def load_model_parameters(self, filename):
         with open(SAVED_MODELS_PATH / filename, "r") as json_file:
             params = json.load(json_file)
+
+        model_scaling_mode = params["model_parameters"]["scaling_mode"]
+        if model_scaling_mode != "normalize":
+            raise ValueError(
+                f"The scaling mode of your model {model_scaling_mode} is not yet supported. "
+                "Only 'normalize' is supported for now. Please update your model."
+            )
+
         params["intercept"] = np.array(params["intercept"])
         params["coefficients"] = np.array(params["coefficients"])
         return params
