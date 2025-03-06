@@ -10,6 +10,7 @@ from slrp_ev_data.feature_engineering import (
 )
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_data.utils.data_utils import (
+    convert_date_from_datetime_to_int,
     convert_date_from_int_to_datetime,
     get_workday_column_names,
 )
@@ -177,6 +178,10 @@ class Base:
         """Add at the beginning of the "new_data_to_pad" DataFrame the "number_of_timesteps_to_pad" that precede the given data.
         If the data is not available or some timesteps are missing, no padding is done.
         """
+        if self.seen_data.empty:
+            # There is nothing we can use to pad
+            return new_data_to_pad
+
         first_date_of_data_to_pad = pd.to_datetime(
             new_data_to_pad.iloc[0]["date"], unit="s"
         )
@@ -189,22 +194,11 @@ class Base:
         )
 
         seen_data = self.seen_data.copy()
-        seen_data["date"] = pd.to_datetime(seen_data["date"], unit="s")
-        seen_data["date"] = seen_data["date"].dt.round("5min")
-        seen_data = seen_data.set_index("date")
-
-        # Check if the padding index is in the model data
-        if not padding_index.isin(seen_data.index).all():
-            if not seen_data.empty:
-                print(
-                    "Warning: Some padding indexes are missing in the model data. Padding not done."
-                )
-            return new_data_to_pad
+        seen_data["date"] = convert_date_from_int_to_datetime(seen_data["date"])
 
         # Get the padding data
-        padding_data = seen_data.loc[padding_index]
-        padding_data = padding_data.reset_index().rename(columns={"index": "date"})
-        padding_data["date"] = padding_data["date"].astype("int64") // 10**9
+        padding_data = seen_data.loc[seen_data["date"].isin(padding_index)].copy()
+        padding_data["date"] = convert_date_from_datetime_to_int(padding_data["date"])
 
         # Concatenate the padding data with the data to pad
         new_data_to_pad = pd.concat([padding_data, new_data_to_pad], ignore_index=True)

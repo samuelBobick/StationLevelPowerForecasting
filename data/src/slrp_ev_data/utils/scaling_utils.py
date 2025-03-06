@@ -7,7 +7,7 @@ from slrp_ev_data.utils.input_data_type import DataSchema
 from slrp_ev_ts_forecasting.default_parameters import TypeDatasetName
 
 COLS_TO_NORMALIZE = ["power", "number_of_evses_available"]
-NORM_PARAMETERS_PATH = Path(__file__).parent / "saved_normalization_parameters"
+NORM_PARAMETERS_PATH = Path(__file__).parent.parent / "saved_normalization_parameters"
 NORM_PARAMETERS_PATH.mkdir(parents=True, exist_ok=True)
 SINGLE_EVSE_NORMALIZATION_PARAM = 6_800
 
