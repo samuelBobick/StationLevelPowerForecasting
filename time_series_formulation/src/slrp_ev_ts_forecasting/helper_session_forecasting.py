@@ -6,11 +6,11 @@ from slrp_ev_data.feature_engineering import (
 )
 from slrp_ev_data.normalization_and_standardization import (
     SINGLE_EVSE_NORMALIZATION_PARAM,
+    get_scaling_parameters,
 )
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 
 from slrp_ev_ts_forecasting.default_parameters import RANDOM_SEED, TypeScalingMode
-from slrp_ev_ts_forecasting.utils_data_processing import get_scaling_parameters
 
 
 def apply_generate_future_session_power(
@@ -147,15 +147,15 @@ def get_artificial_data(
     scaling_parameters = get_scaling_parameters(
         artificial_power_df,
         artificial_power_df,
-        data_scaling_mode=scaling_mode,  # type: ignore
+        data_scaling_mode=scaling_mode,
         lookahead_15min_steps=lookahead,
         dataset="slrp-ev_new",
-        retrieve_from_saved=True,  # TODO: set to False
+        retrieve_from_saved=scaling_mode in ["normalize", "standardize"],
     )
     artificial_train_data = feature_engineering(
         data_input=artificial_power_df,
         add_nans_for_missing_data=True,
-        scaling_mode=scaling_mode,  # type: ignore
+        scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
         cols_normalization_to_skip=["number_of_evses_available"],
     )
@@ -401,7 +401,5 @@ def extract_features(reverted_power_df):
         },
         axis=1,
     )
-    # normalize the number of active sessions
-    additional_features["numberOfActiveSessions"] /= 8
 
     return additional_features

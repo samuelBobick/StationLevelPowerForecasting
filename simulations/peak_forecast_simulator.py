@@ -1,11 +1,11 @@
 from typing import Optional
 
 import cvxpy as cp
-import numpy as np
 import pandas as pd
 from constants.global_parameters import VERBOSE_PREDICTIONS_NORMALIZED
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from forecast_simulator import ForecastSimulator
+from slrp_ev_data.feature_engineering import engineer_time_features
 from utils.utils import (
     aggregate_u_scheduled_profiles,
     get_aggregate_active_reg_future_profiles,
@@ -28,6 +28,8 @@ class PeakForecastSimulator(ForecastSimulator):
         monte_carlo: bool = False,
         verbose: bool = False,
         model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions.json",
+        smooth_power_features: bool = True,
+        smooth_window_size: int = 5,
     ):
         """_summary_"""
         super().__init__(
@@ -44,6 +46,8 @@ class PeakForecastSimulator(ForecastSimulator):
             model_name,
         )
         self.forecast_historical_input_dim = 96
+        self.smooth_power_features = smooth_power_features
+        self.smooth_window_size = smooth_window_size
 
     def get_current_peak_sch(
         self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, verbose=False
@@ -155,20 +159,11 @@ class PeakForecastSimulator(ForecastSimulator):
             self.aggregate_power_profile["date"].isin(historical_timesteps)
         ]["power"].values
 
-        s_in_day = 24 * 60 * 60  # number of seconds in a day
-        s_in_week = 7 * s_in_day
-        s_in_year = (365.2425) * s_in_day
-        unix_time = time.timestamp()
-        time_features = np.array(
-            [
-                np.sin(unix_time * (2 * np.pi / s_in_day)),
-                np.cos(unix_time * (2 * np.pi / s_in_day)),
-                np.sin(unix_time * (2 * np.pi / s_in_week)),
-                np.cos(unix_time * (2 * np.pi / s_in_week)),
-                np.sin(unix_time * (2 * np.pi / s_in_year)),
-                np.cos(unix_time * (2 * np.pi / s_in_year)),
-            ]
-        )
+        # get time features
+        time_features = pd.DataFrame(data=[time], columns=["date"])
+        engineer_time_features(time_features)
+        # clean and put in the correct format
+        time_features = time_features.drop(columns=["date"]).values.squeeze()
 
         time_in_15_minutes = time + pd.Timedelta(minutes=15)
         workday_in_15_minutes = int(time_in_15_minutes.dayofweek < 5)
@@ -179,6 +174,14 @@ class PeakForecastSimulator(ForecastSimulator):
         workday_tomorrow = int(time_tomorrow.dayofweek < 5)
         if time_tomorrow.date() in self.holidays.date:
             workday_tomorrow = 0
+
+        if self.smooth_power_features:
+            historical_power_profile = self.smooth_profile(
+                historical_power_profile, self.smooth_window_size
+            )
+            aggregate_future_profile = self.smooth_profile(
+                aggregate_future_profile, self.smooth_window_size
+            )
 
         features = cp.hstack(
             [

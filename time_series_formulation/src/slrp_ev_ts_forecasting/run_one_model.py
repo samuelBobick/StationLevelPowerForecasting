@@ -8,6 +8,7 @@ from slrp_ev_data import (
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
 )
+from slrp_ev_data.normalization_and_standardization import get_scaling_parameters
 
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import (
@@ -25,7 +26,6 @@ from slrp_ev_ts_forecasting.models.ffnn import FFNN
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 from slrp_ev_ts_forecasting.save_losses import print_losses, save_losses
 from slrp_ev_ts_forecasting.utils_data_processing import (
-    get_scaling_parameters,
     reverse_engineer_forecast,
 )
 from slrp_ev_ts_forecasting.visualization import visualize_forecast

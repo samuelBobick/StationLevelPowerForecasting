@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from forecast_simulator import ForecastSimulator
+from slrp_ev_data.feature_engineering import engineer_time_features
 from utils.utils import (
     get_aggregate_active_reg_future_profiles,
     get_next_reg_profile,
@@ -117,21 +118,11 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             self.aggregate_power_profile["date"].isin(timesteps)
         ]["power"].values
 
-        s_in_day = 24 * 60 * 60  # number of seconds in a day
-        s_in_week = 7 * s_in_day
-        s_in_year = (365.2425) * s_in_day
-        unix_time = time.timestamp()
-        time_features = np.array(
-            [
-                np.sin(unix_time * (2 * np.pi / s_in_day)),
-                np.cos(unix_time * (2 * np.pi / s_in_day)),
-                np.sin(unix_time * (2 * np.pi / s_in_week)),
-                np.cos(unix_time * (2 * np.pi / s_in_week)),
-                np.sin(unix_time * (2 * np.pi / s_in_year)),
-                np.cos(unix_time * (2 * np.pi / s_in_year)),
-            ]
-        )
-
+        # get time features
+        time_features = pd.DataFrame(data=[time], columns=["date"])
+        engineer_time_features(time_features)
+        # clean and put in the correct format
+        time_features = time_features.drop(columns=["date"]).values.squeeze()
         workday = int(time.dayofweek < 5)
         if time.date() in self.holidays.date:
             workday = 0
