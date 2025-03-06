@@ -4,6 +4,7 @@ import cvxpy as cp
 import pandas as pd
 from constants.global_parameters import (
     SMOOTH_POWER_FEATURES,
+    SMOOTH_WINDOW_SIZE,
     VERBOSE_PREDICTIONS_NORMALIZED,
 )
 from constants.tariffs import MODIFIED_DC, TypeTariffName
@@ -32,7 +33,7 @@ class PeakForecastSimulator(ForecastSimulator):
         verbose: bool = False,
         model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions",
         smooth_power_features: bool = SMOOTH_POWER_FEATURES,
-        smooth_window_size: int = 5,
+        smooth_window_size: int = SMOOTH_WINDOW_SIZE,
     ):
         """_summary_"""
         super().__init__(
@@ -50,10 +51,11 @@ class PeakForecastSimulator(ForecastSimulator):
         )
         self.forecast_historical_input_dim = 96
         self.smooth_power_features = smooth_power_features
-        if self.smooth_power_features:
-            print("INFO: Smoothing of the power features is enabled")
-
         self.smooth_window_size = smooth_window_size
+        if self.smooth_power_features:
+            print(
+                f"INFO: Smoothing of the power features is enabled with a smoothing window size of {smooth_window_size}"
+            )
 
     def get_current_peak_sch(
         self,
