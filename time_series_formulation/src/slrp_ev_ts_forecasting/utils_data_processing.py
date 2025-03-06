@@ -3,15 +3,8 @@ from slrp_ev_data.feature_engineering import (
     convert_date_from_datetime_to_int,
     reverse_feature_engineering,
 )
-from slrp_ev_data.normalization_and_standardization import (
-    get_rolling_scaling_column,
-    get_train_mean_and_std,
-    get_train_min_and_max,
-    retrieve_train_mean_and_std,
-    retrieve_train_min_and_max,
-)
 
-from slrp_ev_ts_forecasting.default_parameters import TypeDataSet, TypeScalingMode
+from slrp_ev_ts_forecasting.default_parameters import TypeScalingMode
 
 
 def reverse_engineer_forecast(
@@ -57,52 +50,3 @@ def reverse_engineer_forecast(
         ]
 
     return df_reversed_predictions
-
-
-def get_scaling_parameters(
-    train: pd.DataFrame | None,
-    data: pd.DataFrame | None,
-    data_scaling_mode: TypeScalingMode,
-    dataset: TypeDataSet,
-    lookahead_15min_steps: int,
-    retrieve_from_saved: bool = False,
-) -> tuple | pd.DataFrame:
-    if data_scaling_mode == "normalize":
-        if retrieve_from_saved:
-            scaling_parameters = retrieve_train_min_and_max(dataset_name=dataset)
-        else:
-            if train is None:
-                raise ValueError(
-                    "train dataframe must be provided when data_scaling_mode is 'normalize'"
-                )
-            scaling_parameters = get_train_min_and_max(train, dataset_name=dataset)
-
-    elif data_scaling_mode == "standardize":
-        if retrieve_from_saved:
-            scaling_parameters = retrieve_train_mean_and_std(dataset_name=dataset)
-        else:
-            if train is None:
-                raise ValueError(
-                    "train dataframe must be provided when data_scaling_mode is 'standardize'"
-                )
-            scaling_parameters = get_train_mean_and_std(train, dataset_name=dataset)
-
-    elif data_scaling_mode in ["rolling_standardize", "rolling_normalize"]:
-        if train is None or data is None:
-            raise ValueError(
-                "train and data dataframes must be provided when data_scaling_mode is 'rolling_standardize'"
-            )
-
-        scaling_parameters = get_rolling_scaling_column(
-            data,
-            scaling_mode=data_scaling_mode,
-            lookahead_15min_steps=lookahead_15min_steps,
-            dataset_name=dataset,
-        )
-
-    else:
-        raise ValueError(
-            f"Data scaling mode {data_scaling_mode} is not defined. Please refer to "
-            "TypeDataScalingMode for supported data scaling modes."
-        )
-    return scaling_parameters

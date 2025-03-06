@@ -1,5 +1,6 @@
 from typing import Literal
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pandas.tseries.holiday import USFederalHolidayCalendar as UScalendar
@@ -117,9 +118,20 @@ def feature_engineering(
     data["time_window"] = data["date"].dt.hour // 4
     data["time_window"] = data["time_window"].shift(-1).ffill().astype("Int32")
 
+    engineer_time_features(data)
+
+    data = data.astype({"power": "float32", "number_of_evses_available": "float32"})
+    FeaturedEngineeredSchema.validate(data)
+
+    return data
+
+
+def engineer_time_features(data: pd.DataFrame, verbose_plot: bool = False):
+    """Modifies data inplace by adding time features."""
     # Convert the date to an int
     # we choose int instead of having a float, because the date magnitude (10**9)
     # is too large for a float32 (the tensorflow default dtype) to be precise
+    dates_ts = data["date"].copy()
     data["date"] = convert_date_from_datetime_to_int(data["date"])
 
     s_in_day = 24 * 60 * 60  # number of seconds in a day
@@ -132,10 +144,45 @@ def feature_engineering(
     data["Year sin"] = np.sin(data["date"] * (2 * np.pi / s_in_year), dtype=np.float32)
     data["Year cos"] = np.cos(data["date"] * (2 * np.pi / s_in_year), dtype=np.float32)
 
-    data = data.astype({"power": "float32", "number_of_evses_available": "float32"})
-    FeaturedEngineeredSchema.validate(data)
+    if verbose_plot:
+        fig, axs = plt.subplots(1, 3, figsize=(15, 3))
 
-    return data
+        # Hour of the day encoding
+        sp = axs[0].scatter(
+            data["Day sin"], data["Day cos"], c=dates_ts.dt.hour, cmap="viridis"
+        )
+        axs[0].set(
+            xlabel="sin(hour)", ylabel="cos(hour)", title="Hour of the Day Encoding"
+        )
+        fig.colorbar(sp, ax=axs[0])
+
+        # Day of the week encoding
+        sp = axs[1].scatter(
+            data["Week sin"], data["Week cos"], c=dates_ts.dt.dayofweek, cmap="viridis"
+        )
+        axs[1].set(
+            xlabel="sin(day of week)",
+            ylabel="cos(day of week)",
+            title="Day of the Week Encoding",
+        )
+        fig.colorbar(sp, ax=axs[1])
+
+        # Week of the year encoding
+        sp = axs[2].scatter(
+            data["Year sin"],
+            data["Year cos"],
+            c=dates_ts.dt.isocalendar().week,
+            cmap="viridis",
+        )
+        axs[2].set(
+            xlabel="sin(week of year)",
+            ylabel="cos(week of year)",
+            title="Week of the Year Encoding",
+        )
+        fig.colorbar(sp, ax=axs[2])
+
+        plt.tight_layout()
+        plt.show()
 
 
 def reverse_feature_engineering(
