@@ -79,7 +79,7 @@ class PeakPersistence(RegressionBaseModel):
         self,
         model,
         X_test: pd.DataFrame,
-        mode: default_parameters.TYPE_PEAK_PREDICTION_MODE = default_parameters.PEAK_PREDICTION_MODE,
+        mode: default_parameters.TypePeakPredictionMode = default_parameters.PEAK_PREDICTION_MODE,
     ):
         if mode == "peak_of_day":
             # We have the information of the max before the current time

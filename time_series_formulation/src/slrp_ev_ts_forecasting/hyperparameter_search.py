@@ -40,6 +40,9 @@ search_space = {
         "rolling_standardize",
         "rolling_normalize",
     ],
+    # knn
+    "n_neighbors": [4, 7, 10, 13],
+    "percentile": [25, 50, 75, 90],
     # parameters for session based forecasting
     "session_based_mode": [False],
     "peak_prediction": [False],
