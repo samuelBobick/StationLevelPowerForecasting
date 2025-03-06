@@ -2,7 +2,10 @@ from typing import Optional
 
 import cvxpy as cp
 import pandas as pd
-from constants.global_parameters import VERBOSE_PREDICTIONS_NORMALIZED
+from constants.global_parameters import (
+    SMOOTH_POWER_FEATURES,
+    VERBOSE_PREDICTIONS_NORMALIZED,
+)
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from forecast_simulator import ForecastSimulator
 from slrp_ev_data.feature_engineering import engineer_time_features
@@ -28,7 +31,7 @@ class PeakForecastSimulator(ForecastSimulator):
         monte_carlo: bool = False,
         verbose: bool = False,
         model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions.json",
-        smooth_power_features: bool = True,
+        smooth_power_features: bool = SMOOTH_POWER_FEATURES,
         smooth_window_size: int = 5,
     ):
         """_summary_"""
@@ -47,6 +50,9 @@ class PeakForecastSimulator(ForecastSimulator):
         )
         self.forecast_historical_input_dim = 96
         self.smooth_power_features = smooth_power_features
+        if self.smooth_power_features:
+            print("INFO: Smoothing of the power features is enabled")
+
         self.smooth_window_size = smooth_window_size
 
     def get_current_peak_sch(
