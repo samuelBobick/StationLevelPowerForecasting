@@ -23,14 +23,18 @@ from slrp_ev_ts_forecasting.default_parameters import (
     TypeOptimizeLags,
     TypeScalingMode,
 )
-from slrp_ev_ts_forecasting.helper_session_forecasting import (
+from slrp_ev_ts_forecasting.utils.pacf import (
+    get_pacf_values,
+    get_threshold,
+    sort_pacf_values,
+)
+from slrp_ev_ts_forecasting.utils.utils_artificial_data import get_artificial_data
+from slrp_ev_ts_forecasting.utils.utils_session_forecasting import (
     apply_generate_future_session_power,
     extract_features,
-    get_artificial_data,
     get_raw_df_sessions,
     revert_power_df,
 )
-from slrp_ev_ts_forecasting.pacf import get_pacf_values, get_threshold, sort_pacf_values
 from tqdm.auto import tqdm
 
 # Register `pandas.progress_apply` and `pandas.Series.map_apply` with `tqdm`

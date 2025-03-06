@@ -29,10 +29,10 @@ from slrp_ev_ts_forecasting.models.ffnn import FFNN
 from slrp_ev_ts_forecasting.models.last_week import LastWeek
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
 from slrp_ev_ts_forecasting.save_losses import print_losses, save_losses
-from slrp_ev_ts_forecasting.utils_data_processing import (
+from slrp_ev_ts_forecasting.utils.utils_data_processing import (
     reverse_engineer_forecast,
 )
-from slrp_ev_ts_forecasting.visualization import visualize_forecast
+from slrp_ev_ts_forecasting.visualization.visualize_forecast import visualize_forecast
 
 
 def run_one_model(
