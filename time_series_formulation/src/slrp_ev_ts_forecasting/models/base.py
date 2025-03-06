@@ -20,9 +20,9 @@ from slrp_ev_ts_forecasting.default_parameters import (
     NUMBER_OF_DAYS_FOR_PACF,
     PEAK_PREDICTION_MODE,
     RANDOM_SEED,
-    TYPE_PEAK_PREDICTION_MODE,
     VERBOSE,
     TypeOptimizeLags,
+    TypePeakPredictionMode,
     TypeScalingMode,
 )
 from slrp_ev_ts_forecasting.utils.pacf import (
@@ -720,7 +720,7 @@ class Base:
     def transform_X_y_for_peak_prediction(
         self,
         merged_inputs_dates_sessions: pd.DataFrame,
-        mode: TYPE_PEAK_PREDICTION_MODE = PEAK_PREDICTION_MODE,
+        mode: TypePeakPredictionMode = PEAK_PREDICTION_MODE,
     ) -> pd.DataFrame:
         if mode == "peak_of_day":
             # Extract dates from 'startChargeTime'
