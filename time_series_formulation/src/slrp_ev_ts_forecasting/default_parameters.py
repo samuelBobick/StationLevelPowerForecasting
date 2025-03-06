@@ -29,8 +29,8 @@ SAVED_MODELS_PATH.mkdir(parents=True, exist_ok=True)
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"
 
-TypeDataSet = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
-DATASET: TypeDataSet = "slrp-ev_new"
+TypeDatasetName = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
+DATASET: TypeDatasetName = "slrp-ev_new"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
 TypeScalingMode = Literal[
     "normalize", "standardize", "rolling_standardize", "rolling_normalize"

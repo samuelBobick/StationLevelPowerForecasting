@@ -21,7 +21,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
     LOOKAHEAD,
     SCALING_MODE,
     VERBOSE,
-    TypeDataSet,
+    TypeDatasetName,
     TypeModelChoice,
 )
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
@@ -40,7 +40,7 @@ def run_one_model(
     model_parameters={},
     verbose: bool = VERBOSE,
     save_results_filename: str = DEFAULT_RESULTS_FILENAME,
-    dataset: TypeDataSet = DATASET,
+    dataset: TypeDatasetName = DATASET,
 ) -> None:
     # Read the data
     print("# Starting...")
