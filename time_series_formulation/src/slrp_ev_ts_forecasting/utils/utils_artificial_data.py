@@ -1,14 +1,14 @@
 import numpy as np
 import pandas as pd
 from slrp_ev_data.feature_engineering import (
-    convert_date_from_int_to_datetime,
     feature_engineering,
 )
-from slrp_ev_data.normalization_and_standardization import (
-    SINGLE_EVSE_NORMALIZATION_PARAM,
-    get_scaling_parameters,
-)
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
+from slrp_ev_data.utils.data_utils import convert_date_from_int_to_datetime
+from slrp_ev_data.utils.scaling_main import get_scaling_parameters
+from slrp_ev_data.utils.scaling_utils import (
+    SINGLE_EVSE_NORMALIZATION_PARAM,
+)
 from slrp_ev_ts_forecasting.default_parameters import RANDOM_SEED, TypeScalingMode
 from slrp_ev_ts_forecasting.utils.utils_session_forecasting import (
     extract_features,

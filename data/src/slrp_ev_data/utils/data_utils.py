@@ -1,15 +1,4 @@
 import pandas as pd
-from dateutil.relativedelta import FR
-from pandas.tseries.holiday import (
-    AbstractHolidayCalendar,
-    Holiday,
-    USLaborDay,
-    USMartinLutherKingJr,
-    USMemorialDay,
-    USPresidentsDay,
-    USThanksgivingDay,
-    nearest_workday,
-)
 
 
 def get_date_column_name(df: pd.DataFrame) -> str:
@@ -22,6 +11,14 @@ def get_date_column_name(df: pd.DataFrame) -> str:
     raise KeyError(
         "This DataFrame does not have a column named 'date' or 'startChargeTime'."
     )
+
+
+def get_workday_column_names(lookahead: int) -> list[str]:
+    # TODO: update for different data frequency
+    workday_column_names = []
+    for i in range((lookahead // 96) + 1):
+        workday_column_names.append(f"workday_{int(i*96)}")
+    return workday_column_names
 
 
 def get_data_frequency(
@@ -68,39 +65,22 @@ def convert_data_freq_to_minutes(data_freq) -> int:
         )
 
 
-class USAcademicHolidayCalendar(AbstractHolidayCalendar):
-    """
-    US Academic Government Holiday Calendar based on rules specified by:
-    - [UC Berkeley](https://hr.berkeley.edu/hr-network/personnel-resources/holiday-sick-vacation/holiday-schedule)
-    - [UC San Diego](https://blink.ucsd.edu/HR/benefits/time-off/holidays.html)
-    """
+def add_missing_timesteps(data) -> pd.DataFrame:
+    # make sure that date is a datetime before calling that function
+    return (
+        data.set_index("date").resample(get_data_frequency(data)).mean().reset_index()
+    )
 
-    rules = [
-        Holiday("New Year's Day", month=1, day=1, observance=nearest_workday),
-        USMartinLutherKingJr,
-        USPresidentsDay,
-        Holiday(
-            "Cesar Chavez Day", month=3, day=31, offset=pd.DateOffset(weekday=FR(-1))
-        ),
-        USMemorialDay,
-        Holiday(
-            "Juneteenth National Independence Day",
-            month=6,
-            day=19,
-            start_date="2021-06-18",
-            observance=nearest_workday,
-        ),
-        Holiday("Independence Day", month=7, day=4, observance=nearest_workday),
-        USLaborDay,
-        Holiday("Veterans Day", month=11, day=11, observance=nearest_workday),
-        USThanksgivingDay,
-        Holiday(
-            "Day after Thanksgiving",
-            month=11,
-            day=1,
-            offset=pd.DateOffset(weekday=FR(4)),
-        ),
-        Holiday("Christmas Eve", month=12, day=24, observance=nearest_workday),
-        Holiday("Christmas Day", month=12, day=25, observance=nearest_workday),
-        Holiday("New Year's Eve", month=12, day=31, observance=nearest_workday),
-    ]
+
+def convert_date_from_int_to_datetime(date_column: pd.Series) -> pd.Series:
+    # Convert the date back to a Timestamp
+    date_column = pd.to_datetime(date_column, unit="s")
+    # Round dates to closest minute
+    date_column = date_column.dt.round("5min")
+    return date_column
+
+
+def convert_date_from_datetime_to_int(date_column: pd.Series) -> pd.Series:
+    # Convert the date back to a Timestamp
+    date_column = date_column.astype("int64") // 10**9
+    return date_column

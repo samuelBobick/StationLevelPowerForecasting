@@ -5,12 +5,12 @@ from slrp_ev_data import (
     read_new_slrpev_data,
     read_old_slrpev_data,
     read_ucsd_data,
-    train_test_split,
 )
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
 )
-from slrp_ev_data.normalization_and_standardization import get_scaling_parameters
+from slrp_ev_data.utils import train_test_split
+from slrp_ev_data.utils.scaling_main import get_scaling_parameters
 
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import (

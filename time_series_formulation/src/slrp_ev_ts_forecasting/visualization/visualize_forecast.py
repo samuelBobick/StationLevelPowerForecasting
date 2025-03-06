@@ -1,6 +1,6 @@
 import pandas as pd
 import plotly.graph_objects as go
-from slrp_ev_data.feature_engineering import add_missing_timesteps
+from slrp_ev_data.utils.data_utils import add_missing_timesteps
 
 
 def visualize_forecast(

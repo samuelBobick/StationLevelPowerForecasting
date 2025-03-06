@@ -9,9 +9,12 @@ import torch
 from plotly import graph_objects as go
 from torch.utils.data import Dataset
 
-from slrp_ev_data.data_utils import convert_data_freq_to_minutes, get_data_frequency
 from slrp_ev_data.feature_engineering import (
     reverse_feature_engineering,
+)
+from slrp_ev_data.utils.data_utils import (
+    convert_data_freq_to_minutes,
+    get_data_frequency,
 )
 
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing

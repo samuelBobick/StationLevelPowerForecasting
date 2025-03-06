@@ -6,13 +6,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly import subplots
 from slrp_ev_data.feature_engineering import (
-    apply_scaling,
-    convert_date_from_int_to_datetime,
-    get_workday_column_names,
     one_hot_encoding,
 )
-from slrp_ev_data.normalization_and_standardization import get_scaling_parameters
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
+from slrp_ev_data.utils.data_utils import (
+    convert_date_from_int_to_datetime,
+    get_workday_column_names,
+)
+from slrp_ev_data.utils.scaling_main import apply_scaling, get_scaling_parameters
 from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.default_parameters import (
     NUMBER_OF_DAYS_FOR_PACF,

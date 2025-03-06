@@ -6,40 +6,19 @@ import pandas as pd
 from pandas.tseries.holiday import USFederalHolidayCalendar as UScalendar
 from slrp_ev_ts_forecasting.default_parameters import TypeScalingMode
 
-from slrp_ev_data.data_utils import USAcademicHolidayCalendar, get_data_frequency
-from slrp_ev_data.normalization_and_standardization import (
-    COLS_TO_NORMALIZE,
-    apply_rolling_scaling,
-    normalize_data,
-    reverse_normalize_data,
-    reverse_rolling_scaling,
-    reverse_standardize_data,
-    standardize_data,
+from slrp_ev_data.utils.data_utils import (
+    add_missing_timesteps,
+    convert_date_from_datetime_to_int,
+    convert_date_from_int_to_datetime,
+    get_workday_column_names,
 )
+from slrp_ev_data.utils.scaling_main import apply_scaling, reverse_scaling
+from slrp_ev_data.utils.scaling_utils import (
+    COLS_TO_NORMALIZE,
+)
+from slrp_ev_data.utils.USAcademicHolidayCalendar import USAcademicHolidayCalendar
 
-from .input_data_type import DataSchema, FeaturedEngineeredSchema
-
-
-def convert_date_from_int_to_datetime(date_column: pd.Series) -> pd.Series:
-    # Convert the date back to a Timestamp
-    date_column = pd.to_datetime(date_column, unit="s")
-    # Round dates to closest minute
-    date_column = date_column.dt.round("5min")
-    return date_column
-
-
-def convert_date_from_datetime_to_int(date_column: pd.Series) -> pd.Series:
-    # Convert the date back to a Timestamp
-    date_column = date_column.astype("int64") // 10**9
-    return date_column
-
-
-def get_workday_column_names(lookahead: int) -> list[str]:
-    # TODO: update for different data frequency
-    workday_column_names = []
-    for i in range((lookahead // 96) + 1):
-        workday_column_names.append(f"workday_{int(i*96)}")
-    return workday_column_names
+from .utils.input_data_type import DataSchema, FeaturedEngineeredSchema
 
 
 def feature_engineering(
@@ -284,121 +263,3 @@ def one_hot_encoding(
 
     data_encoded = pd.get_dummies(data_input, columns=cols_to_encode, dtype=int)
     return data_encoded
-
-
-def add_missing_timesteps(data) -> pd.DataFrame:
-    # make sure that date is a datetime before calling that function
-    return (
-        data.set_index("date").resample(get_data_frequency(data)).mean().reset_index()
-    )
-
-
-def apply_scaling(
-    data: pd.DataFrame,
-    scaling_mode: TypeScalingMode,
-    scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
-    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
-) -> pd.DataFrame:
-    data = data.copy()
-    if scaling_mode:
-        if scaling_parameters is None:
-            raise ValueError(
-                "If scaling_mode is not None, scaling_parameters must be provided"
-            )
-        if scaling_mode == "standardize":
-            if isinstance(scaling_parameters, pd.DataFrame):
-                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
-            train_mean, train_std = scaling_parameters
-            data[cols_to_normalize] = standardize_data(
-                data[cols_to_normalize],
-                train_mean[cols_to_normalize],
-                train_std[cols_to_normalize],
-            )
-        elif scaling_mode == "normalize":
-            if isinstance(scaling_parameters, pd.DataFrame):
-                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
-            train_min, train_max = scaling_parameters
-            data[cols_to_normalize] = normalize_data(
-                data[cols_to_normalize],
-                train_min[cols_to_normalize],
-                train_max[cols_to_normalize],
-            )
-        elif scaling_mode in ["rolling_standardize", "rolling_normalize"]:
-            if not isinstance(scaling_parameters, pd.DataFrame):
-                raise ValueError(
-                    "scaling_parameters should be a pd.DataFrame, and 2 pd.Series"
-                )
-            data = apply_rolling_scaling(
-                data,
-                scaling_parameters,
-                scaling_mode=scaling_mode,
-                cols_to_normalize=cols_to_normalize,
-            )
-        else:
-            raise ValueError(
-                f"scaling_mode should be one of 'standardize', 'normalize', 'rolling_standardize', 'rolling_normalize'. {scaling_mode} was provided."
-            )
-
-    else:
-        if scaling_parameters is not None:
-            raise ValueError(
-                "If scaling_parameters were provided but scaling_mode is None, please "
-                "provide a scaling_mode or don't provide scaling_parameters"
-            )
-    return data
-
-
-def reverse_scaling(
-    data: pd.DataFrame,
-    scaling_mode: TypeScalingMode,
-    scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
-    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
-):
-    data = data.copy()
-    # Reverse the standardization
-
-    if scaling_mode:
-        if scaling_parameters is None:
-            raise ValueError(
-                "If scaling_mode is not None, scaling_parameters must be provided"
-            )
-        if scaling_mode == "standardize":
-            if isinstance(scaling_parameters, pd.DataFrame):
-                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
-            train_mean, train_std = scaling_parameters
-            data[cols_to_normalize] = reverse_standardize_data(
-                data[cols_to_normalize],
-                train_mean[cols_to_normalize],
-                train_std[cols_to_normalize],
-            )
-        elif scaling_mode == "normalize":
-            if isinstance(scaling_parameters, pd.DataFrame):
-                raise ValueError("scaling_parameters should be a tuple of 2 pd.Series")
-            train_min, train_max = scaling_parameters
-            data[cols_to_normalize] = reverse_normalize_data(
-                data[cols_to_normalize],
-                train_min[cols_to_normalize],
-                train_max[cols_to_normalize],
-            )
-        elif scaling_mode in ["rolling_standardize", "rolling_normalize"]:
-            if not isinstance(scaling_parameters, pd.DataFrame):
-                raise ValueError(
-                    "scaling_parameters should be a pd.DataFrame, and 2 pd.Series"
-                )
-
-            data = reverse_rolling_scaling(
-                data, scaling_parameters, scaling_mode=scaling_mode
-            )
-        else:
-            raise ValueError(
-                f"scaling_mode should be one of 'standardize', 'normalize', 'rolling_standardize'"
-                f", 'rolling_normalize'. {scaling_mode} was provided."
-            )
-    else:
-        if scaling_parameters is not None:
-            raise ValueError(
-                "If scaling_parameters were provided but scaling_mode is None, please "
-                "provide a scaling_mode or don't provide scaling_parameters"
-            )
-
-    return data
