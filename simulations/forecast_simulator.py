@@ -29,6 +29,7 @@ class ForecastSimulator(BaselineSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
+        model_name: str = "",
     ):
         """_summary_"""
         super().__init__(
@@ -74,13 +75,9 @@ class ForecastSimulator(BaselineSimulator):
             if name.startswith("power"):
                 features_norm_parameters_min.append(norm_params_min["power"])
                 features_norm_parameters_max.append(norm_params_max["power"])
-            elif name == "number_of_evses_available":
-                features_norm_parameters_min.append(
-                    norm_params_min["number_of_evses_available"]
-                )
-                features_norm_parameters_max.append(
-                    norm_params_max["number_of_evses_available"]
-                )
+            elif name in norm_params_min.index:
+                features_norm_parameters_min.append(norm_params_min[name])
+                features_norm_parameters_max.append(norm_params_max[name])
             elif name.startswith("u"):
                 features_norm_parameters_min.append(norm_params_min["power"])
                 features_norm_parameters_max.append(norm_params_max["power"])
@@ -96,12 +93,8 @@ class ForecastSimulator(BaselineSimulator):
             if name.startswith("power") or name == "peak_power":
                 labels_norm_parameters_min.append(norm_params_min["power"])
                 labels_norm_parameters_max.append(norm_params_max["power"])
-            elif name.startswith("u"):
-                labels_norm_parameters_min.append(norm_params_min["power"])
-                labels_norm_parameters_max.append(norm_params_max["power"])
             else:
-                labels_norm_parameters_min.append(0)
-                labels_norm_parameters_max.append(1)
+                raise ValueError(f"Label {name} not recognized")
         self.labels_norm_parameters_min = np.array(labels_norm_parameters_min)
         self.labels_norm_parameters_max = np.array(labels_norm_parameters_max)
 
@@ -138,6 +131,7 @@ class ForecastSimulator(BaselineSimulator):
         # prediction = cp.maximum(prediction, 0)
 
         if verbose and VERBOSE_PREDICTIONS_NORMALIZED:
+            print("Plotting scaled sample and prediction")
             self.visualize_samples(time, normalized_features.value, np.array(prediction.value))  # type: ignore
 
         reversed_prediction = (
@@ -147,6 +141,22 @@ class ForecastSimulator(BaselineSimulator):
         )
 
         return reversed_prediction
+
+    def smooth_profile(self, profile, window_size: int = 3):
+        kernel = np.ones(window_size) / window_size
+
+        smoothed_profile = cp.convolve(kernel, profile)
+
+        # now we need to slice the profile because the size changed
+        if window_size % 2 == 0:
+            # even
+            sliced_profile = smoothed_profile[
+                (window_size // 2 - 1) : -(window_size // 2)
+            ]
+        else:
+            # odd
+            sliced_profile = smoothed_profile[(window_size // 2) : -(window_size // 2)]
+        return sliced_profile
 
     def visualize_samples(
         self,
@@ -176,12 +186,23 @@ class ForecastSimulator(BaselineSimulator):
             freq=f"{self.delta_t}H",
         )
         time_u = pd.date_range(start=time, periods=len(u), freq=f"{self.delta_t}H")
+
         fig.add_trace(
             go.Scatter(
                 x=time_power,
                 y=power,
                 mode="lines",
                 name="Aggregated Power until now",
+                line=dict(color="blue"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=time_power,
+                y=self.smooth_profile(power).value,
+                mode="lines",
+                name="Aggregated Power until now (if smoothed)",
+                line=dict(dash="dot", color="blue"),
             )
         )
         fig.add_trace(
@@ -190,7 +211,16 @@ class ForecastSimulator(BaselineSimulator):
                 y=u,
                 mode="lines",
                 name="Active Sessions Current Profile (u)",
-                line=dict(dash="dash"),
+                line=dict(dash="dash", color="red"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=time_u,
+                y=self.smooth_profile(u).value,
+                mode="lines",
+                name="Active Sessions Current Profile (u) (if smoothed)",
+                line=dict(dash="dot", color="red"),
             )
         )
         if prediction:
