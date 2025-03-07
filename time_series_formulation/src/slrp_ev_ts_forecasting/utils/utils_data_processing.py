@@ -11,6 +11,7 @@ def reverse_engineer_forecast(
     df_predictions,
     scaling_mode: TypeScalingMode,
     scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
+    lookahead: int,
 ) -> pd.DataFrame:
     # Reverse engineer the forecast to get the original features back
     # initialize final dataframe
@@ -37,6 +38,7 @@ def reverse_engineer_forecast(
             df_reverse_helper,
             scaling_mode,
             scaling_parameters,
+            lookahead=lookahead,
             bypass_output_validation=True,
         )
 

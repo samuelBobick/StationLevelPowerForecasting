@@ -81,36 +81,40 @@ def run_one_model(
     )
 
     scaling_mode = model_parameters.get("scaling_mode", SCALING_MODE)
+    lookahead = model_parameters.get("lookahead", LOOKAHEAD)
 
     scaling_parameters = get_scaling_parameters(
         train,
         data,
         scaling_mode,
         dataset,
-        lookahead_15min_steps=model_parameters.get("lookahead", LOOKAHEAD),
+        lookahead_15min_steps=lookahead,
     )
 
     train_eng = feature_engineering(
         train,
-        is_regression_model,
+        add_nans_for_missing_data=is_regression_model,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
     val_eng = (
         feature_engineering(
             val,
-            is_regression_model,
+            add_nans_for_missing_data=is_regression_model,
             scaling_mode=scaling_mode,
             scaling_parameters=scaling_parameters,
+            lookahead=lookahead,
         )
         if val is not None
         else None
     )
     test_eng = feature_engineering(
         test,
-        is_regression_model,
+        add_nans_for_missing_data=is_regression_model,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
 
     # Add predefined model parameters to the model_parameters dictionary
@@ -139,6 +143,7 @@ def run_one_model(
         df_predictions,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
 
     # get forecasted and real power values into 1D numpy arrays
@@ -156,6 +161,7 @@ def run_one_model(
         df_naive_predictions,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
     y_naive_pred = df_reversed_naive_predictions.filter(regex="^power").values.reshape(
         -1
