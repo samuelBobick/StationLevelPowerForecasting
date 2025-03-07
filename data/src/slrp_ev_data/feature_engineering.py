@@ -28,9 +28,9 @@ def feature_engineering(
     add_nans_for_missing_data: bool,
     scaling_mode: TypeScalingMode,
     scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
+    lookahead: int,
     cols_normalization_to_skip: list[str] = [],
     holiday_calendar: Literal["USFederal", "USAcademic"] = "USAcademic",
-    lookahead: int = 96,
 ) -> pd.DataFrame:
     """Processes the data so that it can be used in the models.
     Here are the different steps that are done:
@@ -191,8 +191,8 @@ def reverse_feature_engineering(
     data_input: pd.DataFrame,
     scaling_mode: TypeScalingMode,
     scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
+    lookahead: int,
     bypass_output_validation: bool = False,
-    lookahead: int = 96,
 ) -> pd.DataFrame:
     """Reverses the feature engineering done in feature_engineer.
 

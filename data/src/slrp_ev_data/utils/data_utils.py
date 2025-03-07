@@ -16,7 +16,12 @@ def get_date_column_name(df: pd.DataFrame) -> str:
 def get_workday_column_names(lookahead: int) -> list[str]:
     # TODO: update for different data frequency
     workday_column_names = []
-    for i in range((lookahead // 96) + 1):
+
+    # set the number of workday columns as the
+    # number of days to predict ahead, + 1 for the current day,
+    # + 1 for one day after the first day ahead
+    number_of_workday_columns = (lookahead // 96) + 2
+    for i in range(number_of_workday_columns):
         workday_column_names.append(f"workday_{int(i*96)}")
     return workday_column_names
 
@@ -47,7 +52,7 @@ def get_data_frequency(
     # Then, we recursively call the function with a smaller
     # data size lookup
     if not data_freq:
-        if _data_size_for_freq_lookup < 100:
+        if _data_size_for_freq_lookup < 20:
             raise ValueError("The data frequency could not be inferred.")
         else:
             _data_size_for_freq_lookup = int(_data_size_for_freq_lookup / 2)

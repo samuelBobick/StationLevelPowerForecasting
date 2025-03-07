@@ -288,5 +288,6 @@ def get_artificial_data(
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
         cols_normalization_to_skip=["number_of_evses_available"],
+        lookahead=lookahead,
     )
     return artificial_train_data, artificial_raw_df_sessions, scaling_parameters
