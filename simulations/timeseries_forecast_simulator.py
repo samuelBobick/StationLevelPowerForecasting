@@ -149,7 +149,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
                 u_sliced, self.var_dim_constant
             )
         else:
-            u_existing_scheduled = np.ones(self.var_dim_constant)
+            u_existing_scheduled = np.zeros(self.var_dim_constant)
 
         reconstructed_timeseries = (
             self.forecast - self.prev_aggregate_u_for_forecast + u_existing_scheduled
