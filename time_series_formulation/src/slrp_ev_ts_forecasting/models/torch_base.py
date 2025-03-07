@@ -17,8 +17,8 @@ from slrp_ev_ts_forecasting.default_parameters import (
     TypeOptimizeLags,
     TypeScalingMode,
 )
-from slrp_ev_ts_forecasting.helper_session_forecasting import get_artificial_data
-from slrp_ev_ts_forecasting.models.base import Base
+from slrp_ev_ts_forecasting.models.base import Base, prepare_df_predictions
+from slrp_ev_ts_forecasting.utils.utils_artificial_data import get_artificial_data
 from torch.optim.adamw import AdamW
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -432,17 +432,13 @@ class TorchBaseModel(Base):
             y_pred_test_tensor = y_pred_test_tensor.squeeze(-1)
         y_pred_test_tensor = y_pred_test_tensor[:, self.first_prediction_index :]
 
-        # losses = compute_torch_losses(
-        #     y_pred_test_tensor.flatten(), y_test_tensor.flatten(), self.alpha
-        # )
-
-        forecasts = y_pred_test_tensor.detach().numpy()
-        reals = y_test_tensor.cpu().numpy()
+        forecasts = y_pred_test_tensor.detach().cpu().numpy()
+        reals = y_test_tensor.detach().cpu().numpy()
         if len(y_dates.shape) == 1:
             y_dates = y_dates.to_frame()  # type: ignore
         y_dates = y_dates.iloc[:, self.first_prediction_index :]
 
-        df_predictions = self.prepare_df_predictions(forecasts, y_dates, reals)
+        df_predictions = prepare_df_predictions(forecasts, y_dates, reals)
 
         return df_predictions
 
@@ -456,10 +452,12 @@ class TorchBaseModel(Base):
         data_iter = iter(train_loader)
         inputs, labels = next(data_iter)
 
+        number_of_samples = len(train_loader) * self.batch_size
+
         print(
             "Model size",
             f"    Size of train set: {len(train_loader)} batches of size {self.batch_size}"
-            f" (there are around {(len(train_loader) * self.batch_size):,} training samples)",
+            f" (there are around {number_of_samples:,} training samples)",
             # actually we have slightly less samples because the last batch is smaller
             f"    therefore, we have {len(train_loader)} steps at each of the {self.epochs} epochs.",
             f"    Train input shape: {inputs.shape}",
@@ -472,7 +470,9 @@ class TorchBaseModel(Base):
             p.numel() for p in self.model.parameters() if p.requires_grad
         )
         print(
-            f"Total model parameters: {total_params}. As a rule of thumbs, make sure you have 50 time less features, and 20 more samples"
+            f"Total model parameters: {total_params}. As a rule of thumbs, make sure you"
+            f"have 50 times less features, and 20 more samples "
+            f"(currently {number_of_samples/total_params:.0f} times more samples)"
         )
         writer.add_scalar("Model/Total_Parameters", total_params)
         writer.flush()

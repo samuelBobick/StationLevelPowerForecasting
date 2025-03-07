@@ -6,29 +6,37 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly import subplots
 from slrp_ev_data.feature_engineering import (
-    apply_scaling,
-    convert_date_from_int_to_datetime,
-    get_workday_column_names,
     one_hot_encoding,
 )
-from slrp_ev_data.normalization_and_standardization import get_scaling_parameters
 from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
+from slrp_ev_data.utils.data_utils import (
+    convert_date_from_datetime_to_int,
+    convert_date_from_int_to_datetime,
+    get_workday_column_names,
+)
+from slrp_ev_data.utils.scaling_main import apply_scaling, get_scaling_parameters
 from slrp_ev_data.window_generator import WindowGenerator
 from slrp_ev_ts_forecasting.default_parameters import (
     NUMBER_OF_DAYS_FOR_PACF,
+    PEAK_PREDICTION_MODE,
     RANDOM_SEED,
     VERBOSE,
     TypeOptimizeLags,
+    TypePeakPredictionMode,
     TypeScalingMode,
 )
-from slrp_ev_ts_forecasting.helper_session_forecasting import (
+from slrp_ev_ts_forecasting.utils.pacf import (
+    get_pacf_values,
+    get_threshold,
+    sort_pacf_values,
+)
+from slrp_ev_ts_forecasting.utils.utils_artificial_data import get_artificial_data
+from slrp_ev_ts_forecasting.utils.utils_session_forecasting import (
     apply_generate_future_session_power,
     extract_features,
-    get_artificial_data,
     get_raw_df_sessions,
     revert_power_df,
 )
-from slrp_ev_ts_forecasting.pacf import get_pacf_values, get_threshold, sort_pacf_values
 from tqdm.auto import tqdm
 
 # Register `pandas.progress_apply` and `pandas.Series.map_apply` with `tqdm`
@@ -170,6 +178,10 @@ class Base:
         """Add at the beginning of the "new_data_to_pad" DataFrame the "number_of_timesteps_to_pad" that precede the given data.
         If the data is not available or some timesteps are missing, no padding is done.
         """
+        if self.seen_data.empty:
+            # There is nothing we can use to pad
+            return new_data_to_pad
+
         first_date_of_data_to_pad = pd.to_datetime(
             new_data_to_pad.iloc[0]["date"], unit="s"
         )
@@ -182,22 +194,11 @@ class Base:
         )
 
         seen_data = self.seen_data.copy()
-        seen_data["date"] = pd.to_datetime(seen_data["date"], unit="s")
-        seen_data["date"] = seen_data["date"].dt.round("5min")
-        seen_data = seen_data.set_index("date")
-
-        # Check if the padding index is in the model data
-        if not padding_index.isin(seen_data.index).all():
-            if not seen_data.empty:
-                print(
-                    "Warning: Some padding indexes are missing in the model data. Padding not done."
-                )
-            return new_data_to_pad
+        seen_data["date"] = convert_date_from_int_to_datetime(seen_data["date"])
 
         # Get the padding data
-        padding_data = seen_data.loc[padding_index]
-        padding_data = padding_data.reset_index().rename(columns={"index": "date"})
-        padding_data["date"] = padding_data["date"].astype("int64") // 10**9
+        padding_data = seen_data.loc[seen_data["date"].isin(padding_index)].copy()
+        padding_data["date"] = convert_date_from_datetime_to_int(padding_data["date"])
 
         # Concatenate the padding data with the data to pad
         new_data_to_pad = pd.concat([padding_data, new_data_to_pad], ignore_index=True)
@@ -262,83 +263,6 @@ class Base:
         window_data = W.train
 
         return W, window_data
-
-    def prepare_df_predictions(
-        self, forecasts: np.ndarray, y_dates, reals: Optional[np.ndarray] = None
-    ) -> pd.DataFrame:
-        # TODO: use it in all the other predict functions
-        add_real = reals is not None
-        if add_real:
-            predictions_array = np.stack(
-                (y_dates.to_numpy().squeeze(), forecasts.squeeze(), reals.squeeze()),
-                axis=-1,
-            )
-        else:
-            predictions_array = np.stack(
-                (y_dates.to_numpy().squeeze(), forecasts.squeeze()), axis=-1
-            )
-        # Reshape to add a 3rd dimension in case we predict only the peak
-        if len(predictions_array.shape) == 2:
-            predictions_array = np.expand_dims(predictions_array, axis=1)
-
-        df_predictions = pd.DataFrame(columns=["date"])
-        for i in range(predictions_array.shape[0]):
-            df_single_prediction = pd.DataFrame(
-                {
-                    "date": convert_date_from_int_to_datetime(
-                        pd.Series(predictions_array[i, :, 0])
-                    ),
-                    "power_0": predictions_array[i, :, 1],
-                    "real_power_0": predictions_array[i, :, 2],
-                }
-            )
-
-            if df_single_prediction["date"].isin(df_predictions["date"]).any():
-                # if we already have prediction data for these timesteps, we need to iterate
-                # over the other power_x columns to find the first one that doesn't have data yet
-                # if they all have data, we create a new column
-                df_predictions_these_dates = df_predictions[
-                    df_predictions["date"].isin(df_single_prediction["date"])
-                ]
-                next_power_column_number = (df_predictions.shape[1] - 1) // 2
-
-                # by default we add the data to a new column
-                df_single_prediction = df_single_prediction.rename(
-                    columns={
-                        "power_0": f"power_{next_power_column_number}",
-                        "real_power_0": f"real_power_{next_power_column_number}",
-                    }
-                )
-                # If possible, we add it to an existing column
-                for j in range(0, next_power_column_number):
-                    if df_predictions_these_dates[f"power_{j}"].isna().all():
-                        df_single_prediction = df_single_prediction.rename(
-                            columns={
-                                f"power_{next_power_column_number}": f"power_{j}",
-                                f"real_power_{next_power_column_number}": f"real_power_{j}",
-                            }
-                        )
-                        break
-                df_predictions = df_predictions.merge(df_single_prediction, how="outer")
-            else:
-                if df_predictions.empty:
-                    # in the initial case, we have a pandas warning with the
-                    # concat operation if the dataframe is empty, we solve it like so
-                    df_predictions = df_single_prediction
-                else:
-                    df_predictions = pd.concat(
-                        [df_predictions, df_single_prediction], ignore_index=True
-                    )
-
-        # we have an issue where some dates are duplicated,
-        # but with only 1 column that has a value for each duplicate. We actually
-        # want only 1 row with a value in each column
-        df_predictions = (
-            df_predictions.groupby("date")
-            .agg(lambda x: x.dropna().iloc[0] if not x.dropna().empty else np.nan)
-            .reset_index()
-        )
-        return df_predictions
 
     def save_model(self, model, model_name: str):
         print(
@@ -745,9 +669,9 @@ class Base:
         scaling_parameters_additional_features = get_scaling_parameters(
             additional_session_features,
             additional_session_features,
-            data_scaling_mode=scaling_mode,
+            scaling_mode=scaling_mode,
             lookahead_15min_steps=self.lookahead,
-            dataset="slrp-ev_new",
+            dataset_name="slrp-ev_new",
             retrieve_from_saved=scaling_mode in ["normalize", "standardize"],
             bypass_validation=True,
             cols_to_normalize=additional_feature_names,
@@ -796,7 +720,7 @@ class Base:
     def transform_X_y_for_peak_prediction(
         self,
         merged_inputs_dates_sessions: pd.DataFrame,
-        mode: Literal["peak_of_day", "peak_next_8h"] = "peak_next_8h",
+        mode: TypePeakPredictionMode = PEAK_PREDICTION_MODE,
     ) -> pd.DataFrame:
         if mode == "peak_of_day":
             # Extract dates from 'startChargeTime'
@@ -856,17 +780,19 @@ class Base:
             )
 
         elif mode == "peak_next_8h":
-            # Get the peak power of the next 12 hours
+            # Get the peak power of the next hours
+            number_next_hours = 8
             label_columns = [
                 col
                 for col in merged_inputs_dates_sessions.filter(
                     regex=r"(power)_(\d+)_label"
                 ).columns
-                if int(col.split("_")[1]) < 8 * 4
+                if int(col.split("_")[1]) < number_next_hours * 4
             ]
             flat_labels = (
                 merged_inputs_dates_sessions[label_columns].max(axis=1).to_frame()
             )
+            flat_labels.columns = ["peak_power"]
 
         else:
             raise ValueError("mode should be 'peak_of_day' or 'peak_next_12h'")
@@ -982,7 +908,7 @@ class Base:
                 subtitle += f"Scaled number of EVSEs available: {flat_inputs['number_of_evses_available'].iloc[i]:.2f}\n"
             for workday_column in self.list_workday_column_names:
                 if workday_column in flat_inputs.columns:
-                    subtitle += f"Workday: {flat_inputs[workday_column].iloc[i]}\n"
+                    subtitle += f"{workday_column.capitalize().replace("_", " ")}: {flat_inputs[workday_column].iloc[i]}\n"
 
             fig.add_annotation(
                 text=subtitle,
@@ -1002,3 +928,81 @@ class Base:
             yaxis_title="Normalized Power",
         )
         fig.show()
+
+
+def prepare_df_predictions(
+    forecasts: np.ndarray, y_dates, reals: Optional[np.ndarray] = None
+) -> pd.DataFrame:
+    # TODO: use it in all the other predict functions
+    add_real = reals is not None
+    if add_real:
+        predictions_array = np.stack(
+            (y_dates.to_numpy().squeeze(), forecasts.squeeze(), reals.squeeze()),
+            axis=-1,
+        )
+    else:
+        predictions_array = np.stack(
+            (y_dates.to_numpy().squeeze(), forecasts.squeeze()), axis=-1
+        )
+    # Reshape to add a 3rd dimension in case we predict only the peak
+    if len(predictions_array.shape) == 2:
+        predictions_array = np.expand_dims(predictions_array, axis=1)
+
+    df_predictions = pd.DataFrame(columns=["date"])
+    for i in range(predictions_array.shape[0]):
+        df_single_prediction = pd.DataFrame(
+            {
+                "date": convert_date_from_int_to_datetime(
+                    pd.Series(predictions_array[i, :, 0])
+                ),
+                "power_0": predictions_array[i, :, 1],
+                "real_power_0": predictions_array[i, :, 2],
+            }
+        )
+
+        if df_single_prediction["date"].isin(df_predictions["date"]).any():
+            # if we already have prediction data for these timesteps, we need to iterate
+            # over the other power_x columns to find the first one that doesn't have data yet
+            # if they all have data, we create a new column
+            df_predictions_these_dates = df_predictions[
+                df_predictions["date"].isin(df_single_prediction["date"])
+            ]
+            next_power_column_number = (df_predictions.shape[1] - 1) // 2
+
+            # by default we add the data to a new column
+            df_single_prediction = df_single_prediction.rename(
+                columns={
+                    "power_0": f"power_{next_power_column_number}",
+                    "real_power_0": f"real_power_{next_power_column_number}",
+                }
+            )
+            # If possible, we add it to an existing column
+            for j in range(0, next_power_column_number):
+                if df_predictions_these_dates[f"power_{j}"].isna().all():
+                    df_single_prediction = df_single_prediction.rename(
+                        columns={
+                            f"power_{next_power_column_number}": f"power_{j}",
+                            f"real_power_{next_power_column_number}": f"real_power_{j}",
+                        }
+                    )
+                    break
+            df_predictions = df_predictions.merge(df_single_prediction, how="outer")
+        else:
+            if df_predictions.empty:
+                # in the initial case, we have a pandas warning with the
+                # concat operation if the dataframe is empty, we solve it like so
+                df_predictions = df_single_prediction
+            else:
+                df_predictions = pd.concat(
+                    [df_predictions, df_single_prediction], ignore_index=True
+                )
+
+    # we have an issue where some dates are duplicated,
+    # but with only 1 column that has a value for each duplicate. We actually
+    # want only 1 row with a value in each column
+    df_predictions = (
+        df_predictions.groupby("date")
+        .agg(lambda x: x.dropna().iloc[0] if not x.dropna().empty else np.nan)
+        .reset_index()
+    )
+    return df_predictions
