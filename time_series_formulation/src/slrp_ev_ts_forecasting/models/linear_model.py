@@ -66,11 +66,29 @@ class LinearModel(RegressionBaseModel):
         self.alpha = alpha
         self.time_mode = time_mode
         # TODO: Do no forget to normalize the "next user power profile", dividing it by the max power (6.6)
-        self.rs = np.random.RandomState(self.rng.bit_generator._seed_seq.entropy)  # type: ignore
+        if default_parameters.RANDOM_SEED is not None:
+            self.rs = np.random.RandomState(self.rng.bit_generator._seed_seq.entropy)  # type: ignore
+        else:
+            self.rs = None
 
-        # TODO: find smart way to get all the parameters of the class
-        # and put them in a dict (without having to list them manually)
-        self.parameters_dict = {}
+        # get all the parameters of the class
+        # and put them in a dict for when we save the model
+        parameters_to_not_save = [
+            "verbose",
+            "rng",
+            "pacf_top_values",
+            "cols_to_drop_for_model",
+            "rs",
+        ]
+        self.parameters_dict = {
+            k: v
+            for k, v in vars(self).items()
+            if (
+                not k.startswith("_")
+                and k not in parameters_to_not_save
+                and type(v) in [int, float, str, bool, list, dict]
+            )
+        }
 
     @property
     def model_str_name(self):
@@ -106,13 +124,29 @@ class LinearModel(RegressionBaseModel):
         if self.peak_prediction:
             # for peak prediction, the model is faster to train
             # and we predict a single value
-            # Therefore, ElasticNetCV runs fairly quickly
-            lm = linear_model.ElasticNetCV(random_state=self.rs, n_alphas=50)
+            # ElasticNet, which combines L1 and L2 regularization, would give the best results
+            # however, since we use this model in the optimizer,
+            # we do not want too many values to be equal to zero
+            # therefore, we go with Ridge regression, which reduces the
+            # coefficients, but does not set them to zero
+            lm = linear_model.RidgeCV(
+                alphas=np.array([0.1, 0.5, 1.0]),
+                # We could go higher to 5.0, 10.0 but we avoid, for more stability in the optimizer
+            )
+            # for peak_prediction, we only predict a single value, so to avoid
+            # a warning, we convert the y_input to a 1D array
+            y_input = y_input["peak_power"]
         else:
-            # for multi-output modes, ElasticNetCV takes too
-            # much time to run
-            lm = linear_model.LinearRegression()
+            # for multi-output modes, we cannot have as many alphas
+            # in the CV search
+            lm = linear_model.MultiTaskElasticNetCV(random_state=self.rs, n_alphas=10)
+            # lm = linear_model.LinearRegression()
         lm.fit(X_input, y_input)
+
+        # print alpha and l1 parameters chosen for elastic net
+        if self.peak_prediction:
+            print(f"alpha: {lm.alpha_}")
+
         return lm
 
     def predict_model(self, model, X_test: pd.DataFrame):
@@ -127,6 +161,7 @@ class LinearModel(RegressionBaseModel):
 
         # Extract parameters
         params = {
+            "model_parameters": self.parameters_dict,
             "intercept": (
                 model.intercept_.tolist()
                 if hasattr(model.intercept_, "tolist")
@@ -136,6 +171,10 @@ class LinearModel(RegressionBaseModel):
             "feature_names": self.feature_names,
             "label_names": self.label_names,
         }
+
+        # make sure that the intercept is a list (even if it is a single value, as for peak prediction)
+        if isinstance(params["intercept"], float):
+            params["intercept"] = [params["intercept"]]
 
         # Save to JSON file
         with open(saved_model_filename, "w") as json_file:

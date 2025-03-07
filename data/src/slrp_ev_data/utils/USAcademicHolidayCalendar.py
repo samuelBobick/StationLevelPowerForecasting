@@ -12,41 +12,6 @@ from pandas.tseries.holiday import (
 )
 
 
-def get_data_frequency(df, _data_size_for_freq_lookup=None) -> str:
-    """Get the data frequency from the DataFrame.
-    Leave _data_size_for_freq_lookup to None, it is used for recursion."""
-    if _data_size_for_freq_lookup is None:
-        _data_size_for_freq_lookup = df.shape[0]
-
-    if isinstance(df["date"].iloc[0], pd.Timestamp):
-        data_freq = pd.infer_freq(df["date"].iloc[-_data_size_for_freq_lookup:])
-    else:
-        data_freq = pd.infer_freq(
-            pd.to_datetime(df["date"].iloc[-_data_size_for_freq_lookup:], unit="s")
-        )
-
-    # if the data frequency is not found, it might be because we have gaps.
-    # Then, we recursively call the function with a smaller
-    # data size lookup
-    if not data_freq:
-        if _data_size_for_freq_lookup < 100:
-            raise ValueError("The data frequency could not be inferred.")
-        else:
-            _data_size_for_freq_lookup = int(_data_size_for_freq_lookup / 2)
-            return get_data_frequency(df, _data_size_for_freq_lookup)
-    return data_freq
-
-
-def convert_data_freq_to_minutes(data_freq) -> int:
-    try:
-        return int(data_freq.split("min")[0])  #
-    except ValueError:
-        raise ValueError(
-            "The data frequency is not in minutes. "
-            "Please edit this function to handle other frequencies."
-        )
-
-
 class USAcademicHolidayCalendar(AbstractHolidayCalendar):
     """
     US Academic Government Holiday Calendar based on rules specified by:

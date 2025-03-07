@@ -17,6 +17,7 @@ class XGBoost(RegressionBaseModel):
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
         dropout: float = default_parameters.DROPOUT,
+        max_depth: int = 4,
         get_val_data_from_shuffled_train: bool = default_parameters.GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
         scaling_mode: default_parameters.TypeScalingMode = default_parameters.SCALING_MODE,
         scaling_parameters: tuple | pd.DataFrame | None = None,
@@ -36,11 +37,30 @@ class XGBoost(RegressionBaseModel):
         """_summary_
 
         Args:
-            x_dim (int, optional): How many past timesteps ahead we want to use as inputs. Defaults to 16.
-            lookahead (int, optional): How many timesteps ahead we want to predict. Defaults to 16.
-            n_neighbors (int, optional): K in the KNN algorithm. Defaults to 10.
-            percentile (int, optional): What percentile of the KNN we take. Defaults to 90.
-            alpha (int, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
+            x_dim: How many past timesteps ahead we want to use as inputs. Defaults to 16.
+            lookahead: How many timesteps ahead we want to predict. Defaults to 16.
+            alpha: Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
+            time_mode:
+            optimize_lags:
+            dropout:
+            max_depth: Does not seem to have a huge impact on the results, but has a big impact
+                on the computation time. Default in XGBoost module is 6.
+            get_val_data_from_shuffled_train:
+            scaling_mode:
+            scaling_parameters:
+            session_based_mode:
+            peak_prediction:
+            add_number_of_sessions:
+            add_fraction_of_regular_sessions:
+            use_all_active_sessions:
+            number_of_artificial_datasets:
+            random_start_time:
+            shuffle_power_profiles:
+            random_power_profile_shapes:
+            random_user_needs:
+            random_choices:
+            add_number_of_evses_available:
+
         """
         super().__init__(
             x_dim=x_dim,
@@ -67,10 +87,16 @@ class XGBoost(RegressionBaseModel):
         self.alpha = alpha
         self.time_mode = time_mode
         self.dropout = dropout
+        self.max_depth = max_depth
 
     @property
     def model_str_name(self):
-        return "XGBoost" + f"_dropout{self.dropout}" + self.model_str_name_suffix
+        return (
+            "XGBoost"
+            + f"_dropout{self.dropout}"
+            + f"_max_depth{self.max_depth}"
+            + self.model_str_name_suffix
+        )
 
     def fit_model(
         self,
@@ -103,13 +129,14 @@ class XGBoost(RegressionBaseModel):
         xgb_params = {
             "objective": "reg:squarederror",
             "eval_metric": "rmse",
-            # "max_depth": 6,
+            "max_depth": self.max_depth,  # default is 6
             "eta": 0.1,  # learning rate, default 0.3
             "subsample": 1
             - self.dropout,  # fraction of training set to randomly sample for =
             # each tree (has a similar effect as dropout)
-            "colsample_bytree": 1,  # - self.dropout,  # fraction of features to consider
+            "colsample_bytree": 1 - self.dropout,  # fraction of features to consider
             "device": default_parameters.DEVICE,
+            "max_bin": 128,  # default is 256
             "seed": int(time.time()),  # add random seed, otherwise default is 0
         }
         num_round = 100

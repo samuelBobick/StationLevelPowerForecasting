@@ -1,13 +1,16 @@
+import time
+
 import numpy as np
 from slrp_ev_data import (
     read_new_slrpev_data,
     read_old_slrpev_data,
     read_ucsd_data,
-    train_test_split,
 )
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
 )
+from slrp_ev_data.utils import train_test_split
+from slrp_ev_data.utils.scaling_main import get_scaling_parameters
 
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import (
@@ -17,29 +20,31 @@ from slrp_ev_ts_forecasting.default_parameters import (
     GET_VAL_DATA_FROM_SHUFFLED_TRAIN,
     LOOKAHEAD,
     SCALING_MODE,
-    TypeDataSet,
+    VERBOSE,
+    TypeDatasetName,
     TypeModelChoice,
 )
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
+from slrp_ev_ts_forecasting.models.last_week import LastWeek
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
-from slrp_ev_ts_forecasting.save_losses import save_losses
-from slrp_ev_ts_forecasting.utils_data_processing import (
-    get_scaling_parameters,
+from slrp_ev_ts_forecasting.save_losses import print_losses, save_losses
+from slrp_ev_ts_forecasting.utils.utils_data_processing import (
     reverse_engineer_forecast,
 )
-from slrp_ev_ts_forecasting.visualization import visualize_forecast
+from slrp_ev_ts_forecasting.visualization.visualize_forecast import visualize_forecast
 
 
 def run_one_model(
     model_choice: TypeModelChoice,
     model_parameters={},
-    verbose: bool = True,
+    verbose: bool = VERBOSE,
     save_results_filename: str = DEFAULT_RESULTS_FILENAME,
-    dataset: TypeDataSet = DATASET,
+    dataset: TypeDatasetName = DATASET,
 ) -> None:
     # Read the data
     print("# Starting...")
+    start_time = time.time()
     if dataset == "slrp-ev_old":
         data = read_old_slrpev_data.read_old_slrpev_data()
     elif dataset == "slrp-ev_new":
@@ -76,36 +81,40 @@ def run_one_model(
     )
 
     scaling_mode = model_parameters.get("scaling_mode", SCALING_MODE)
+    lookahead = model_parameters.get("lookahead", LOOKAHEAD)
 
     scaling_parameters = get_scaling_parameters(
         train,
         data,
         scaling_mode,
         dataset,
-        lookahead_15min_steps=model_parameters.get("lookahead", LOOKAHEAD),
+        lookahead_15min_steps=lookahead,
     )
 
     train_eng = feature_engineering(
         train,
-        is_regression_model,
+        add_nans_for_missing_data=is_regression_model,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
     val_eng = (
         feature_engineering(
             val,
-            is_regression_model,
+            add_nans_for_missing_data=is_regression_model,
             scaling_mode=scaling_mode,
             scaling_parameters=scaling_parameters,
+            lookahead=lookahead,
         )
         if val is not None
         else None
     )
     test_eng = feature_engineering(
         test,
-        is_regression_model,
+        add_nans_for_missing_data=is_regression_model,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
 
     # Add predefined model parameters to the model_parameters dictionary
@@ -134,29 +143,52 @@ def run_one_model(
         df_predictions,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
-    data_length_days = df_reversed_predictions.shape[0] // 96
 
+    # get forecasted and real power values into 1D numpy arrays
     y_pred = df_reversed_predictions.filter(regex="^power").values.reshape(-1)
     y_true = df_reversed_predictions.filter(regex="real_power").values.reshape(-1)
     mask_nan = ~np.isnan(y_pred)
     y_pred = y_pred[mask_nan]
     y_true = y_true[mask_nan]
 
-    losses = compute_losses(y_pred, y_true, model_parameters.get("alpha", ALPHA))
-    print(
-        f"{model_choice}: ",
-        *[
-            f"{loss_type.upper()}: {loss_value:.1f};"
-            for loss_type, loss_value in losses.items()
-        ],
-        f"for around {data_length_days} days of predictions",
+    # Now we also get the naive predictions for the scaled errors
+    naive_model = LastWeek()
+    df_naive_predictions = naive_model.predict(test_eng)
+    df_reversed_naive_predictions = reverse_engineer_forecast(
+        test_eng,
+        df_naive_predictions,
+        scaling_mode=scaling_mode,
+        scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
+    )
+    y_naive_pred = df_reversed_naive_predictions.filter(regex="^power").values.reshape(
+        -1
+    )
+    y_naive_true = df_reversed_naive_predictions.filter(
+        regex="real_power"
+    ).values.reshape(-1)
+    mask_nan = ~np.isnan(y_naive_pred) & ~np.isnan(y_naive_true)
+    y_naive_pred = y_naive_pred[mask_nan]
+    y_naive_true = y_naive_true[mask_nan]
+
+    losses = compute_losses(
+        y_pred, y_true, model_parameters.get("alpha", ALPHA), y_naive_pred, y_naive_true
     )
 
+    print_losses(losses, model_name)
+
     if verbose:
-        visualize_forecast(
-            test, df_reversed_predictions, data_length_days, model.model_str_name
-        )
+        visualize_forecast(test, df_reversed_predictions, model.model_str_name)
 
     model_parameters["dataset"] = dataset
-    save_losses(losses, model_name, model_parameters, filename=save_results_filename)
+
+    elapsed_time = time.time() - start_time
+    save_losses(
+        losses,
+        model_name,
+        elapsed_time=elapsed_time,
+        model_params=model_parameters,
+        filename=save_results_filename,
+    )

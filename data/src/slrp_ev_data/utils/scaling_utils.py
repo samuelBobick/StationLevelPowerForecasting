@@ -2,18 +2,23 @@ from pathlib import Path
 from typing import Literal, Optional
 
 import pandas as pd
-from slrp_ev_ts_forecasting.default_parameters import TypeDataSet
-
-from slrp_ev_data.data_utils import get_data_frequency
-from slrp_ev_data.input_data_type import DataSchema
+from slrp_ev_data.utils.data_utils import get_data_frequency, get_date_column_name
+from slrp_ev_data.utils.input_data_type import DataSchema
+from slrp_ev_ts_forecasting.default_parameters import TypeDatasetName
 
 COLS_TO_NORMALIZE = ["power", "number_of_evses_available"]
-NORM_PARAMETERS_PATH = Path(__file__).parent / "saved_normalization_parameters"
+NORM_PARAMETERS_PATH = Path(__file__).parent.parent / "saved_normalization_parameters"
 NORM_PARAMETERS_PATH.mkdir(parents=True, exist_ok=True)
 SINGLE_EVSE_NORMALIZATION_PARAM = 6_800
 
 
-def save_series_to_csv(series: pd.Series, name: str) -> None:
+def save_series_to_csv(
+    series: pd.Series, name: str, add_to_existing_save: bool
+) -> None:
+    if add_to_existing_save:
+        existing_series = load_series_from_csv(name)
+        series = pd.concat([existing_series, series])
+
     series.to_csv(NORM_PARAMETERS_PATH / f"{name}.csv")
 
 
@@ -22,15 +27,26 @@ def load_series_from_csv(name: str) -> pd.Series:
 
 
 def get_train_mean_and_std(
-    df_train: pd.DataFrame, dataset_name: Optional[TypeDataSet] = None
+    df_train: pd.DataFrame,
+    dataset_name: Optional[TypeDatasetName] = None,
+    bypass_validation: bool = False,
+    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
+    add_to_existing_save: bool = False,
 ) -> tuple[pd.Series, pd.Series]:
-    """Get the mean and standard deviation of the training data, used to normalize the rest of the data.
+    """Get the mean and standard deviation of the cols_to_normalize columns of the \
+        training data, used to normalize the rest of the data.
 
     Args:
         df_train (pd.DataFrame): Train dataframe, should be in the format of the DataSchema.
+        bypass_validation (bool): Whether to validate the input DataFrame type. \
+            Set it to False unless you know what you are doing. Default is False.
         dataset_name (Optional[str]): Name of the dataset, used to save the \
-            normalization parameters in a csv. \
-            If None, the parameters are not saved.
+            scaling parameters in a csv. If None, the parameters are not saved.
+        cols_to_normalize (list[str]): Columns to normalize among df.columns. \
+            Default is COLS_TO_NORMALIZE
+        add_to_existing_save (bool): Whether to add the scaling parameters to an \
+            existing file if saving the scaling parameters (if dataset_name is not None). \
+            Default is False, which means we will erase existing files for this dataset.
 
     Returns:
         tuple[pd.Series, pd.Series]: training data mean, training data standard deviation
@@ -40,21 +56,22 @@ def get_train_mean_and_std(
     >>> df_val_eng = feature_engineering(df_val, train_mean, train_std)
     """
     # Check that the data is in the correct format
-    DataSchema.validate(df_train)
+    if not bypass_validation:
+        DataSchema.validate(df_train)
 
-    train_mean = df_train[COLS_TO_NORMALIZE].mean()
-    train_std = df_train[COLS_TO_NORMALIZE].std()
+    train_mean = df_train[cols_to_normalize].mean()
+    train_std = df_train[cols_to_normalize].std()
 
     if dataset_name:
         filename = f"{dataset_name}_mean"
-        save_series_to_csv(train_mean, filename)
+        save_series_to_csv(train_mean, filename, add_to_existing_save)
         filename = f"{dataset_name}_std"
-        save_series_to_csv(train_std, filename)
+        save_series_to_csv(train_std, filename, add_to_existing_save)
 
     return train_mean, train_std
 
 
-def retrieve_train_mean_and_std(dataset_name: TypeDataSet):
+def retrieve_train_mean_and_std(dataset_name: TypeDatasetName):
     train_mean = load_series_from_csv(f"{dataset_name}_mean")
     train_std = load_series_from_csv(f"{dataset_name}_std")
     return train_mean, train_std
@@ -79,36 +96,47 @@ def reverse_standardize_data(
 
 
 def get_train_min_and_max(
-    df_train: pd.DataFrame, dataset_name: Optional[TypeDataSet] = None
+    df_train: pd.DataFrame,
+    dataset_name: Optional[TypeDatasetName] = None,
+    bypass_validation: bool = False,
+    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
+    add_to_existing_save: bool = False,
 ) -> tuple[pd.Series, pd.Series]:
-    """Get the min and max of the training data, used to normalize 
-    the rest of the data.
+    """Get the min and max of the cols_to_normalize columns of the training data,
+    used to normalize the rest of the data.
 
     Args:
         df_train (pd.DataFrame): Train dataframe, should be in the format of the DataSchema.
+        bypass_validation (bool): Whether to validate the input DataFrame type. \
+            Set it to False unless you know what you are doing. Default is False.
         dataset_name (Optional[str]): Name of the dataset, used to save the \
-            normalization parameters in a csv. \
-            If None, the parameters are not saved.
+            scaling parameters in a csv. If None, the parameters are not saved.
+        cols_to_normalize (list[str]): Columns to normalize among df.columns. \
+            Default is COLS_TO_NORMALIZE
+        add_to_existing_save (bool): Whether to add the scaling parameters to an \
+            existing file if saving the scaling parameters (if dataset_name is not None). \
+            Default is False, which means we will erase existing files for this dataset.
 
     Returns:
         tuple[pd.Series, pd.Series]: training data min, training data max
     """
-    DataSchema.validate(df_train)
+    if not bypass_validation:
+        DataSchema.validate(df_train)
 
-    train_min = df_train[COLS_TO_NORMALIZE].min()
-    train_max = df_train[COLS_TO_NORMALIZE].max()
+    train_min = df_train[cols_to_normalize].min()
+    train_max = df_train[cols_to_normalize].max()
 
     # save the data if we have the dataset name
     if dataset_name:
         filename = f"{dataset_name}_min"
-        save_series_to_csv(train_min, filename)
+        save_series_to_csv(train_min, filename, add_to_existing_save)
         filename = f"{dataset_name}_max"
-        save_series_to_csv(train_max, filename)
+        save_series_to_csv(train_max, filename, add_to_existing_save)
 
     return train_min, train_max
 
 
-def retrieve_train_min_and_max(dataset_name: TypeDataSet):
+def retrieve_train_min_and_max(dataset_name: TypeDatasetName):
     train_min = load_series_from_csv(f"{dataset_name}_min")
     train_max = load_series_from_csv(f"{dataset_name}_max")
     return train_min, train_max
@@ -137,34 +165,42 @@ def get_rolling_scaling_column(
     scaling_mode: Literal["rolling_standardize", "rolling_normalize"],
     lookahead_15min_steps: int,
     lookback_15min_steps: int = 96 * 30,
-    validate: bool = True,
-    dataset_name: Optional[TypeDataSet] = None,
+    bypass_validation: bool = False,
+    dataset_name: Optional[TypeDatasetName] = None,
+    cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
+    add_to_existing_save: bool = False,
 ) -> pd.DataFrame:
-    """Creates a dataframe with the rolling mean and standard deviation of the power column,
-    for a given lookback and lookahead.
+    """Creates a dataframe with the rolling mean and standard deviation of the cols_to_normalize
+    column, for a given lookback and lookahead.
 
     Args:
         df (pd.DataFrame): Dataframe of type DataSchema
         scaling_mode (Literal["rolling_standardize", "rolling_normalize"]): \
-            The scaling mode to apply
+            The rolling scaling mode to apply
         lookahead_15min_steps (int): Prediction horizon in 15min steps \
             (e.g. 96 for 24h)
         lookback_15min_steps (int): Lookback period on which to do the rolling \
             average. Recommended to be at least 30 days. Default is 96*30
-        validate (bool): Whether to validate the input DataFrame type. \
-            Set it to True unless you know what you are doing. Default is True.
+        bypass_validation (bool): Whether to validate the input DataFrame type. \
+            Set it to False unless you know what you are doing. Default is False.
         dataset_name (Optional[str]): Name of the dataset, used to save the \
-            scaling parameters in a csv. \
+            scaling parameters in a csv. If None, the parameters are not saved.
+        cols_to_normalize (list[str]): Columns to normalize among df.columns. \
+            Default is COLS_TO_NORMALIZE
+        add_to_existing_save (bool): Whether to add the scaling parameters to an \
+            existing file if saving the scaling parameters (if dataset_name is not None). \
+            Default is False, which means we will erase existing files for this dataset.
 
     Returns:
-        pd.DataFrame: A DataFrame with 2*COLS_TO_NORMALIZE columns, \
+        pd.DataFrame: A DataFrame with 2*cols_to_normalize columns, \
             one for the mean/min and one for the standard deviation/max \
-            for each of the COLS_TO_NORMALIZE
+            for each of the cols_to_normalize
     """
-    if validate:
+    if not bypass_validation:
         DataSchema.validate(df)
 
     freq = get_data_frequency(df)
+    date_column_name = get_date_column_name(df)
 
     if freq == "5min":
         freq_factor = 3
@@ -174,14 +210,18 @@ def get_rolling_scaling_column(
         raise ValueError(f"Unsupported frequency: {freq}, please update the code")
 
     lookback_min_steps_min = lookback_15min_steps * 15 * freq_factor
-    rolling_power = df.set_index("date")[COLS_TO_NORMALIZE].rolling(
-        pd.Timedelta(minutes=lookback_min_steps_min),
-        min_periods=int(lookback_15min_steps * freq_factor * 0.7),
-        closed="left",
+    rolling_power = (
+        df.set_index(date_column_name)
+        .asfreq(freq)[cols_to_normalize]
+        .rolling(
+            pd.Timedelta(minutes=lookback_min_steps_min),
+            min_periods=int(lookback_15min_steps * freq_factor * 0.7),
+            # closed="left",
+        )
     )
 
-    df_scaling_columns = pd.DataFrame(index=df["date"])
-    for column_name in COLS_TO_NORMALIZE:
+    df_scaling_columns = pd.DataFrame(index=df[date_column_name])
+    for column_name in cols_to_normalize:
         if scaling_mode == "rolling_standardize":
             df_scaling_columns[("mean_power_for_diff", column_name)] = (
                 rolling_power[column_name]
@@ -212,6 +252,14 @@ def get_rolling_scaling_column(
                 .max()
                 .shift(lookahead_15min_steps * freq_factor, freq=freq)
             )
+            # fix the issue when the max is equal to the min (then we will have a division by 0 during the scaling)
+            df_scaling_columns.loc[
+                df_scaling_columns[("max_power_for_diff", column_name)]
+                == df_scaling_columns[("min_power_for_diff", column_name)],
+                [("max_power_for_diff", column_name)],
+            ] = (
+                df_scaling_columns[("max_power_for_diff", column_name)] + 1
+            )
         else:
             raise ValueError(f"Unsupported scaling mode: {scaling_mode}")
 
@@ -220,6 +268,11 @@ def get_rolling_scaling_column(
     ].reindex(df_scaling_columns.index, method="ffill")
 
     if dataset_name:
+        if add_to_existing_save:
+            # TODO
+            raise ValueError(
+                "add_to_existing_save is not yet supported for rolling scaling"
+            )
         filename = f"{dataset_name}_rolling_{scaling_mode}_params"
         with open(NORM_PARAMETERS_PATH / f"{filename}.csv", "w") as f:
             df_scaling_columns.to_csv(f)
@@ -232,20 +285,23 @@ def apply_rolling_scaling(
     scaling_mode: Literal["rolling_standardize", "rolling_normalize"],
     cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
 ) -> pd.DataFrame:
-    """Applies rolling scaling (normalization or standardization) to the "power" \
+    """Applies rolling scaling (normalization or standardization) to the cols_to_normalize \
         column of the DataFrame.
 
     Args:
-        df (pd.DataFrame): a DataFrame with a "power" and "date" column
+        df (pd.DataFrame): a DataFrame with a "power" and "date" or "startChargeTime" column
         scaling_parameters (pd.Series): scaling parameters for the rolling \
             scaling. Those are returned by the function get_rolling_scaling_column
         scaling_mode (Literal["rolling_standardize", "rolling_normalize"]): \
             The scaling mode to apply
-        cols_to_normalize (list[str]): Columns to normalize among COLS_TO_NORMALIZE
+        cols_to_normalize (list[str]): Columns to normalize among df.columns. \
+            Default is COLS_TO_NORMALIZE
 
     Returns:
-        pd.DataFrame: _description_
+        pd.DataFrame: df with the cols_to_normalize columns normalized
     """
+    date_column_name = get_date_column_name(df)
+
     scaling_column_names = []
     for column_name in cols_to_normalize:
         if scaling_mode == "rolling_standardize":
@@ -265,7 +321,7 @@ def apply_rolling_scaling(
     df = df.merge(
         scaling_parameters[scaling_column_names],
         how="left",
-        left_on="date",
+        left_on=date_column_name,
         right_index=True,
     ).dropna(subset=scaling_column_names)
 
