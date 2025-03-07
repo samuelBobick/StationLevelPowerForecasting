@@ -3,20 +3,26 @@ from typing import Literal, Optional
 
 import torch
 
-NUMBER_OF_INITIAL_MODELS = 1
 X_DIM = 96
 LOOKAHEAD = 96
-EPOCHS = 5
 TIME_MODE: Literal["window", "cyclical"] = "cyclical"
-ALPHA = 2  # for underpredictions error
-BETA = 3  # for weighted peaks error
+GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
+
+# torch models
+NUMBER_OF_INITIAL_MODELS = 1
+EPOCHS = 5
 BATCH_SIZE = 32
 DROPOUT = 0.4
 BATCH_NORM: bool = True
 
+# KNN
+N_NEIGHBORS = 5
+PERCENTILE = 50
+
+# Lags optimization
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = (
-    "short_opt"  # for regression models, such as Basic_NN or XGBoost
+    None  # for regression models, such as Basic_NN or XGBoost
 )
 NUMBER_OF_DAYS_FOR_PACF = 35  # 70 was the old parameter, but it is too big for
 # datasets with missing data
@@ -26,25 +32,30 @@ DEFAULT_RESULTS_FILENAME = "results"
 SAVED_MODELS_PATH = Path(__file__).parent / "models" / "saved_models"
 SAVED_MODELS_PATH.mkdir(parents=True, exist_ok=True)
 
+# Error metrics
 TypeErrorMetric = Literal["mse"]  # TODO: add "wmse" for xgboost (and knn if possible)
 ERROR_METRIC: TypeErrorMetric = "mse"
+ALPHA = 2  # for underpredictions error
+BETA = 3  # for weighted peaks error
 
-TypeDataSet = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
-DATASET: TypeDataSet = "slrp-ev_new"
-GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
+TypeDatasetName = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
+DATASET: TypeDatasetName = "slrp-ev_new"
+
 TypeScalingMode = Literal[
     "normalize", "standardize", "rolling_standardize", "rolling_normalize"
 ]
 SCALING_MODE: TypeScalingMode = "rolling_standardize"
 
-SESSION_BASED_MODE = True
-PEAK_PREDICTION = True
+SESSION_BASED_MODE = False
+PEAK_PREDICTION = False
+TypePeakPredictionMode = Literal["peak_of_day", "peak_next_8h"]
+PEAK_PREDICTION_MODE = "peak_next_8h"
 ADD_NUMBER_OF_SESSIONS = True
 ADD_FRACTION_OF_REGULAR_SESSIONS = False
 USE_ALL_ACTIVE_SESSIONS = True
 
 # parameters to generate random sessions
-NUMBER_OF_ARTIFICIAL_DATASETS = 2
+NUMBER_OF_ARTIFICIAL_DATASETS = 0
 RANDOM_START_TIME = True
 SHUFFLE_POWER_PROFILES = (
     True  # SHUFFLE_POWER_PROFILES and RANDOM_POWER_PROFILE_SHAPES can't be both True
@@ -83,5 +94,5 @@ else:
     print("CUDA is not available. Using CPU.")
     DEVICE = "cpu"
 
-RANDOM_SEED: int | None = 42  # int(pd.Timestamp.now().timestamp())
-VERBOSE = False
+RANDOM_SEED: int | None = None  # 42  # int(pd.Timestamp.now().timestamp())
+VERBOSE = True

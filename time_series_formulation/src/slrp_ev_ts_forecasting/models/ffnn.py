@@ -131,13 +131,15 @@ class FFNN(TorchBaseModel):
         """Determines the input size of the model based on the time_mode."""
         input_size = (
             self.x_dim
-            + int(self.add_number_of_sessions)
-            + int(self.add_fraction_of_regular_sessions)
             + int(self.add_number_of_evses_available)
             + len(self.list_workday_column_names)
         )
         if self.session_based_mode:
-            input_size += self.lookahead
+            input_size += (
+                self.lookahead
+                + int(self.add_number_of_sessions)
+                + int(self.add_fraction_of_regular_sessions)
+            )
 
         if self.time_mode == "window":
             return input_size + 6  # 6 for time one-hot encoding
