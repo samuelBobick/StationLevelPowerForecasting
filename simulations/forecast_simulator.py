@@ -6,7 +6,10 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from baseline_simulator import BaselineSimulator
-from constants.global_parameters import VERBOSE_PREDICTIONS_NORMALIZED
+from constants.global_parameters import (
+    SMOOTH_POWER_FEATURES,
+    VERBOSE_PREDICTIONS_NORMALIZED,
+)
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from cvxpy.atoms.affine.hstack import Hstack
 from slrp_ev_data.normalization_and_standardization import (
@@ -238,6 +241,7 @@ class ForecastSimulator(BaselineSimulator):
         )
         time_u = pd.date_range(start=time, periods=len(u), freq=f"{self.delta_t}H")
 
+        # plot aggregated power
         fig.add_trace(
             go.Scatter(
                 x=time_power,
@@ -247,15 +251,18 @@ class ForecastSimulator(BaselineSimulator):
                 line=dict(color="blue"),
             )
         )
-        fig.add_trace(
-            go.Scatter(
-                x=time_power,
-                y=self.smooth_profile(power).value,
-                mode="lines",
-                name="Aggregated Power until now (if smoothed)",
-                line=dict(dash="dot", color="blue"),
+        if not SMOOTH_POWER_FEATURES:
+            fig.add_trace(
+                go.Scatter(
+                    x=time_power,
+                    y=self.smooth_profile(power).value,
+                    mode="lines",
+                    name="Aggregated Power until now (if smoothed)",
+                    line=dict(dash="dot", color="blue"),
+                )
             )
-        )
+
+        # plot active sessions
         fig.add_trace(
             go.Scatter(
                 x=time_u,
@@ -265,15 +272,18 @@ class ForecastSimulator(BaselineSimulator):
                 line=dict(dash="dash", color="red"),
             )
         )
-        fig.add_trace(
-            go.Scatter(
-                x=time_u,
-                y=self.smooth_profile(u).value,
-                mode="lines",
-                name="Active Sessions Current Profile (u) (if smoothed)",
-                line=dict(dash="dot", color="red"),
+        if not SMOOTH_POWER_FEATURES:
+            fig.add_trace(
+                go.Scatter(
+                    x=time_u,
+                    y=self.smooth_profile(u).value,
+                    mode="lines",
+                    name="Active Sessions Current Profile (u) (if smoothed)",
+                    line=dict(dash="dot", color="red"),
+                )
             )
-        )
+
+        # plot prediction
         if type(prediction) in (
             float,
             int,
@@ -296,21 +306,24 @@ class ForecastSimulator(BaselineSimulator):
                 )
             )
 
+        # show other features as text
         other_information = ""
         for i in other_indexes:
             other_information += f"{self.features_name[i]}: {sample[i]:.2f}<br>"
 
         fig.add_annotation(
-            x=0.85,
+            x=1,
             y=1,
             xref="paper",
             yref="paper",
             text=other_information,
             showarrow=False,
+            align="right",
+            font=dict(size=11),  # default is 12
         )
 
         fig.update_layout(
-            title="Sample and Peak Prediction Visualization",
+            title="Features and Prediction Visualization",
             xaxis_title="Time",
             yaxis_title="Power (W or scaled)",
         )
