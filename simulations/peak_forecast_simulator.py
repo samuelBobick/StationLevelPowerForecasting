@@ -1,20 +1,22 @@
+import json
 from typing import Optional
 
 import cvxpy as cp
+import numpy as np
 import pandas as pd
-from constants.global_parameters import VERBOSE_PREDICTIONS_NORMALIZED
+import plotly.graph_objects as go
+from baseline_simulator import BaselineSimulator
 from constants.tariffs import MODIFIED_DC, TypeTariffName
-from forecast_simulator import ForecastSimulator
-from slrp_ev_data.feature_engineering import engineer_time_features
-from utils.utils import (
-    aggregate_u_scheduled_profiles,
-    get_aggregate_active_reg_future_profiles,
-    get_next_reg_profile,
+from cvxpy.atoms.affine.hstack import Hstack
+from slrp_ev_data.normalization_and_standardization import (
+    SINGLE_EVSE_NORMALIZATION_PARAM,
+    retrieve_train_min_and_max,
 )
-from utils.utils_time_and_indexes import round_up_to_nearest_timestep
+from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
+from utils import get_total_e_need, round_up_to_nearest_timestep
 
 
-class PeakForecastSimulator(ForecastSimulator):
+class PeakForecastSimulator(BaselineSimulator):
     def __init__(
         self,
         test_df,
@@ -24,12 +26,8 @@ class PeakForecastSimulator(ForecastSimulator):
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
         custom_cost_dc: Optional[float] = MODIFIED_DC,
-        initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions.json",
-        smooth_power_features: bool = True,
-        smooth_window_size: int = 5,
     ):
         """_summary_"""
         super().__init__(
@@ -40,55 +38,119 @@ class PeakForecastSimulator(ForecastSimulator):
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
-            initial_running_peak,
             monte_carlo,
             verbose,
-            model_name,
         )
-        self.forecast_historical_input_dim = 96
-        self.smooth_power_features = smooth_power_features
-        self.smooth_window_size = smooth_window_size
+
+        self.forecasting_models = {}
+        for workday in [0, 1]:
+            filename = f"LinearModel_SessionBased_PeakPrediction_{workday}.json"
+            self.forecasting_models[workday] = self.load_model_parameters(filename)
+
+        self.features_name = self.forecasting_models[0]["feature_names"]
+        self.labels_name = self.forecasting_models[0]["label_names"]
+        # get normalization parameters
+        self.get_normalization_parameters(self.features_name, self.labels_name)
+
+    def load_model_parameters(self, filename):
+        with open(SAVED_MODELS_PATH / filename, "r") as json_file:
+            params = json.load(json_file)
+        params["intercept"] = np.array(params["intercept"])
+        params["coefficients"] = np.array(params["coefficients"])
+        return params
+
+    def get_normalization_parameters(
+        self, feature_names: list[str], label_names: list[str]
+    ):
+        norm_params_min, norm_params_max = retrieve_train_min_and_max("slrp-ev_new")
+        norm_power_min = norm_params_min["power"]
+        norm_power_max = norm_params_max["power"]
+        norm_u_min = 0
+        norm_u_max = SINGLE_EVSE_NORMALIZATION_PARAM
+
+        features_norm_parameters_min = []
+        features_norm_parameters_max = []
+        for name in feature_names:
+            if name.startswith("power"):
+                features_norm_parameters_min.append(norm_power_min)
+                features_norm_parameters_max.append(norm_power_max)
+            elif name.startswith("u"):
+                features_norm_parameters_min.append(norm_u_min)
+                features_norm_parameters_max.append(norm_u_max)
+            else:
+                features_norm_parameters_min.append(0)
+                features_norm_parameters_max.append(1)
+        self.features_norm_parameters_min = np.array(features_norm_parameters_min)
+        self.features_norm_parameters_max = np.array(features_norm_parameters_max)
+
+        labels_norm_parameters_min = []
+        labels_norm_parameters_max = []
+        for name in label_names:
+            if name.startswith("power") or name == "peak_power":
+                labels_norm_parameters_min.append(norm_power_min)
+                labels_norm_parameters_max.append(norm_power_max)
+            elif name.startswith("u"):
+                labels_norm_parameters_min.append(norm_u_min)
+                labels_norm_parameters_max.append(norm_u_max)
+            else:
+                labels_norm_parameters_min.append(0)
+                labels_norm_parameters_max.append(1)
+        self.labels_norm_parameters_min = np.array(labels_norm_parameters_min)
+        self.labels_norm_parameters_max = np.array(labels_norm_parameters_max)
+
+    def make_prediction(
+        self, features: np.ndarray | Hstack, workday: int
+    ) -> cp.Expression:
+        """Make a prediction using the linear model
+
+        Args:
+            features: 1D array with all the features. Make sure that \
+                all the features are in the correct order (same \
+                self.features_name). You can check the features order by visualizing \
+                the samples with the function visualize_samples()
+            workday: 1 if it is a workday, 0 if it is a non-workday.
+
+        Returns:
+            predictions
+        """
+        normalized_features = (features - self.features_norm_parameters_min) / (
+            self.features_norm_parameters_max - self.features_norm_parameters_min
+        )
+
+        model = self.forecasting_models[workday]
+        coefficients = model["coefficients"].squeeze()
+        intercept = model["intercept"][0]
+
+        prediction = (normalized_features @ coefficients) + intercept
+
+        reversed_prediction = (
+            prediction
+            * (self.labels_norm_parameters_max - self.labels_norm_parameters_min)
+            + self.labels_norm_parameters_min
+        )
+
+        return reversed_prediction
 
     def get_current_peak_sch(
-        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, verbose=False
+        self, num_reg_user, num_sch_user, u, time
     ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
         Args:
             num_reg_user (int): number of regular users
-            num_sch_user (int): number of scheduled users
+            num_reg_user (int): number of scheduled users
             u (cp.Variable): scheduled power profile
-            time (pd.datetime): time of optimization
+            time (pd.datetime): timf of optimization
 
         Returns:
             cp.Expression: current scheduled peak
         """
-        next_session_profile = aggregate_u_scheduled_profiles(u, self.var_dim_constant)
-
-        aggregate_reg_profiles = get_aggregate_active_reg_future_profiles(
-            self.test_df, time, self.power_profiles, self.delta_t
-        )
-
-        next_session_profile = next_session_profile + aggregate_reg_profiles
-
-        return (
-            self.get_current_peak(
-                next_session_profile,
-                num_reg_user + num_sch_user + 1,
-                time,
-                verbose=verbose,
-            )
-            / 1000
-        )
+        next_session_profile = cp.reshape(u[:96], (96,))
+        # divide by 1000 to convert from W to kW
+        return self.get_current_peak(next_session_profile, time) / 1000
 
     def get_current_peak_reg(
-        self,
-        num_reg_user: int,
-        num_sch_user: int,
-        u: cp.Variable,
-        time,
-        row,
-        verbose=False,
+        self, num_reg_user: int, num_sch_user: int, u: cp.Variable, time, row
     ) -> cp.Expression:
         """Helper fuction to get the peak, accounting for the optimized scheduled power profiles
 
@@ -98,107 +160,121 @@ class PeakForecastSimulator(ForecastSimulator):
 
         Args:
             num_reg_user (int): number of regular users
-            num_sch_user (int): number of scheduled users
+            num_reg_user (int): number of scheduled users
             u (cp.Variable): scheduled power profile
-            time (pd.datetime): time of optimization
+            time (pd.datetime): timf of optimization
 
         Returns:
             cp.Expression: current scheduled peak
         """
-        next_session_profile = get_next_reg_profile(
-            row, self.delta_t, self.flexibility_constant, self.power_rate
-        )
+        e_need = get_total_e_need(row, self.delta_t, self.flexibility_constant)
 
-        # to remove the part that considers the next user as scheduled
-        u_sliced: cp.Variable = u[self.var_dim_constant :]  # type: ignore
-        if u_sliced.shape[0] > 0:
-            next_session_profile = (
-                next_session_profile
-                + aggregate_u_scheduled_profiles(u_sliced, self.var_dim_constant)
-            )
-
-        next_session_profile = (
-            next_session_profile
-            + get_aggregate_active_reg_future_profiles(
-                self.test_df, time, self.power_profiles, self.delta_t
-            )
-        )
-
+        N_reg = int(
+            e_need // self.power_rate
+        )  # how many time steps would it take the user to charge if they chose regular?
+        next_session_profile = np.array([self.power_rate] * N_reg + [0] * (96 - N_reg))
         # divide by 1000 to convert from W to kW
-        return (
-            self.get_current_peak(
-                next_session_profile,
-                num_reg_user + num_sch_user + 1,
-                time,
-                verbose=verbose,
-            )
-            / 1000
-        )
+        return self.get_current_peak(next_session_profile, time) / 1000
 
     def get_current_peak(
-        self, aggregate_future_profile, num_active_sessions, time, verbose=False
+        self, next_session_profile, time, verbose=False
     ) -> cp.Expression:
         """Make a forecast for the peak given the optimized power profile
 
         Args:
-            next_scheduled_profile (cp.Variable): scheduled power profile
-            num_active_sessions (int): number of active sessions
-            time (pd.datetime): time of optimization
+            u (cp.Variable): scheduled power profile
+            time (pd.datetime): timf of optimization
 
         Returns:
             prediction of current peak given time, past power profile, and scheduled power_profile
         """
         rounded_current_time = round_up_to_nearest_timestep(time, self.delta_t)
-        historical_timesteps = pd.date_range(
+        timesteps = pd.date_range(
             end=rounded_current_time - pd.Timedelta(minutes=15),
-            periods=self.forecast_historical_input_dim,
+            periods=96,
             freq="15min",
         )
-
         historical_power_profile = self.aggregate_power_profile[
-            self.aggregate_power_profile["date"].isin(historical_timesteps)
+            self.aggregate_power_profile["date"].isin(timesteps)
         ]["power"].values
 
-        # get time features
-        time_features = pd.DataFrame(data=[time], columns=["date"])
-        engineer_time_features(time_features)
-        # clean and put in the correct format
-        time_features = time_features.drop(columns=["date"]).values.squeeze()
-
-        time_in_15_minutes = time + pd.Timedelta(minutes=15)
-        workday_in_15_minutes = int(time_in_15_minutes.dayofweek < 5)
-        if time_in_15_minutes.date() in self.holidays.date:
-            workday_in_15_minutes = 0
-
-        time_tomorrow = time + pd.Timedelta(days=1)
-        workday_tomorrow = int(time_tomorrow.dayofweek < 5)
-        if time_tomorrow.date() in self.holidays.date:
-            workday_tomorrow = 0
-
-        if self.smooth_power_features:
-            historical_power_profile = self.smooth_profile(
-                historical_power_profile, self.smooth_window_size
-            )
-            aggregate_future_profile = self.smooth_profile(
-                aggregate_future_profile, self.smooth_window_size
-            )
+        s_in_day = 24 * 60 * 60  # number of seconds in a day
+        s_in_week = 7 * s_in_day
+        s_in_year = (365.2425) * s_in_day
+        unix_time = time.timestamp()
+        time_features = np.array(
+            [
+                np.sin(unix_time * (2 * np.pi / s_in_day)),
+                np.cos(unix_time * (2 * np.pi / s_in_day)),
+                np.sin(unix_time * (2 * np.pi / s_in_week)),
+                np.cos(unix_time * (2 * np.pi / s_in_week)),
+                np.sin(unix_time * (2 * np.pi / s_in_year)),
+                np.cos(unix_time * (2 * np.pi / s_in_year)),
+            ]
+        )
 
         features = cp.hstack(
             [
                 historical_power_profile * 1000,
-                workday_tomorrow,
-                8,  # number EVSEs available (always 8 in SLRP-EV)
                 time_features,
-                aggregate_future_profile * 1000,
-                num_active_sessions,
+                next_session_profile * 1000,
             ]
         )
+        workday = int(time.dayofweek < 5)
 
-        prediction = self.make_prediction(
-            features, workday_in_15_minutes, time, verbose
-        )
+        prediction = self.make_prediction(features, workday)
 
-        if verbose and not VERBOSE_PREDICTIONS_NORMALIZED:
-            self.visualize_samples(time, sample=features.value, prediction=prediction.value)  # type: ignore
+        if verbose:
+            self.visualize_samples(features.value, prediction.value)  # type: ignore
 
         return prediction
+
+    def visualize_samples(
+        self, sample: np.ndarray, prediction: Optional[np.ndarray] = None
+    ):
+        power_indexes = []
+        u_indexes = []
+        for i, name in enumerate(self.features_name):
+            if name.startswith("power"):
+                power_indexes.append(i)
+            elif name.startswith("u"):
+                u_indexes.append(i)
+
+        fig = go.Figure()
+
+        power = sample[power_indexes]
+        u = sample[u_indexes]
+        time_power = np.arange(len(power)) * self.delta_t
+        time_u = time_power + 24
+        fig.add_trace(
+            go.Scatter(
+                x=time_power,
+                y=power,
+                mode="lines",
+                name="Aggregated Power until now",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=time_u,
+                y=u + power[-1],
+                mode="lines",
+                name="Next User Profile",
+                line=dict(dash="dash"),
+            )
+        )
+        if prediction:
+            fig.add_trace(
+                go.Scatter(
+                    x=[time_u[0]],
+                    y=prediction,
+                    mode="markers",
+                    name="Predicted Peak",
+                )
+            )
+        fig.update_layout(
+            title="Sample Visualization",
+            xaxis_title="Time",
+            yaxis_title="Power",
+        )
+        fig.show()
