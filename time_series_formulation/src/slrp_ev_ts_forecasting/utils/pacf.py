@@ -6,10 +6,9 @@ import pandas as pd
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 from scipy import stats
-from slrp_ev_data.data_utils import get_data_frequency
-from statsmodels.tsa.stattools import pacf
-
+from slrp_ev_data.utils.data_utils import get_data_frequency
 from slrp_ev_ts_forecasting.default_parameters import VERBOSE
+from statsmodels.tsa.stattools import pacf
 
 
 def get_pacf_values(

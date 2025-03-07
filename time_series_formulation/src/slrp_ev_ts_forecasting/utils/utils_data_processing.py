@@ -1,9 +1,8 @@
 import pandas as pd
 from slrp_ev_data.feature_engineering import (
-    convert_date_from_datetime_to_int,
     reverse_feature_engineering,
 )
-
+from slrp_ev_data.utils.data_utils import convert_date_from_datetime_to_int
 from slrp_ev_ts_forecasting.default_parameters import TypeScalingMode
 
 
@@ -12,6 +11,7 @@ def reverse_engineer_forecast(
     df_predictions,
     scaling_mode: TypeScalingMode,
     scaling_parameters: tuple[pd.Series, pd.Series] | pd.DataFrame | None,
+    lookahead: int,
 ) -> pd.DataFrame:
     # Reverse engineer the forecast to get the original features back
     # initialize final dataframe
@@ -38,6 +38,7 @@ def reverse_engineer_forecast(
             df_reverse_helper,
             scaling_mode,
             scaling_parameters,
+            lookahead=lookahead,
             bypass_output_validation=True,
         )
 

@@ -1,18 +1,27 @@
-import slrp_ev_ts_forecasting.default_parameters as default_parameters
-from slrp_ev_ts_forecasting.compute_losses import compute_losses
+import pandas as pd
+from slrp_ev_data.utils.data_utils import (
+    convert_date_from_datetime_to_int,
+    convert_date_from_int_to_datetime,
+)
+from slrp_ev_ts_forecasting.models.base import prepare_df_predictions
 
 
 class LastWeek:
 
-    def __init__(self, alpha=default_parameters.ALPHA, readings_per_day=96):
+    def __init__(
+        self,
+        scaling_mode=None,
+        scaling_parameters=None,
+    ):
         """
         Args:
-            alpha (float, optional): Underpredictions are penalized alpha times more than overpredictions for weighted error metric. Defaults to 2.
-            readings_per_day (int, optional): Defaults to 96.
+            scaling_mode (str, optional): UNUSED. Defaults to None.
+            scaling_parameters (dict, optional): UNUSED. Defaults to None.
         """
 
-        self.alpha = alpha
-        self.readings_per_day = readings_per_day
+    @property
+    def model_str_name(self):
+        return "LastWeek"
 
     def predict(self, test):
         """Given a pandas DataFrame test with a power column, returns error metrics and list of predictions
@@ -23,15 +32,22 @@ class LastWeek:
         Returns:
             tuple (float, float, list): RMSE, weighted RMSE, list of predictions
         """
-        power = test["power"].to_numpy()
+        test = test.copy()
 
-        forecast = power[: -self.readings_per_day * 7]
-        real = power[self.readings_per_day * 7 :]
-        forecast_dates = test.iloc[self.readings_per_day * 7 :]["date"].to_numpy()
+        test["date"] = convert_date_from_int_to_datetime(test["date"])
+        test_forecast = test.loc[
+            test["date"].isin(test["date"] - pd.Timedelta(days=7))
+        ].copy()
+        test_forecast["date"] = test_forecast["date"] + pd.Timedelta(days=7)
 
-        losses = compute_losses(forecast, real, self.alpha)
+        forecast = test_forecast["power"].to_numpy()
+        real = test[test["date"].isin(test_forecast["date"])]["power"].to_numpy()
+        forecast_dates = convert_date_from_datetime_to_int(test_forecast["date"])
 
-        return losses, forecast, forecast_dates
+        df_predictions = prepare_df_predictions(forecast, forecast_dates, real)
 
-    def fit(self, train):
+        return df_predictions
+
+    def fit(self, train, val):
+        """Fit method, not used in this model"""
         return

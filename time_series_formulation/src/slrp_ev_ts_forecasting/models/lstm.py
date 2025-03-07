@@ -130,12 +130,17 @@ class LSTM(TorchBaseModel):
             activation=self.activation,
             dropout=self.dropout,
             batch_norm=self.batch_norm,
+            greater_than_zero=self.scaling_mode in ["normalize", "rolling_normalize"],
         )
         self.model.to(default_parameters.DEVICE)
 
     def _determine_input_size(self) -> int:
         """Determines the input size of the model based on the time_mode."""
-        input_size = int(self.add_number_of_evses_available)
+        input_size = (
+            int(self.add_number_of_evses_available)
+            + len(self.list_workday_column_names)
+            - 1
+        )
         if self.time_mode == "window":
             return (
                 input_size + 1 + 6 + 1
@@ -158,6 +163,7 @@ class LSTM_model(nn.Module):
         activation,
         dropout,
         batch_norm,
+        greater_than_zero: bool = True,
     ):
         super(LSTM_model, self).__init__()
         self.num_layers = num_layers
@@ -177,6 +183,8 @@ class LSTM_model(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fc_1 = nn.Linear(hidden_size, 128)  # fully connected layer
         self.fc = nn.Linear(128, output_size)  # output layer
+
+        self.greater_than_zero = greater_than_zero
 
     def forward(self, x):
         """
@@ -209,5 +217,6 @@ class LSTM_model(nn.Module):
         out = self.fc_1(out)
         out = self.activation(out)
         out = self.fc(out)
-        out = nn.functional.softplus(out)  # ensuring non-negative output
+        if self.greater_than_zero:
+            out = nn.functional.softplus(out)  # ensuring non-negative output
         return out
