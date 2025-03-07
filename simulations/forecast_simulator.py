@@ -57,18 +57,60 @@ class ForecastSimulator(BaselineSimulator):
 
     def load_model_parameters(self, filename):
         with open(SAVED_MODELS_PATH / filename, "r") as json_file:
-            params = json.load(json_file)
+            model_params = json.load(json_file)
 
-        model_scaling_mode = params["model_parameters"]["scaling_mode"]
+        self.check_model_parameters(model_params)
+
+        model_params["intercept"] = np.array(model_params["intercept"])
+        model_params["coefficients"] = np.array(model_params["coefficients"])
+        return model_params
+
+    def check_model_parameters(self, model_params):
+        """Check if input parameters of the simulation correspond to
+        the parameters the model was trained with"""
+
+        model_scaling_mode = model_params["model_parameters"]["scaling_mode"]
         if model_scaling_mode != "normalize":
             raise ValueError(
                 f"The scaling mode of your model {model_scaling_mode} is not yet supported. "
                 "Only 'normalize' is supported for now. Please update your model."
             )
 
-        params["intercept"] = np.array(params["intercept"])
-        params["coefficients"] = np.array(params["coefficients"])
-        return params
+        model_var_dim = model_params["model_parameters"]["x_dim"]
+        if model_var_dim != self.var_dim_constant:
+            raise ValueError(
+                f"The model was trained with a different var_dim_constant ({model_var_dim}) "
+                f"than the one provided ({self.var_dim_constant}). "
+                "Please update your model."
+            )
+
+        model_add_number_of_evses_available = model_params["model_parameters"][
+            "add_number_of_evses_available"
+        ]
+        assert (
+            model_add_number_of_evses_available
+        ), "The model parameter add_number_of_evses_available should be True. Please update your model."
+
+        model_add_number_of_sessions = model_params["model_parameters"][
+            "add_number_of_sessions"
+        ]
+        assert (
+            model_add_number_of_sessions
+        ), "The model parameter add_number_of_sessions should be True. Please update your model."
+
+        model_add_fraction_of_regular_sessions = model_params["model_parameters"][
+            "add_fraction_of_regular_sessions"
+        ]
+        assert (
+            not model_add_fraction_of_regular_sessions
+        ), "The model parameter add_fraction_of_regular_sessions should be False. Please update your model."
+
+        model_use_all_active_sessions = model_params["model_parameters"][
+            "use_all_active_sessions"
+        ]
+        assert (
+            model_use_all_active_sessions
+        ), "The model parameter use_all_active_sessions should be True. Please update your model."
 
     def get_normalization_parameters(
         self, feature_names: list[str], label_names: list[str]
@@ -125,8 +167,7 @@ class ForecastSimulator(BaselineSimulator):
             predictions
         """
         normalized_features = (features - self.features_norm_parameters_min) / (
-            self.features_norm_parameters_max
-            - self.features_norm_parameters_min
+            self.features_norm_parameters_max - self.features_norm_parameters_min
         )
 
         model = self.forecasting_models[workday]
@@ -236,7 +277,7 @@ class ForecastSimulator(BaselineSimulator):
         if type(prediction) in (
             float,
             int,
-        ):  # TODO if predicition is scalar, plot a point. Else, plot a time series.
+        ):  # if prediction is scalar, plot a point. Else, plot a time series.
             fig.add_trace(
                 go.Scatter(
                     x=[time_u[0]],
@@ -257,10 +298,10 @@ class ForecastSimulator(BaselineSimulator):
 
         other_information = ""
         for i in other_indexes:
-            other_information += f"{self.features_name[i]}: {sample[i]}<br>"
+            other_information += f"{self.features_name[i]}: {sample[i]:.2f}<br>"
 
         fig.add_annotation(
-            x=0.8,
+            x=0.85,
             y=1,
             xref="paper",
             yref="paper",
