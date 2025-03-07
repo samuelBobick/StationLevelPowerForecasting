@@ -79,6 +79,10 @@ class TimeseriesForecastSimulator(ForecastSimulator):
                 line=dict(dash="dash", color="green"),
             )
         )
+        fig.update_layout(
+            title="Forecasted vs Reconstructed Timeseries for the next few hours",
+            yaxis_title="Station Power Forecast (kW)",
+        )
 
         fig.show()
 
