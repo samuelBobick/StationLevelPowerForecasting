@@ -236,22 +236,15 @@ class BaselineSimulator:
                 )
             else:  # Assumes we know exactly how long they will stay
                 price = prices[row["dcosId"]][1]
-                if len(self.power_profiles[row["dcosId"]]) > 0 and N_remain > 0:
-                    existing_reg_obj += (
-                        self.delta_t
-                        * self.power_profiles[row["dcosId"]][
-                            (TOU_current_idx - TOU_start_idx) : (
-                                TOU_end_idx - TOU_start_idx
-                            )
-                        ]  # TODO: check if this is correct
-                        @ (self.TOU[TOU_current_idx:TOU_end_idx] - price)
-                    )
-                else:
-                    existing_reg_obj += (
-                        self.delta_t
-                        * np.array([self.power_rate] * N_remain)
-                        @ (self.TOU[TOU_current_idx:TOU_end_idx] - price)
-                    )
+                existing_reg_obj += (
+                    self.delta_t
+                    * self.power_profiles[row["dcosId"]][
+                        (TOU_current_idx - TOU_start_idx) : (
+                            TOU_end_idx - TOU_start_idx
+                        )
+                    ]
+                    @ (self.TOU[TOU_current_idx:TOU_end_idx] - price)
+                )
                 num_reg_user += 1
 
         last_row = sub_df.iloc[-1]
