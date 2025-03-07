@@ -126,25 +126,27 @@ class ForecastSimulator(BaselineSimulator):
         """
         normalized_features = (features - self.features_norm_parameters_min) / (
             self.features_norm_parameters_max
-            - self.features_norm_parameters_min  # + 1 TODO why??
+            - self.features_norm_parameters_min
         )
 
         model = self.forecasting_models[workday]
         coefficients = model["coefficients"].squeeze()
-        intercept = model["intercept"][0]
+        intercept = model["intercept"].squeeze()
 
         prediction = (coefficients @ normalized_features) + intercept
 
         # the prediction can sometimes be negative, we need to make sure it is positive
-        # prediction = cp.maximum(prediction, 0)
+        prediction = cp.maximum(prediction, 0)
 
         if verbose and VERBOSE_PREDICTIONS_NORMALIZED:
             print("Plotting scaled sample and prediction")
             self.visualize_samples(time, normalized_features.value, np.array(prediction.value))  # type: ignore
 
         reversed_prediction = (
-            prediction
-            * (self.labels_norm_parameters_max - self.labels_norm_parameters_min)
+            cp.multiply(
+                prediction,
+                (self.labels_norm_parameters_max - self.labels_norm_parameters_min),
+            )
             + self.labels_norm_parameters_min
         )
 
@@ -231,8 +233,9 @@ class ForecastSimulator(BaselineSimulator):
                 line=dict(dash="dot", color="red"),
             )
         )
-        if (
-            type(prediction) is int
+        if type(prediction) in (
+            float,
+            int,
         ):  # TODO if predicition is scalar, plot a point. Else, plot a time series.
             fig.add_trace(
                 go.Scatter(

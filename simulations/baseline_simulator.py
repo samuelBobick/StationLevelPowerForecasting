@@ -386,7 +386,10 @@ class BaselineSimulator:
             constraints += [cp.sum(u[u_start:u_end]) == e_need]
             # The user is only plugged in between u_start and u_end so below,
             # so we constraint the timesteps that the user is not plug in to 0
-            constraints += [u[u_end : u_start + self.var_dim_constant] == 0]
+            constraints += [
+                u[u_end : u_start + self.var_dim_constant] <= 0.001,
+                u[u_end : u_start + self.var_dim_constant] >= -0.001,
+            ]
 
         ### Solve
         J, J_array, current_peak_sch, current_peak_reg = self.get_J(
@@ -564,8 +567,10 @@ class BaselineSimulator:
         # active_sessions = [{dcosId : start_time},......] TODO
         active_sessions: list[pd.Series] = []
 
+        # Initiate cached variables to None
         previousStartChargeTime = None
         u = None
+        choice = None
         for startChargeTime in tqdm(
             pd.to_datetime(self.test_df["startChargeTime"]), desc="Optimizing sessions"
         ):
@@ -575,13 +580,16 @@ class BaselineSimulator:
                 startChargeTime,
                 active_sessions,
             )
-            # TODO what is going on here?
-            timeseries_forecast = self.get_timeseries_forecast(
+
+            # Cache previous timeseries forecast inside an attribute (needed for timeseries_forecast_simulator)
+            self.get_timeseries_forecast(
                 active_sessions[-1],
                 u,
                 previousStartChargeTime,
+                choice,
                 len(active_sessions),
                 startChargeTime,
+                verbose=True,
             )
 
             running_peak = max(
@@ -792,7 +800,14 @@ class BaselineSimulator:
         pass
 
     def get_timeseries_forecast(
-        self, current_row, u, prev_start_charge_time, num_active_sessions, time
+        self,
+        current_row,
+        u_prev,
+        prev_start_charge_time,
+        prev_choice,
+        num_active_sessions,
+        current_start_charge_time,
+        verbose=False,
     ):
         # This function is not implemented in the baseline simulator
         pass
