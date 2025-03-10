@@ -31,7 +31,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_name: str = "LinearModel_SessionBased_WithNbSessions_WithAllActiveSessions",
+        model_name: str = "LinearModel_SessionBased_WithNbSessions_WithAllActiveSessions8hr",
     ):
         """_summary_"""
         super().__init__(
@@ -113,9 +113,9 @@ class TimeseriesForecastSimulator(ForecastSimulator):
 
         reconstructed_timeseries = (
             self.forecast
-            - next_reg_profile
-            - self.prev_aggregate_u_for_forecast
-            + aggregate_u_scheduled_profiles(u, self.var_dim_constant)
+            - next_reg_profile[: self.lookahead]
+            - self.prev_aggregate_u_for_forecast[: self.lookahead]
+            + aggregate_u_scheduled_profiles(u, self.lookahead)
         )
 
         if verbose:
@@ -150,13 +150,15 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         u_sliced: cp.Variable = u[self.var_dim_constant :]  # type: ignore
         if u_sliced.shape[0] > 0:
             u_existing_scheduled = aggregate_u_scheduled_profiles(
-                u_sliced, self.var_dim_constant
+                u_sliced, self.lookahead
             )
         else:
-            u_existing_scheduled = np.zeros(self.var_dim_constant)
+            u_existing_scheduled = np.zeros(self.lookahead)
 
         reconstructed_timeseries = (
-            self.forecast - self.prev_aggregate_u_for_forecast + u_existing_scheduled
+            self.forecast
+            - self.prev_aggregate_u_for_forecast[: self.lookahead]
+            + u_existing_scheduled
         )
 
         if verbose:
@@ -275,7 +277,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
                 tomorrow_workday,
                 8,
                 time_features,
-                aggregate_future_profile * 1000,
+                aggregate_future_profile[: self.lookahead] * 1000,
                 num_active_sessions,
             ]
         )
@@ -284,8 +286,8 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             features, time_in_15_min_workday, current_start_charge_time
         )
 
-        # if verbose:
-        #     self.visualize_samples(current_start_charge_time, features, prediction.value)  # type: ignore
+        if verbose:
+            self.visualize_samples(current_start_charge_time, features, prediction.value)  # type: ignore
 
         self.aggregate_future_profile_for_forecast = aggregate_future_profile
         self.forecast = prediction / 1000
