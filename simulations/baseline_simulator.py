@@ -7,7 +7,7 @@ import pandas as pd
 import seaborn as sns
 from constants.dcm import get_dcm_theta, get_dcm_v
 from constants.tariffs import DICT_TARIFFS, MODIFIED_DC, TypeTariffName
-from slrp_ev_data.data_utils import USAcademicHolidayCalendar
+from slrp_ev_data.utils.USAcademicHolidayCalendar import USAcademicHolidayCalendar
 from tqdm.auto import tqdm
 from utils.utils import (
     aggregate_u_scheduled_profiles,
@@ -380,8 +380,8 @@ class BaselineSimulator:
             # The user is only plugged in between u_start and u_end so below,
             # so we constraint the timesteps that the user is not plug in to 0
             constraints += [
-                u[u_end : u_start + self.var_dim_constant] <= 0.001,
-                u[u_end : u_start + self.var_dim_constant] >= -0.001,
+                u[u_end : u_start + self.var_dim_constant] <= 0.005,
+                u[u_end : u_start + self.var_dim_constant] >= -0.005,
             ]
 
         ### Solve
@@ -438,7 +438,7 @@ class BaselineSimulator:
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
-        prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
+        prob.solve(solver=cp.SCS, max_iters=10000, eps=0.01)
         if prob.status == "optimal_inaccurate":
             # TODO: look into why this is happening
             print("WARNING: optimal solution found, but is inaccurate")

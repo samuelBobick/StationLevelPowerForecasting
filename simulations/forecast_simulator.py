@@ -12,7 +12,7 @@ from constants.global_parameters import (
 )
 from constants.tariffs import MODIFIED_DC, TypeTariffName
 from cvxpy.atoms.affine.hstack import Hstack
-from slrp_ev_data.normalization_and_standardization import (
+from slrp_ev_data.utils.scaling_utils import (
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH

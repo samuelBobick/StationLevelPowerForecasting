@@ -246,6 +246,13 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             self.aggregate_power_profile["date"].isin(timesteps)
         ]["power"].values
 
+        # Sometimes at the beginning of the month, we must left pad to get ebough data to make a prediction
+        historical_power_profile = np.pad(
+            historical_power_profile,
+            (self.var_dim_constant - historical_power_profile.size, 0),
+            mode="constant",
+        )
+
         # get time features
         time_features = pd.DataFrame(data=[current_start_charge_time], columns=["date"])
         engineer_time_features(time_features)
@@ -277,8 +284,8 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             features, time_in_15_min_workday, current_start_charge_time
         )
 
-        if verbose:
-            self.visualize_samples(current_start_charge_time, features, prediction.value)  # type: ignore
+        # if verbose:
+        #     self.visualize_samples(current_start_charge_time, features, prediction.value)  # type: ignore
 
         self.aggregate_future_profile_for_forecast = aggregate_future_profile
         self.forecast = prediction / 1000
