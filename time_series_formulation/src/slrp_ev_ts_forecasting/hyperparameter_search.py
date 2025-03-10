@@ -7,7 +7,7 @@ from tqdm.auto import tqdm
 from slrp_ev_ts_forecasting.default_parameters import (
     RANDOM_SEED,
     VERBOSE,
-    TypeDataSet,
+    TypeDatasetName,
     TypeModelChoice,
 )
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
@@ -17,7 +17,7 @@ from slrp_ev_ts_forecasting.run_one_model import run_one_model
 # Start of USER INPUTS
 
 list_model_choices: list[TypeModelChoice] = ["LSTM", "TCN", "Basic_NN"]
-dataset: TypeDataSet = "slrp-ev_new"
+dataset: TypeDatasetName = "slrp-ev_new"
 
 search_space = {
     "x_dim": [96, 96 * 2, 96 * 4],
@@ -40,6 +40,9 @@ search_space = {
         "rolling_standardize",
         "rolling_normalize",
     ],
+    # knn
+    "n_neighbors": [4, 7, 10, 13],
+    "percentile": [25, 50, 75, 90],
     # parameters for session based forecasting
     "session_based_mode": [False],
     "peak_prediction": [False],
