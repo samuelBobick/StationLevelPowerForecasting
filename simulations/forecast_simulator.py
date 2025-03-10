@@ -58,6 +58,8 @@ class ForecastSimulator(BaselineSimulator):
         # get normalization parameters
         self.get_normalization_parameters(self.features_name, self.labels_name)
 
+        self.lookahead = len(self.labels_name)
+
     def load_model_parameters(self, filename):
         with open(SAVED_MODELS_PATH / filename, "r") as json_file:
             model_params = json.load(json_file)
