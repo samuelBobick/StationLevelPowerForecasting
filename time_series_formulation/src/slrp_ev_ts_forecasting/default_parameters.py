@@ -44,7 +44,7 @@ DATASET: TypeDatasetName = "slrp-ev_new"
 TypeScalingMode = Literal[
     "normalize", "standardize", "rolling_standardize", "rolling_normalize"
 ]
-SCALING_MODE: TypeScalingMode = "rolling_standardize"
+SCALING_MODE: TypeScalingMode = "normalize"
 
 SESSION_BASED_MODE = False
 PEAK_PREDICTION = False
@@ -95,4 +95,4 @@ else:
     DEVICE = "cpu"
 
 RANDOM_SEED: int | None = None  # 42  # int(pd.Timestamp.now().timestamp())
-VERBOSE = True
+VERBOSE = False
