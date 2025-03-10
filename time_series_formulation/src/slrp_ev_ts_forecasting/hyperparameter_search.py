@@ -16,7 +16,7 @@ from slrp_ev_ts_forecasting.run_one_model import run_one_model
 # ==================
 # Start of USER INPUTS
 
-list_model_choices: list[TypeModelChoice] = ["KNN"]
+list_model_choices: list[TypeModelChoice] = ["TCN", "Basic_NN"]
 dataset: TypeDatasetName = "slrp-ev_new"
 
 search_space = {
@@ -61,7 +61,7 @@ search_space = {
 }
 
 
-number_of_models_per_config = 1
+number_of_models_per_config = 4
 n_random_samples = 100  # Number of random samples to evaluate
 parallelize = False
 filename_suffix = "initial_models"
