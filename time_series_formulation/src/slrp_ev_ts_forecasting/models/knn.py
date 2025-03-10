@@ -13,8 +13,8 @@ class KNN(RegressionBaseModel):
         self,
         x_dim=default_parameters.X_DIM,
         lookahead=default_parameters.LOOKAHEAD,
-        n_neighbors=10,
-        percentile=90,
+        n_neighbors=default_parameters.N_NEIGHBORS,
+        percentile=default_parameters.PERCENTILE,
         alpha=default_parameters.ALPHA,
         time_mode: Literal["window", "cyclical"] = default_parameters.TIME_MODE,
         optimize_lags: default_parameters.TypeOptimizeLags = default_parameters.OPTIMIZE_LAGS,
@@ -34,7 +34,9 @@ class KNN(RegressionBaseModel):
         random_choices: bool = default_parameters.RANDOM_CHOICES,
         add_number_of_evses_available: bool = default_parameters.ADD_NUMBER_OF_EVSES_AVAILABLE,
     ):
-        """_summary_
+        """Model that predicts the `percentile` percentile of the `n_neighbors` nearest neighbors.
+        E.g. if `percentile` is 90 and `n_neighbors` is 10, the model will predict the 90th percentile of the 10 nearest neighbors.
+        if `percentile` is 50, the model will predict the median of the `n_neighbors` nearest neighbors.
 
         Args:
             x_dim (int, optional): How many past timesteps ahead we want to use as inputs. Defaults to 16.
@@ -91,12 +93,20 @@ class KNN(RegressionBaseModel):
             n_neighbors=self.n_neighbors, percentile=self.percentile
         )
 
-        X_input = X_train[train_mask].drop(
-            self.cols_to_drop_for_model,
-            # [col for col in X_train.columns if not col.startswith("power")],
-            axis=1,
+        X_input = pd.concat(
+            [
+                X_train[train_mask].drop(
+                    self.cols_to_drop_for_model,
+                    axis=1,
+                ),
+                X_val[val_mask].drop(
+                    self.cols_to_drop_for_model,
+                    axis=1,
+                ),
+            ],
+            axis=0,
         )
-        y_input = y_train[train_mask]
+        y_input = pd.concat([y_train[train_mask], y_val[val_mask]], axis=0)
 
         knn_regressor.fit(X_input, y_input)
         return knn_regressor

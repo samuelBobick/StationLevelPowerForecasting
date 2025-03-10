@@ -9,9 +9,10 @@ import torch
 from plotly import graph_objects as go
 from torch.utils.data import Dataset
 
-from slrp_ev_data.data_utils import convert_data_freq_to_minutes, get_data_frequency
-from slrp_ev_data.feature_engineering import (
-    reverse_feature_engineering,
+from slrp_ev_data.utils.data_utils import (
+    convert_data_freq_to_minutes,
+    convert_date_from_int_to_datetime,
+    get_data_frequency,
 )
 
 # source: https://www.tensorflow.org/tutorials/structured_data/time_series#data_windowing
@@ -621,9 +622,7 @@ class WindowGenerator:
             plt.subplot(max_n, 1, n + 1)
             plt.ylabel(f"{plot_col} [normed]")
             dates = pd.date_range(
-                start=reverse_feature_engineering(
-                    inputs[n, :, :], bypass_output_validation=True
-                )["date"].iloc[0],
+                start=convert_date_from_int_to_datetime(inputs[n, :, :]).iloc[0],
                 periods=self.total_window_size,
                 freq="15min",
             )

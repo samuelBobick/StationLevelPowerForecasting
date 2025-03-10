@@ -5,11 +5,12 @@ from slrp_ev_data import (
     read_new_slrpev_data,
     read_old_slrpev_data,
     read_ucsd_data,
-    train_test_split,
 )
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
 )
+from slrp_ev_data.utils import train_test_split
+from slrp_ev_data.utils.scaling_main import get_scaling_parameters
 
 from slrp_ev_ts_forecasting.compute_losses import compute_losses
 from slrp_ev_ts_forecasting.default_parameters import (
@@ -20,19 +21,18 @@ from slrp_ev_ts_forecasting.default_parameters import (
     LOOKAHEAD,
     SCALING_MODE,
     VERBOSE,
-    TypeDataSet,
+    TypeDatasetName,
     TypeModelChoice,
 )
 from slrp_ev_ts_forecasting.models.dict_models import DICT_MODEL
 from slrp_ev_ts_forecasting.models.ffnn import FFNN
 from slrp_ev_ts_forecasting.models.last_week import LastWeek
 from slrp_ev_ts_forecasting.models.regression_base import RegressionBaseModel
-from slrp_ev_ts_forecasting.save_losses import save_losses
-from slrp_ev_ts_forecasting.utils_data_processing import (
-    get_scaling_parameters,
+from slrp_ev_ts_forecasting.save_losses import print_losses, save_losses
+from slrp_ev_ts_forecasting.utils.utils_data_processing import (
     reverse_engineer_forecast,
 )
-from slrp_ev_ts_forecasting.visualization import visualize_forecast
+from slrp_ev_ts_forecasting.visualization.visualize_forecast import visualize_forecast
 
 
 def run_one_model(
@@ -40,7 +40,7 @@ def run_one_model(
     model_parameters={},
     verbose: bool = VERBOSE,
     save_results_filename: str = DEFAULT_RESULTS_FILENAME,
-    dataset: TypeDataSet = DATASET,
+    dataset: TypeDatasetName = DATASET,
 ) -> None:
     # Read the data
     print("# Starting...")
@@ -81,36 +81,40 @@ def run_one_model(
     )
 
     scaling_mode = model_parameters.get("scaling_mode", SCALING_MODE)
+    lookahead = model_parameters.get("lookahead", LOOKAHEAD)
 
     scaling_parameters = get_scaling_parameters(
         train,
         data,
         scaling_mode,
         dataset,
-        lookahead_15min_steps=model_parameters.get("lookahead", LOOKAHEAD),
+        lookahead_15min_steps=lookahead,
     )
 
     train_eng = feature_engineering(
         train,
-        is_regression_model,
+        add_nans_for_missing_data=is_regression_model,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
     val_eng = (
         feature_engineering(
             val,
-            is_regression_model,
+            add_nans_for_missing_data=is_regression_model,
             scaling_mode=scaling_mode,
             scaling_parameters=scaling_parameters,
+            lookahead=lookahead,
         )
         if val is not None
         else None
     )
     test_eng = feature_engineering(
         test,
-        is_regression_model,
+        add_nans_for_missing_data=is_regression_model,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
 
     # Add predefined model parameters to the model_parameters dictionary
@@ -139,6 +143,7 @@ def run_one_model(
         df_predictions,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
 
     # get forecasted and real power values into 1D numpy arrays
@@ -156,6 +161,7 @@ def run_one_model(
         df_naive_predictions,
         scaling_mode=scaling_mode,
         scaling_parameters=scaling_parameters,
+        lookahead=lookahead,
     )
     y_naive_pred = df_reversed_naive_predictions.filter(regex="^power").values.reshape(
         -1
@@ -170,13 +176,8 @@ def run_one_model(
     losses = compute_losses(
         y_pred, y_true, model_parameters.get("alpha", ALPHA), y_naive_pred, y_naive_true
     )
-    print(
-        f"{model_choice}: ",
-        *[
-            f"{loss_type.upper()}: {loss_value:.1f};"
-            for loss_type, loss_value in losses.items()
-        ],
-    )
+
+    print_losses(losses, model_name)
 
     if verbose:
         visualize_forecast(test, df_reversed_predictions, model.model_str_name)
