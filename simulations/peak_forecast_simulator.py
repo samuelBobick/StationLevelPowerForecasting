@@ -1,6 +1,7 @@
 from typing import Optional
 
 import cvxpy as cp
+import numpy as np
 import pandas as pd
 from constants.global_parameters import (
     SMOOTH_POWER_FEATURES,
@@ -172,6 +173,13 @@ class PeakForecastSimulator(ForecastSimulator):
         historical_power_profile = self.aggregate_power_profile[
             self.aggregate_power_profile["date"].isin(historical_timesteps)
         ]["power"].values
+
+        # Sometimes at the beginning of the month, we must left pad to get ebough data to make a prediction
+        historical_power_profile = np.pad(
+            historical_power_profile,
+            (self.var_dim_constant - historical_power_profile.size, 0),
+            mode="constant",
+        )
 
         # get time features
         time_features = pd.DataFrame(data=[time], columns=["date"])
