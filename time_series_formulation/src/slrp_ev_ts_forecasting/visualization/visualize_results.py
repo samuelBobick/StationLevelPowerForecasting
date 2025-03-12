@@ -1,42 +1,22 @@
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from slrp_ev_ts_forecasting.compute_losses import TypeMetrics
 from slrp_ev_ts_forecasting.default_parameters import (
     DEFAULT_RESULTS_FILENAME,
     RESULTS_PATH,
 )
-
-TypeMetrics = Literal[
-    "rmse", "wrmse (alpha=2)", "mae", "wprmse (beta=3)", "r2", "elapsed_time"
-]
-
-
-def get_groupby_columns(df_results: pd.DataFrame) -> list[str]:
-    groupby_columns = [
-        col
-        for col in df_results.columns
-        if col
-        not in [
-            "date",
-            "model_name",
-            "rmse",
-            "wrmse (alpha=2)",
-            "wprmse (beta=3)",
-            "mae",
-            "r2",
-            "error_std",
-            "elapsed_time",
-        ]
-    ]
-    return groupby_columns
-
-
-def clean_str(string: str) -> str:
-    return string.replace("_", "\n").capitalize()
+from slrp_ev_ts_forecasting.utils.utils_visualization import (
+    apply_filter,
+    clean_str,
+    get_groupby_columns,
+    parse_group_index_to_name,
+    parse_model_names,
+)
 
 
 def visualize_results(
@@ -127,8 +107,12 @@ def plot_loss_against_one_parameter(
     filename: str = DEFAULT_RESULTS_FILENAME,
     include_scatter: bool = False,
     y_limits: Optional[list[int]] = None,
-) -> None:
-    """Scatter plot of the metric to show against one parameter. One line per model.
+    separate_models: Optional[bool] = False,
+    fig: Optional[go.Figure] = None,
+    row: Optional[int] = 1,
+    col: Optional[int] = 1,
+):
+    """Box plot of the metric to show against one parameter. One box per model.
 
     Args:
         metric_to_show: The loss metric to show on the y-axis.
@@ -136,55 +120,64 @@ def plot_loss_against_one_parameter(
         or_filter_model_name (optional): List of keywords to use to filter the model names. Defaults to None.
         results_file_path (optional): File path of the results file. Defaults to RESULTS_FILENAME.
         include_scatter (optional): Whether to include the scatter points. Defaults to False.
+        separate_models (optional): Whether to plot each model configuration (list of hyperparameters) \
+            in a separate color. Defaults to False.
+        fig (optional): The figure to add the plot to. Defaults to None.
+        row (optional): The row position of the subplot. Defaults to 1.
+        col (optional): The column position of the subplot. Defaults to 1.
     """
     results_file_path = results_file_path / f"{filename}.csv"
 
     df_results = pd.read_csv(results_file_path, index_col=False)
+
+    df_results = parse_model_names(df_results)
+
     if parameter_to_show not in df_results.columns:
         raise ValueError(f"Parameter {parameter_to_show} is not in the results file.")
 
     # Filter the model names
     df_results = apply_filter(df_results, or_filter_model_name)
 
-    groupby_columns = get_groupby_columns(df_results)
+    if separate_models:
+        groupby_columns = get_groupby_columns(df_results)
+        groupby_columns.remove(parameter_to_show)
+    else:
+        groupby_columns = []
 
-    groupby_columns.remove(parameter_to_show)
     groupby_columns.append("model_name")
     df_results_grouped = df_results.groupby(groupby_columns)
 
-    # Get a list of colors
-    # colors = plt.cm.viridis(np.linspace(0, 1, len(df_results_grouped)))  # type: ignore
-    # colors = pc.qualitative.__dict__["Viridis"]
-
-    fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+    if fig is None:
+        fig = make_subplots(rows=1, cols=1, specs=[[{"secondary_y": True}]])
+        show_figure_at_the_end = True
+    else:
+        show_figure_at_the_end = False
 
     for i, (group, df_group) in enumerate(df_results_grouped):
-        averaged_df_group = (
-            df_group[
-                [metric_to_show, parameter_to_show]
-                + ([second_metric_to_show] if second_metric_to_show else [])
-            ]
-            .groupby(parameter_to_show)
-            .mean()
-        )
+        name = parse_group_index_to_name(groupby_columns, group)
+
         fig.add_trace(
-            go.Scatter(
-                x=averaged_df_group.index,
-                y=averaged_df_group[metric_to_show],
-                mode="lines+markers" if include_scatter else "lines",
-                name=group[-1] + f" {metric_to_show}",
+            go.Box(
+                x=df_group[parameter_to_show],
+                y=df_group[metric_to_show],
+                name=name,
+                boxpoints="all" if include_scatter else "outliers",
             ),
+            row=row,
+            col=col,
             secondary_y=False,
         )
 
         if second_metric_to_show:
             fig.add_trace(
-                go.Scatter(
-                    x=averaged_df_group.index,
-                    y=averaged_df_group[second_metric_to_show],
-                    mode="lines+markers" if include_scatter else "lines",
-                    name=group[-1] + f" {second_metric_to_show}",
+                go.Box(
+                    x=df_group[parameter_to_show],
+                    y=df_group[second_metric_to_show],
+                    name=name,
+                    boxpoints="all" if include_scatter else "outliers",
                 ),
+                row=row,
+                col=col,
                 secondary_y=True,
             )
 
@@ -195,39 +188,23 @@ def plot_loss_against_one_parameter(
         yaxis2_title=clean_str(second_metric_to_show) if second_metric_to_show else "",
         legend_title="Model Name",
         template="plotly_white",
-        width=700,
-        height=400,
-        showlegend=False,
+        showlegend=True,
     )
-    fig.show()
+    if show_figure_at_the_end:
+        fig.show()
 
-
-def apply_filter(
-    df_results: pd.DataFrame, or_filter_model_name: Optional[list[str]]
-) -> pd.DataFrame:
-    if or_filter_model_name:
-        filtered_df = pd.DataFrame()
-        for model_name_filter in or_filter_model_name:
-            filtered_df = pd.concat(
-                [
-                    filtered_df,
-                    df_results[
-                        df_results["model_name"].str.contains(model_name_filter)
-                    ],
-                ]
-            )
-        return filtered_df
-    return df_results
+    return fig
 
 
 if __name__ == "__main__":
-    # plot_loss_against_one_parameter(
-    #     "rmse",
-    #     "x_dim",
-    #     # second_metric_to_show="elapsed_time",
-    #     or_filter_model_name=["XGBoost"],
-    #     include_scatter=True,
-    #     filename="experiment_lagOpt_202502",
-    #     # y_limits=[5400, 6000],
-    # )
-    visualize_results("rmse", filename="experiment_basic_benchmark_202502")
+    plot_loss_against_one_parameter(
+        "rmse",
+        "neighbors",
+        # second_metric_to_show="elapsed_time",
+        # or_filter_model_name=["XGBoost"],
+        include_scatter=True,
+        filename="hyperparameter_search_KNN_initial_models",
+        # y_limits=[5400, 6000],
+        separate_models=False,
+    )
+    # visualize_results("rmse", filename="experiment_basic_benchmark_202502")
