@@ -26,12 +26,12 @@ def run_one_model_profiled(*args, **kwargs):
             ps.print_stats()
 
 
-list_model_choices: list[TypeModelChoice] = ["LinearRegression"]
+list_model_choices: list[TypeModelChoice] = ["Basic_NN"]
 
 number_of_models_per_config = 1
 dataset: TypeDatasetName = "slrp-ev_new"
 list_xdim = [96]
-session_based_mode = True
+session_based_mode = False
 peak_prediction = False
 list_optimize_lags = [None]  # ["short_opt", "long_opt"]
 list_scaling_mode: list[TypeScalingMode] = [
