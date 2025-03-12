@@ -31,7 +31,7 @@ list_model_choices: list[TypeModelChoice] = ["LinearRegression"]
 number_of_models_per_config = 1
 dataset: TypeDatasetName = "slrp-ev_new"
 list_xdim = [96]
-session_based_mode = True
+session_based_mode = False
 peak_prediction = False
 list_optimize_lags = [None]  # ["short_opt", "long_opt"]
 list_scaling_mode: list[TypeScalingMode] = [
@@ -41,7 +41,7 @@ list_scaling_mode: list[TypeScalingMode] = [
 if __name__ == "__main__":
     for model_choice in list_model_choices:
         for get_val_data_from_shuffled_train in [False]:
-            for dropout in [0.4]:
+            for dropout in [0.2]:
                 for batch_norm in [True]:
                     # for optimize_lags in list_optimize_lags:
                     for scaling_mode in list_scaling_mode:
@@ -56,9 +56,9 @@ if __name__ == "__main__":
                                         "get_val_data_from_shuffled_train": get_val_data_from_shuffled_train,
                                         # "batch_norm": batch_norm,
                                         "scaling_mode": scaling_mode,
-                                        "session_based_mode": session_based_mode,
-                                        "peak_prediction": peak_prediction,
+                                        # "session_based_mode": session_based_mode,
+                                        # "peak_prediction": peak_prediction,
                                     },
-                                    save_results_filename="test_linear_model",
+                                    save_results_filename="test",
                                     dataset=dataset,
                                 )

@@ -31,6 +31,9 @@ from slrp_ev_ts_forecasting.utils.pacf import (
     sort_pacf_values,
 )
 from slrp_ev_ts_forecasting.utils.utils_artificial_data import get_artificial_data
+from slrp_ev_ts_forecasting.utils.utils_dataset_visualization import (
+    dataset_characteristics_visualization,
+)
 from slrp_ev_ts_forecasting.utils.utils_session_forecasting import (
     apply_generate_future_session_power,
     extract_features,
@@ -354,6 +357,10 @@ class Base:
                 raise ValueError(
                     "df_padded should be provided to generate windows for train data type"
                 )
+            if self.verbose and self.number_of_artificial_datasets > 0:
+                fig = dataset_characteristics_visualization(
+                    df_padded, dataset_name="Initial Data"
+                )
 
             for i in range(self.number_of_artificial_datasets):
                 (
@@ -371,6 +378,12 @@ class Base:
                     lookahead=self.lookahead,
                     rng=self.rng,
                 )
+                if self.verbose:
+                    fig = dataset_characteristics_visualization(
+                        artificial_train_data,
+                        figure=fig,
+                        dataset_name=f"Artificial Data {i+1}",
+                    )
 
                 artificial_flat_inputs, artificial_flat_labels = self.make_samples_X_y(  # type: ignore
                     artificial_train_data,
@@ -386,6 +399,9 @@ class Base:
                 )
                 flat_inputs = pd.concat([flat_inputs, artificial_flat_inputs])
                 flat_labels = pd.concat([flat_labels, artificial_flat_labels])
+
+            if self.verbose and self.number_of_artificial_datasets > 0:
+                fig.show()
 
             # Shuffle the data
             indices = flat_inputs.index.to_numpy(copy=True)
