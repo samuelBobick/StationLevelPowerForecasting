@@ -94,7 +94,7 @@ class XGBoost(RegressionBaseModel):
         return (
             "XGBoost"
             + f"_dropout{self.dropout}"
-            + f"_max_depth{self.max_depth}"
+            + f"_maxDepth{self.max_depth}"
             + self.model_str_name_suffix
         )
 

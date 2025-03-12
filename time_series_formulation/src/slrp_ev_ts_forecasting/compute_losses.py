@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 import numpy as np
 import torch
@@ -23,6 +23,18 @@ class Losses(TypedDict):
     r2: float
     smape: float
     # error_std: float
+
+
+TypeMetrics = Literal[
+    "rmse",
+    "relative_rmse",
+    "wrmse (alpha=2)",
+    "mae",
+    "wprmse (beta=3)",
+    "r2",
+    "smape",
+    "elapsed_time",
+]
 
 
 def compute_losses(
