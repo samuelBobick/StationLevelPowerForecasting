@@ -54,6 +54,13 @@ def visualize_hyperparameter_search_with_subplots(
         df_group_names["No Change"] == False
     ].index.tolist()
 
+    if parameters_to_show == []:
+        print(
+            "There are no parameters to show. This means that all the models in this file"
+            "have the same hyperparameters."
+        )
+        return
+
     # Calculate the number of rows needed for 3 plots per row
     num_rows = (len(parameters_to_show) + 2) // 3
 
@@ -94,5 +101,5 @@ def visualize_hyperparameter_search_with_subplots(
 if __name__ == "__main__":
     visualize_hyperparameter_search_with_subplots(
         metric_to_show="rmse",
-        filename="hyperparameter_search_LSTM_initial_models",
+        filename="hyperparameter_search_XGBoost_initial_models_v2",
     )
