@@ -58,7 +58,13 @@ def visualize_hyperparameter_search_with_subplots(
     num_rows = (len(parameters_to_show) + 2) // 3
 
     # Create subplots
-    fig = make_subplots(rows=num_rows, cols=3, subplot_titles=parameters_to_show)
+    fig = make_subplots(
+        rows=num_rows,
+        cols=3,
+        subplot_titles=parameters_to_show,
+        specs=[[{"secondary_y": True}] * 3] * num_rows,
+        shared_yaxes="all",
+    )
 
     for i, parameter in enumerate(parameters_to_show):
         row = (i // 3) + 1
@@ -67,6 +73,7 @@ def visualize_hyperparameter_search_with_subplots(
             metric_to_show=metric_to_show,
             parameter_to_show=parameter,
             results_file_path=results_file_path.parent,
+            second_metric_to_show="elapsed_time",
             filename=filename,
             separate_models=False,
             include_scatter=False,
@@ -77,7 +84,7 @@ def visualize_hyperparameter_search_with_subplots(
 
     fig.update_layout(
         title=f"Hyperparameter Search {metric_to_show} Results for {model_name}",
-        height=300 * num_rows,  # Adjust height based on number of subplots
+        height=400 * num_rows,  # Adjust height based on number of subplots
         showlegend=False,
     )
 
@@ -87,5 +94,5 @@ def visualize_hyperparameter_search_with_subplots(
 if __name__ == "__main__":
     visualize_hyperparameter_search_with_subplots(
         metric_to_show="rmse",
-        filename="hyperparameter_search_XGBoost",
+        filename="hyperparameter_search_LSTM_initial_models",
     )

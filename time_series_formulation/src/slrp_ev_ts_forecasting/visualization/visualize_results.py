@@ -156,6 +156,23 @@ def plot_loss_against_one_parameter(
     for i, (group, df_group) in enumerate(df_results_grouped):
         name = parse_group_index_to_name(groupby_columns, group)
 
+        if second_metric_to_show:
+            # show secondary metric first so that it is in the background
+            average_group_results = df_group.groupby(parameter_to_show)[
+                second_metric_to_show
+            ].mean()
+            fig.add_trace(
+                go.Scatter(
+                    x=average_group_results.index,
+                    y=average_group_results.values,
+                    name=name,
+                    line=dict(color="red"),
+                ),
+                row=row,
+                col=col,
+                secondary_y=True,
+            )
+
         fig.add_trace(
             go.Box(
                 x=df_group[parameter_to_show],
@@ -167,19 +184,6 @@ def plot_loss_against_one_parameter(
             col=col,
             secondary_y=False,
         )
-
-        if second_metric_to_show:
-            fig.add_trace(
-                go.Box(
-                    x=df_group[parameter_to_show],
-                    y=df_group[second_metric_to_show],
-                    name=name,
-                    boxpoints="all" if include_scatter else "outliers",
-                ),
-                row=row,
-                col=col,
-                secondary_y=True,
-            )
 
     fig.update_layout(
         title=f"{metric_to_show} vs {parameter_to_show}",

@@ -3,20 +3,20 @@ from typing import Literal, Optional
 
 import torch
 
-X_DIM = 96
+X_DIM = 96 * 2
 LOOKAHEAD = 96
 TIME_MODE: Literal["window", "cyclical"] = "cyclical"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
 
-# torch models
+# Torch models
 NUMBER_OF_INITIAL_MODELS = 1
-EPOCHS = 5
-BATCH_SIZE = 32
+EPOCHS = 7
+BATCH_SIZE = 64
 DROPOUT = 0.4
 BATCH_NORM: bool = True
 
 # KNN
-N_NEIGHBORS = 5
+N_NEIGHBORS = 7
 PERCENTILE = 50
 
 # Lags optimization
