@@ -151,7 +151,7 @@ class WindowGenerator:
         # Store the raw data.
         self.train_df = train_df
         self.val_df = val_df
-        if get_val_from_shuffled_train and val_df:
+        if get_val_from_shuffled_train and (val_df is not None):
             raise ValueError(
                 "You cannot specify val_df if you want to get it from train_df. "
                 "When using get_val_from_shuffled_train = True please set val_df "
