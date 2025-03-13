@@ -8,7 +8,6 @@ from plotly import subplots
 from slrp_ev_data.feature_engineering import (
     one_hot_encoding,
 )
-from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_data.utils.data_utils import (
     convert_date_from_datetime_to_int,
     convert_date_from_int_to_datetime,
@@ -357,9 +356,13 @@ class Base:
                 raise ValueError(
                     "df_padded should be provided to generate windows for train data type"
                 )
+
+            raw_df_sessions = get_raw_df_sessions(
+                convert_date_from_int_to_datetime(df_padded["date"])
+            )
             if self.verbose and self.number_of_artificial_datasets > 0:
                 fig = dataset_characteristics_visualization(
-                    df_padded, dataset_name="Initial Data"
+                    df_padded, raw_df_sessions, dataset_name="Initial Data"
                 )
 
             for i in range(self.number_of_artificial_datasets):
@@ -369,6 +372,7 @@ class Base:
                     scaling_parameters,
                 ) = get_artificial_data(
                     train_data=df_padded,
+                    raw_df_sessions=raw_df_sessions,
                     random_start_time=self.random_start_time,
                     shuffle_power_profiles=self.shuffle_power_profiles,
                     random_power_profile_shapes=self.random_power_profile_shapes,
@@ -381,6 +385,7 @@ class Base:
                 if self.verbose:
                     fig = dataset_characteristics_visualization(
                         artificial_train_data,
+                        session_dataset=artificial_raw_df_sessions,
                         figure=fig,
                         dataset_name=f"Artificial Data {i+1}",
                     )
@@ -536,23 +541,10 @@ class Base:
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         # TODO: Change the loss function in the model, to better predict peaks
 
-        start_dates_prediction_window = (
-            pd.to_datetime(flat_labels["date_0"], unit="s")
-            .dt.round("15min")
-            .rename("start_date_prediction_window")
-        )
-
-        if artificial_raw_df_sessions is None:
-            power_df = read_new_slrpev_data(keep_all_columns=True)
-            power_df = power_df.loc[
-                (power_df["date"].dt.date >= start_dates_prediction_window.min().date())
-                & (
-                    power_df["date"].dt.date
-                    <= start_dates_prediction_window.max().date()
-                )
-            ]
-        else:
-            power_df = None
+        # use convert from int to datetime
+        start_dates_prediction_window = convert_date_from_int_to_datetime(
+            flat_labels["date_0"]
+        ).rename("start_date_prediction_window")
 
         # We need to rename the label columns because "power_x" is already a column in flat_inputs
         flat_labels = flat_labels.rename(
@@ -570,8 +562,8 @@ class Base:
         )
 
         df_sessions = self.get_df_sessions(
-            power_df,
             artificial_raw_df_sessions,
+            start_dates_prediction_window,
             scaling_mode=scaling_mode,
             scaling_parameters=scaling_parameters,
         )
@@ -627,8 +619,8 @@ class Base:
 
     def get_df_sessions(
         self,
-        power_df: pd.DataFrame | None,
         artificial_raw_df_sessions: pd.DataFrame | None,
+        start_dates_prediction_window: pd.Series,
         scaling_mode: TypeScalingMode,
         scaling_parameters: tuple | pd.DataFrame,
     ) -> pd.DataFrame:
@@ -640,18 +632,13 @@ class Base:
         generated based on the class inputs.
 
         Args:
-            power_df (pd.DataFrame): dataframe read from the function `read_new_slrpev_data`.
         Returns:
             pd.DataFrame: The DataFrame of sessions with `self.lookahead` + 2.
         """
         if artificial_raw_df_sessions is not None:
             raw_df_sessions = artificial_raw_df_sessions
         else:
-            if power_df is None:
-                raise ValueError(
-                    "power_df should be provided to generate the sessions DataFrame"
-                )
-            raw_df_sessions = get_raw_df_sessions(power_df)
+            raw_df_sessions = get_raw_df_sessions(start_dates_prediction_window)
 
         raw_df_sessions["startChargeTime"] = raw_df_sessions.apply(
             lambda x: x["date"][0], axis=1
