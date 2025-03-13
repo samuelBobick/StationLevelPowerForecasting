@@ -17,30 +17,38 @@ from slrp_ev_ts_forecasting.run_one_model import run_one_model
 # ==================
 # Start of USER INPUTS
 
-list_model_choices: list[TypeModelChoice] = ["Basic_NN"]
+list_model_choices: list[TypeModelChoice] = [
+    "Basic_NN",
+    "LSTM",
+    "TCN",
+    "KNN",
+    "XGBoost",
+    "LinearRegression",
+]
 dataset: TypeDatasetName = "slrp-ev_new"
 
 search_space = {
-    "x_dim": [96, 96 * 2, 96 * 4],
+    "x_dim": [96 * 2],
     "lookahead": [96],
     # torch models
     "hidden_size": [16, 32, 64, 128],
     "num_hidden_layers": [2, 3, 4],
     "num_lstm_layers": [1, 2, 3],
     "kernel_size": [3, 5, 7],  # TCN
-    "max_depth": [4],  # [4, 6, 8],  # XGBoost
-    "epochs": [5, 10],
+    "max_depth": [4, 6, 8],  # XGBoost
+    "epochs": [7],
     "batch_size": [32, 64, 128],
     "batch_norm": [True, False],
     "optimize_lags": [None],  # [None, "long_opt"],
     "dropout": [0, 0.2, 0.4, 0.6],
-    "get_val_data_from_shuffled_train": [True, False],
-    "scaling_mode": [
-        "normalize",
-        "standardize",
-        "rolling_standardize",
-        "rolling_normalize",
-    ],
+    "get_val_data_from_shuffled_train": [True],
+    "scaling_mode": ["normalize"],
+    # [
+    #     "normalize",
+    #     "standardize",
+    #     "rolling_standardize",
+    #     "rolling_normalize",
+    # ],
     # knn
     "n_neighbors": [4, 7, 10, 13],
     "percentile": [25, 50, 75, 90],
@@ -62,10 +70,10 @@ search_space = {
 }
 
 
-number_of_models_per_config = 4
+number_of_models_per_config = 3
 n_random_samples = 100  # Number of random samples to evaluate
 parallelize = False
-filename_suffix = "initial_models"
+filename_suffix = "initial_models_v2"
 
 # End of USER INPUTS
 # ==================
