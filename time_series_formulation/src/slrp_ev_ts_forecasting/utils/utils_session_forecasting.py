@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 
 
 def apply_generate_future_session_power(
@@ -46,9 +47,19 @@ def _sum_all_active_sessions(
     return sum_df.to_list()
 
 
-def get_raw_df_sessions(power_df: pd.DataFrame):
-    # Create a dictionary to map dcosId to their corresponding
-    # power profiles in the interval data
+def get_raw_df_sessions(date_column: pd.Series):
+    """Create a dictionary to map dcosId to their corresponding
+    power profiles in the interval data"
+    """
+
+    # start by reading the power_df with all the columns
+    # and filtering it to the provided date range
+    power_df = read_new_slrpev_data(keep_all_columns=True)
+    power_df = power_df.loc[
+        (power_df["date"].dt.date >= date_column.min().date())
+        & (power_df["date"].dt.date <= date_column.max().date())
+    ]
+
     number_of_power_columns = power_df.filter(regex=r"power\d+").shape[1]
     session_profiles_from_interval = {}
     for i in range(1, number_of_power_columns + 1):
