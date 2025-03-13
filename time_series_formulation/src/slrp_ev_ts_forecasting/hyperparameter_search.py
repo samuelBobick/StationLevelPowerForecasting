@@ -18,12 +18,12 @@ from slrp_ev_ts_forecasting.run_one_model import run_one_model
 # Start of USER INPUTS
 
 list_model_choices: list[TypeModelChoice] = [
-    "Basic_NN",
-    "LSTM",
+    # "Basic_NN",
+    # "LSTM",
     "TCN",
-    "KNN",
-    "XGBoost",
-    "LinearRegression",
+    # "KNN",
+    # "XGBoost",
+    # "LinearRegression",
 ]
 dataset: TypeDatasetName = "slrp-ev_new"
 
@@ -138,22 +138,23 @@ def filter_all_configs(all_configs: list[dict], search_space: dict) -> list[dict
 
     # Filter out configs where session_based_mode is False and other session-based parameters are not their
     # neutral value
-    session_based_mask = (df_all_configs["session_based_mode"] == False) & (
-        (df_all_configs["peak_prediction"] != False)
-        | (
-            df_all_configs["add_number_of_sessions"]
-            != df_neutral_values["add_number_of_sessions"]
+    if "session_based_mode" in df_all_configs.columns:
+        session_based_mask = (df_all_configs["session_based_mode"] == False) & (
+            (df_all_configs["peak_prediction"] != False)
+            | (
+                df_all_configs["add_number_of_sessions"]
+                != df_neutral_values["add_number_of_sessions"]
+            )
+            | (
+                df_all_configs["add_fraction_of_regular_sessions"]
+                != df_neutral_values["add_fraction_of_regular_sessions"]
+            )
+            | (
+                df_all_configs["use_all_active_sessions"]
+                != df_neutral_values["use_all_active_sessions"]
+            )
         )
-        | (
-            df_all_configs["add_fraction_of_regular_sessions"]
-            != df_neutral_values["add_fraction_of_regular_sessions"]
-        )
-        | (
-            df_all_configs["use_all_active_sessions"]
-            != df_neutral_values["use_all_active_sessions"]
-        )
-    )
-    df_all_configs = df_all_configs[~session_based_mask]
+        df_all_configs = df_all_configs[~session_based_mask]
 
     return df_all_configs.to_dict(orient="records")
 
