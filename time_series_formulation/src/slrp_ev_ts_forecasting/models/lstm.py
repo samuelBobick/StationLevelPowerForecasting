@@ -13,7 +13,7 @@ class LSTM(TorchBaseModel):
         x_dim: int = default_parameters.X_DIM,
         lookahead: int = default_parameters.LOOKAHEAD,
         alpha: int = default_parameters.ALPHA,
-        hidden_size: int = 32,
+        hidden_size: int = 64,
         num_lstm_layers: int = 1,
         activation=nn.ReLU(),
         dropout: float = default_parameters.DROPOUT,
