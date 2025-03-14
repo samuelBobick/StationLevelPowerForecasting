@@ -22,6 +22,7 @@ from slrp_ev_ts_forecasting.default_parameters import (
     SCALING_MODE,
     SHUFFLE_POWER_PROFILES,
     TIME_MODE,
+    TIMESTEPS_ROLLING_WINDOW_FOR_SCALING,
     X_DIM,
 )
 
@@ -87,6 +88,10 @@ def save_losses(
                 "random_user_needs", RANDOM_USER_NEEDS
             ),
             "random_choices": model_params.get("random_choices", RANDOM_CHOICES),
+            "timesteps_rolling_window_for_scaling": model_params.get(
+                "timesteps_rolling_window_for_scaling",
+                TIMESTEPS_ROLLING_WINDOW_FOR_SCALING,
+            ),
         },
         index=[0],
     )
