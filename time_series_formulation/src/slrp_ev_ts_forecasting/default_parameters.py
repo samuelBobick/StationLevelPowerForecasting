@@ -45,6 +45,7 @@ TypeScalingMode = Literal[
     "normalize", "standardize", "rolling_standardize", "rolling_normalize"
 ]
 SCALING_MODE: TypeScalingMode = "normalize"
+TIMESTEPS_ROLLING_WINDOW_FOR_SCALING = 96 * 30
 
 SESSION_BASED_MODE = False
 PEAK_PREDICTION = False
