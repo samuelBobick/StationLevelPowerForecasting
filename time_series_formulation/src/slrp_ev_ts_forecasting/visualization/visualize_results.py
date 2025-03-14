@@ -156,6 +156,18 @@ def plot_loss_against_one_parameter(
     for i, (group, df_group) in enumerate(df_results_grouped):
         name = parse_group_index_to_name(groupby_columns, group)
 
+        fig.add_trace(
+            go.Box(
+                x=df_group[parameter_to_show],
+                y=df_group[metric_to_show],
+                name=name,
+                boxpoints="all" if include_scatter else "outliers",
+            ),
+            row=row,
+            col=col,
+            secondary_y=False,
+        )
+
         if second_metric_to_show:
             # show secondary metric first so that it is in the background
             average_group_results = df_group.groupby(parameter_to_show)[
@@ -173,18 +185,6 @@ def plot_loss_against_one_parameter(
                 secondary_y=True,
             )
 
-        fig.add_trace(
-            go.Box(
-                x=df_group[parameter_to_show],
-                y=df_group[metric_to_show],
-                name=name,
-                boxpoints="all" if include_scatter else "outliers",
-            ),
-            row=row,
-            col=col,
-            secondary_y=False,
-        )
-
     fig.update_layout(
         title=f"{metric_to_show} vs {parameter_to_show}",
         xaxis_title=parameter_to_show,
@@ -192,7 +192,9 @@ def plot_loss_against_one_parameter(
         yaxis2_title=clean_str(second_metric_to_show) if second_metric_to_show else "",
         legend_title="Model Name",
         template="plotly_white",
-        showlegend=True,
+        showlegend=False,
+        width=700,  # Set the width of the plot
+        height=400,  # Set the height of the plot
     )
     if show_figure_at_the_end:
         fig.show()
@@ -203,12 +205,12 @@ def plot_loss_against_one_parameter(
 if __name__ == "__main__":
     plot_loss_against_one_parameter(
         "rmse",
-        "neighbors",
+        "x_dim",
         # second_metric_to_show="elapsed_time",
         # or_filter_model_name=["XGBoost"],
-        include_scatter=True,
-        filename="hyperparameter_search_KNN_initial_models",
+        include_scatter=False,
+        filename="graph_lag_opt",
         # y_limits=[5400, 6000],
-        separate_models=False,
+        separate_models=True,
     )
     # visualize_results("rmse", filename="experiment_basic_benchmark_202502")
