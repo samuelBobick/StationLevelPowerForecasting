@@ -4,7 +4,6 @@ import pstats
 from slrp_ev_ts_forecasting.default_parameters import (
     TypeDatasetName,
     TypeModelChoice,
-    TypeScalingMode,
 )
 from slrp_ev_ts_forecasting.run_one_model import run_one_model
 
@@ -26,31 +25,31 @@ def run_one_model_profiled(*args, **kwargs):
             ps.print_stats()
 
 
-list_model_choices: list[TypeModelChoice] = ["Basic_NN"]
+list_model_choices: list[TypeModelChoice] = ["XGBoost", "Basic_NN"]
 
 number_of_models_per_config = 1
 dataset: TypeDatasetName = "slrp-ev_new"
-list_xdim = [96]
-session_based_mode = False
-peak_prediction = False
-list_scaling_mode: list[TypeScalingMode] = [
-    "normalize",
-]
+# list_xdim = [96]
+# session_based_mode = False
+# peak_prediction = False
+# list_scaling_mode: list[TypeScalingMode] = [
+#     "normalize",
+# ]
 
 if __name__ == "__main__":
     for model_choice in list_model_choices:
-        for scaling_mode in list_scaling_mode:
-            for x_dim in list_xdim:
-                for i in range(number_of_models_per_config):
-                    run_one_model_profiled(
-                        model_choice=model_choice,
-                        model_parameters={
-                            # "optimize_lags": optimize_lags,
-                            # "x_dim": x_dim,
-                            # "scaling_mode": scaling_mode,
-                            # "session_based_mode": session_based_mode,
-                            # "peak_prediction": peak_prediction,
-                        },
-                        save_results_filename="test",
-                        dataset=dataset,
-                    )
+        # for scaling_mode in list_scaling_mode:
+        #     for x_dim in list_xdim:
+        for i in range(number_of_models_per_config):
+            run_one_model_profiled(
+                model_choice=model_choice,
+                model_parameters={
+                    "optimize_lags": "short_opt",
+                    "x_dim": 96 * 2,
+                    # "scaling_mode": scaling_mode,
+                    # "session_based_mode": session_based_mode,
+                    # "peak_prediction": peak_prediction,
+                },
+                save_results_filename="benchmark_initial_models_v2",
+                dataset=dataset,
+            )

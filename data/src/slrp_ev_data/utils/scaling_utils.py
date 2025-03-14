@@ -4,7 +4,10 @@ from typing import Literal, Optional
 import pandas as pd
 from slrp_ev_data.utils.data_utils import get_data_frequency, get_date_column_name
 from slrp_ev_data.utils.input_data_type import DataSchema
-from slrp_ev_ts_forecasting.default_parameters import TypeDatasetName
+from slrp_ev_ts_forecasting.default_parameters import (
+    TIMESTEPS_ROLLING_WINDOW_FOR_SCALING,
+    TypeDatasetName,
+)
 
 COLS_TO_NORMALIZE = ["power", "number_of_evses_available"]
 NORM_PARAMETERS_PATH = Path(__file__).parent.parent / "saved_normalization_parameters"
@@ -164,7 +167,7 @@ def get_rolling_scaling_column(
     df: pd.DataFrame,
     scaling_mode: Literal["rolling_standardize", "rolling_normalize"],
     lookahead_15min_steps: int,
-    lookback_15min_steps: int = 96 * 30,
+    lookback_15min_steps: int = TIMESTEPS_ROLLING_WINDOW_FOR_SCALING,
     bypass_validation: bool = False,
     dataset_name: Optional[TypeDatasetName] = None,
     cols_to_normalize: list[str] = COLS_TO_NORMALIZE,
