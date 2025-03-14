@@ -102,6 +102,20 @@ class Base:
         self.random_power_profile_shapes = random_power_profile_shapes
         self.random_user_needs = random_user_needs
         self.random_choices = random_choices
+        if (
+            (number_of_artificial_datasets > 0)
+            and get_val_data_from_shuffled_train
+            and (scaling_mode in ["rolling_standardize", "rolling_normalize"])
+        ):
+            # we have to enforce this, otherwise we might have some data leakage
+            # with validation data in the training data
+            # it is not the case for the other scaling modes
+            warnings.warn(
+                "get_val_data_from_shuffled_train should be False when "
+                "adding artificial data and using rolling scaling. "
+                "We force it to False."
+            )
+            self.get_val_data_from_shuffled_train = False
 
         if not session_based_mode and (
             add_number_of_sessions
