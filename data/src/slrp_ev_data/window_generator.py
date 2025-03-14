@@ -385,7 +385,15 @@ class WindowGenerator:
         columns_not_selected = [
             col
             for col in self.column_indices.keys()
-            if col not in (cols_to_flatten + cols_keep_last_value)
+            if col
+            not in (
+                cols_to_flatten
+                + cols_keep_last_value
+                + [
+                    dict_keep_some_values["col_name"]
+                    for dict_keep_some_values in cols_keep_some_values
+                ]
+            )
         ]
         if columns_not_selected:
             print(
