@@ -18,9 +18,9 @@ from slrp_ev_ts_forecasting.run_one_model import run_one_model
 # Start of USER INPUTS
 
 list_model_choices: list[TypeModelChoice] = [
-    # "Basic_NN",
+    "Basic_NN",
     # "LSTM",
-    "TCN",
+    # "TCN",
     # "KNN",
     # "XGBoost",
     # "LinearRegression",
@@ -31,16 +31,16 @@ search_space = {
     "x_dim": [96 * 2],
     "lookahead": [96],
     # torch models
-    "hidden_size": [16, 32, 64, 128],
+    "hidden_size": [32, 64, 128],
     "num_hidden_layers": [2, 3, 4],
     "num_lstm_layers": [1, 2, 3],
     "kernel_size": [3, 5, 7],  # TCN
     "max_depth": [4, 6, 8],  # XGBoost
     "epochs": [7],
-    "batch_size": [32, 64, 128],
-    "batch_norm": [True, False],
+    "batch_size": [64],
+    "batch_norm": [False],
     "optimize_lags": [None],  # [None, "long_opt"],
-    "dropout": [0, 0.2, 0.4, 0.6],
+    "dropout": [0.2],
     "get_val_data_from_shuffled_train": [True],
     "scaling_mode": ["normalize"],
     # [
@@ -50,8 +50,8 @@ search_space = {
     #     "rolling_normalize",
     # ],
     # knn
-    "n_neighbors": [4, 7, 10, 13],
-    "percentile": [25, 50, 75, 90],
+    "n_neighbors": [4, 7, 10],
+    "percentile": [25, 50, 75],
     # parameters for session based forecasting
     "session_based_mode": [False],
     "peak_prediction": [False],
@@ -59,7 +59,7 @@ search_space = {
     "add_fraction_of_regular_sessions": [True, False],
     "use_all_active_sessions": [True],
     # parameters to generate random sessions
-    "number_of_artificial_datasets": [0],
+    "number_of_artificial_datasets": [1, 2, 3],
     "random_start_time": [True, False],
     "shuffle_power_profiles": [True, False],
     "random_power_profile_shapes": [True, False],
