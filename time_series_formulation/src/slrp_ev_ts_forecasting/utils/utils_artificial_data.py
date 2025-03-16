@@ -46,6 +46,8 @@ def generate_random_scheduled_profile(
     min_power=0,
     max_power=SINGLE_EVSE_NORMALIZATION_PARAM,
 ):
+    # multiply the energy need by 4, to go from kWh to "power by timestep"
+    e_need *= 4
     max_power *= 1 + rng.uniform(-0.05, 0.03)
     # Generate random numbers
     random_numbers = rng.uniform(min_power, max_power, duration)
@@ -80,6 +82,8 @@ def generate_regular_profile(
     rng: np.random.Generator,
     max_power=SINGLE_EVSE_NORMALIZATION_PARAM,
 ):
+    # multiply the energy need by 4, to go from kWh to "power by timestep"
+    e_need *= 4
     max_power *= 1 + rng.uniform(-0.05, 0.03)
 
     profile = np.zeros(duration)
