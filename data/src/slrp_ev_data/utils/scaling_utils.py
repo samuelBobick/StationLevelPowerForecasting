@@ -223,6 +223,12 @@ def get_rolling_scaling_column(
         )
     )
 
+    # lookahead_15min_steps is used to change the scaling parameter so that
+    # we don't use a parameter based on a day that we are not supposed to know.
+    # for instance, if I want to predict 3 days, we cannot normalize the 2nd day with the peak
+    # of the 1st day to predict. We have to normalize it with the value from 2 days ago.
+    lookahead_15min_steps = max(0, lookahead_15min_steps - 96 * freq_factor)
+
     df_scaling_columns = pd.DataFrame(index=df[date_column_name])
     for column_name in cols_to_normalize:
         if scaling_mode == "rolling_standardize":
