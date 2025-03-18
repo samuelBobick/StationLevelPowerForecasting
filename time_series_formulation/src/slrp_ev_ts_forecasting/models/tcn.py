@@ -17,7 +17,7 @@ class TCN(TorchBaseModel):
         alpha: int = default_parameters.ALPHA,
         hidden_size: int = 64,
         num_layers: int | Literal["auto"] = "auto",
-        kernel_size: int = 7,
+        kernel_size: int = 5,
         dropout: float = default_parameters.DROPOUT,
         activation=nn.ReLU(),
         initial_learning_rate: float = 0.01,
