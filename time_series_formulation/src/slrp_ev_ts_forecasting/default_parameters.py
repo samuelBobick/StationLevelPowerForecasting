@@ -39,7 +39,7 @@ ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 
 TypeDatasetName = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
-DATASET: TypeDatasetName = "ucsd-all_garages"
+DATASET: TypeDatasetName = "slrp-ev_new"
 
 TypeScalingMode = Literal[
     "normalize", "standardize", "rolling_standardize", "rolling_normalize"
@@ -95,4 +95,4 @@ else:
     DEVICE = "cpu"
 
 RANDOM_SEED: int | None = None  # 42  # int(pd.Timestamp.now().timestamp())
-VERBOSE = False
+VERBOSE = True
