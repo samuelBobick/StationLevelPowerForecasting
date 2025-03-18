@@ -31,11 +31,11 @@ search_space = {
     "x_dim": [96 * 2],
     "lookahead": [96],
     # torch models
-    "hidden_size": [32, 64, 128],
-    "num_hidden_layers": [2, 3, 4],
-    "num_lstm_layers": [1, 2, 3],
+    "hidden_size": 64,  # [32, 64, 128],
+    "num_hidden_layers": [2],  # [2, 3, 4],
+    "num_lstm_layers": [2],  # [1, 2, 3],
     "kernel_size": [3, 5, 7],  # TCN
-    "max_depth": [4, 6, 8],  # XGBoost
+    "max_depth": [6],  # [4, 6, 8],  # XGBoost
     "epochs": [7],
     "batch_size": [64],
     "batch_norm": [False],
@@ -73,7 +73,7 @@ search_space = {
 number_of_models_per_config = 3
 n_random_samples = 100  # Number of random samples to evaluate
 parallelize = False
-filename_suffix = "initial_models_v2"
+filename_suffix = "art_data_exp"
 
 # End of USER INPUTS
 # ==================
