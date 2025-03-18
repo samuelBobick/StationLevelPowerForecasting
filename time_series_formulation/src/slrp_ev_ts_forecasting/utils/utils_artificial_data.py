@@ -187,6 +187,7 @@ def make_artificial_sessions(
     Returns:
         pd.DataFrame: _description_
     """
+    raw_df_sessions = raw_df_sessions.copy()
     raw_df_sessions["choice"] = compute_choice(raw_df_sessions)
     raw_df_sessions["e_need"] = compute_energy_needs(raw_df_sessions)
     raw_df_sessions["duration"] = compute_duration_timesteps(raw_df_sessions)
@@ -209,8 +210,9 @@ def make_artificial_sessions(
         )
         # if we randomize the duration, we need to update the date list, this
         # is done later
+        # the minimum duration should be 2 timesteps
         raw_df_sessions["duration"] = raw_df_sessions["duration"].apply(
-            lambda x: int(x * rng.uniform(0.7, 1.3))
+            lambda x: max(int(x * rng.uniform(0.7, 1.3)), 2)
         )
 
     if random_choices:
