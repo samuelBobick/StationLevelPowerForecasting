@@ -19,8 +19,10 @@ from slrp_ev_ts_forecasting.default_parameters import (
     RANDOM_START_TIME,
     RANDOM_USER_NEEDS,
     RESULTS_PATH,
+    SCALING_MODE,
     SHUFFLE_POWER_PROFILES,
     TIME_MODE,
+    TIMESTEPS_ROLLING_WINDOW_FOR_SCALING,
     X_DIM,
 )
 
@@ -54,7 +56,7 @@ def save_losses(
             ),
             "scaling_mode": model_params.get(
                 "scaling_mode",
-                model_params.get("data_scaling_mode", "rolling_standardize"),
+                model_params.get("data_scaling_mode", SCALING_MODE),
             ),
             "add_number_of_evses_available": model_params.get(
                 "add_number_of_evses_available", ADD_NUMBER_OF_EVSES_AVAILABLE
@@ -86,6 +88,10 @@ def save_losses(
                 "random_user_needs", RANDOM_USER_NEEDS
             ),
             "random_choices": model_params.get("random_choices", RANDOM_CHOICES),
+            "timesteps_rolling_window_for_scaling": model_params.get(
+                "timesteps_rolling_window_for_scaling",
+                TIMESTEPS_ROLLING_WINDOW_FOR_SCALING,
+            ),
         },
         index=[0],
     )
