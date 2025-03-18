@@ -22,7 +22,7 @@ PERCENTILE = 50
 # Lags optimization
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = (
-    None  # for regression models, such as Basic_NN or XGBoost
+    "long_opt"  # for regression models, such as Basic_NN or XGBoost
 )
 NUMBER_OF_DAYS_FOR_PACF = 35  # 70 was the old parameter, but it is too big for
 # datasets with missing data
@@ -39,12 +39,12 @@ ALPHA = 2  # for underpredictions error
 BETA = 3  # for weighted peaks error
 
 TypeDatasetName = Literal["slrp-ev_old", "slrp-ev_new", "ucsd-all_garages"]
-DATASET: TypeDatasetName = "slrp-ev_new"
+DATASET: TypeDatasetName = "ucsd-all_garages"
 
 TypeScalingMode = Literal[
     "normalize", "standardize", "rolling_standardize", "rolling_normalize"
 ]
-SCALING_MODE: TypeScalingMode = "normalize"
+SCALING_MODE: TypeScalingMode = "rolling_standardize"
 TIMESTEPS_ROLLING_WINDOW_FOR_SCALING = 96 * 30
 
 SESSION_BASED_MODE = False
