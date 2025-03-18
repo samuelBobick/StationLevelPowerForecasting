@@ -31,7 +31,7 @@ search_space = {
     "x_dim": [96 * 2],
     "lookahead": [96],
     # torch models
-    "hidden_size": 64,  # [32, 64, 128],
+    "hidden_size": [64],  # [32, 64, 128],
     "num_hidden_layers": [2],  # [2, 3, 4],
     "num_lstm_layers": [2],  # [1, 2, 3],
     "kernel_size": [3, 5, 7],  # TCN

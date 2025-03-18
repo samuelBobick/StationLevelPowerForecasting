@@ -59,43 +59,43 @@ def visualize_results(
             color_discrete_sequence=px.colors.qualitative.__dict__["Plotly"],
         )
 
-    # Create a pretty string for the group info
-    df_group_index_that_doesnt_change = df_group_names[df_group_names["No Change"]].loc[
-        :, 0
-    ]
-    pretty_group = [
-        f"{index_name}={df_group_index_that_doesnt_change[index_name]}"
-        for index_name in df_group_index_that_doesnt_change.index
-    ]
-    # concat all elements of the list info a single string (and add some line breaks)
-    item_counter = 0
-    pretty_parameters_for_title = ""
-    for item in pretty_group:
-        if item_counter == 4:
-            pretty_parameters_for_title += "<br>"
-            item_counter = 0
-        pretty_parameters_for_title += item + ", "
-        item_counter += 1
-    title = f"{metric_to_show.upper()} for {pretty_parameters_for_title}"
+        # Create a pretty string for the group info
+        df_group_index_that_doesnt_change = df_group_names[
+            df_group_names["No Change"]
+        ].loc[:, 0]
+        pretty_group = [
+            f"{index_name}={df_group_index_that_doesnt_change[index_name]}"
+            for index_name in df_group_index_that_doesnt_change.index
+        ]
+        # concat all elements of the list info a single string (and add some line breaks)
+        item_counter = 0
+        pretty_parameters_for_title = ""
+        for item in pretty_group:
+            if item_counter == 4:
+                pretty_parameters_for_title += "<br>"
+                item_counter = 0
+            pretty_parameters_for_title += item + ", "
+            item_counter += 1
+        title = f"{metric_to_show.upper()} for {pretty_parameters_for_title}"
 
-    # Modify x-axis labels to be on multiple lines
-    tickvals = df_group["model_name"].unique()
-    ticktext = [label.replace("_", "<br>") for label in tickvals]
+        # Modify x-axis labels to be on multiple lines
+        tickvals = df_group["model_name"].unique()
+        ticktext = [label.replace("_", "<br>") for label in tickvals]
 
-    fig.update_layout(
-        title=title,
-        xaxis_title=x_axis_title,
-        yaxis_title=metric_to_show,
-        legend_title="Model Name",
-        template="plotly_white",
-        width=1300,  # Set the width of the plot
-        height=600,  # Set the height of the plot
-        showlegend=False,  # Show or hide the legend
-        xaxis=dict(tickvals=tickvals, ticktext=ticktext),  # Update x-axis labels
-        margin=dict(l=0, r=0, t=150, b=0),  # Set the margins
-    )
+        fig.update_layout(
+            title=title,
+            xaxis_title=x_axis_title,
+            yaxis_title=metric_to_show,
+            legend_title="Model Name",
+            template="plotly_white",
+            width=1300,  # Set the width of the plot
+            height=600,  # Set the height of the plot
+            showlegend=False,  # Show or hide the legend
+            xaxis=dict(tickvals=tickvals, ticktext=ticktext),  # Update x-axis labels
+            margin=dict(l=0, r=0, t=150, b=0),  # Set the margins
+        )
 
-    fig.show()
+        fig.show()
 
 
 def plot_loss_against_one_parameter(
