@@ -2,6 +2,7 @@ import itertools
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import pandas as pd  # Add pandas import
 from tqdm.auto import tqdm
 
 from slrp_ev_ts_forecasting.default_parameters import (
@@ -16,33 +17,41 @@ from slrp_ev_ts_forecasting.run_one_model import run_one_model
 # ==================
 # Start of USER INPUTS
 
-list_model_choices: list[TypeModelChoice] = ["LSTM", "TCN", "Basic_NN"]
+list_model_choices: list[TypeModelChoice] = [
+    "Basic_NN",
+    # "LSTM",
+    # "TCN",
+    # "KNN",
+    # "XGBoost",
+    # "LinearRegression",
+]
 dataset: TypeDatasetName = "slrp-ev_new"
 
 search_space = {
-    "x_dim": [96, 96 * 2, 96 * 4],
+    "x_dim": [96 * 2],
     "lookahead": [96],
     # torch models
-    "hidden_size": [16, 32, 64, 128],
-    "num_hidden_layers": [2, 3, 4],
-    "num_lstm_layers": [1, 2, 3],
+    "hidden_size": [64],  # [32, 64, 128],
+    "num_hidden_layers": [2],  # [2, 3, 4],
+    "num_lstm_layers": [2],  # [1, 2, 3],
     "kernel_size": [3, 5, 7],  # TCN
-    "max_depth": [4],  # [4, 6, 8],  # XGBoost
-    "epochs": [5, 10],
-    "batch_size": [32, 64, 128],
-    "batch_norm": [True, False],
+    "max_depth": [6],  # [4, 6, 8],  # XGBoost
+    "epochs": [7],
+    "batch_size": [64],
+    "batch_norm": [False],
     "optimize_lags": [None],  # [None, "long_opt"],
-    "dropout": [0, 0.2, 0.4, 0.6],
-    "get_val_data_from_shuffled_train": [True, False],
-    "scaling_mode": [
-        "normalize",
-        "standardize",
-        "rolling_standardize",
-        "rolling_normalize",
-    ],
+    "dropout": [0.2],
+    "get_val_data_from_shuffled_train": [True],
+    "scaling_mode": ["normalize"],
+    # [
+    #     "normalize",
+    #     "standardize",
+    #     "rolling_standardize",
+    #     "rolling_normalize",
+    # ],
     # knn
-    "n_neighbors": [4, 7, 10, 13],
-    "percentile": [25, 50, 75, 90],
+    "n_neighbors": [4, 7, 10],
+    "percentile": [25, 50, 75],
     # parameters for session based forecasting
     "session_based_mode": [False],
     "peak_prediction": [False],
@@ -50,7 +59,7 @@ search_space = {
     "add_fraction_of_regular_sessions": [True, False],
     "use_all_active_sessions": [True],
     # parameters to generate random sessions
-    "number_of_artificial_datasets": [0],
+    "number_of_artificial_datasets": [1, 2, 3],
     "random_start_time": [True, False],
     "shuffle_power_profiles": [True, False],
     "random_power_profile_shapes": [True, False],
@@ -61,10 +70,10 @@ search_space = {
 }
 
 
-number_of_models_per_config = 4
+number_of_models_per_config = 3
 n_random_samples = 100  # Number of random samples to evaluate
 parallelize = False
-filename_suffix = "initial_models"
+filename_suffix = "art_data_exp"
 
 # End of USER INPUTS
 # ==================
@@ -81,59 +90,73 @@ def evaluate_model(model_choice, model_parameters, dataset):
         )
 
 
-def filter_all_configs(all_configs, search_space):
+def filter_all_configs(all_configs: list[dict], search_space: dict) -> list[dict]:
     """Filter out some configs that are actually the same"""
-    # filter out some configs that are actually the same
-    # if number_of_artificial_datasets == 0, then all config where "random_xx" parameters are not False should be removed
-    config_index_to_remove = []
-    for i in range(len(all_configs)):
-        config = all_configs[i]
-        if config["number_of_artificial_datasets"] == 0:
-            artificial_dataset_config = {
-                "random_start_time": config["random_start_time"],
-                "shuffle_power_profiles": config["shuffle_power_profiles"],
-                "random_power_profile_shapes": config["random_power_profile_shapes"],
-                "random_user_needs": config["random_user_needs"],
-                "random_choices": config["random_choices"],
-            }
-            if not _check_first_config_parameters(
-                artificial_dataset_config, search_space
-            ):
-                config_index_to_remove.append(i)
-        if config["shuffle_power_profiles"] and config["random_power_profile_shapes"]:
-            config_index_to_remove.append(i)
-        if ("session_based_mode" in config) and (not config["session_based_mode"]):
-            session_based_config = {
-                "peak_prediction": config["peak_prediction"],
-                "add_number_of_sessions": config["add_number_of_sessions"],
-                "add_fraction_of_regular_sessions": config[
-                    "add_fraction_of_regular_sessions"
-                ],
-                "use_all_active_sessions": config["use_all_active_sessions"],
-            }
-            if not _check_first_config_parameters(session_based_config, search_space):
-                config_index_to_remove.append(i)
+    df_all_configs = pd.DataFrame(all_configs)
 
-    # remove the configs
-    all_configs = [
-        all_configs[i]
-        for i in range(len(all_configs))
-        if i not in config_index_to_remove
+    df_neutral_values = df_all_configs.apply(
+        lambda x: False if False in x.unique() else x.unique()[0]
+    )
+
+    # Filter out configs where number_of_artificial_datasets == 0 and random_xx parameters are not their
+    # neutral value
+    mask = (df_all_configs["number_of_artificial_datasets"] == 0) & (
+        (df_all_configs["random_start_time"] != df_neutral_values["random_start_time"])
+        | (
+            df_all_configs["shuffle_power_profiles"]
+            != df_neutral_values["shuffle_power_profiles"]
+        )
+        | (
+            df_all_configs["random_power_profile_shapes"]
+            != df_neutral_values["random_power_profile_shapes"]
+        )
+        | (
+            df_all_configs["random_user_needs"]
+            != df_neutral_values["random_user_needs"]
+        )
+        | (df_all_configs["random_choices"] != df_neutral_values["random_choices"])
+    )
+    df_all_configs = df_all_configs[~mask]
+
+    # Filter out configs where shuffle_power_profiles and random_power_profile_shapes are both True
+    df_all_configs = df_all_configs[
+        ~(
+            df_all_configs["shuffle_power_profiles"]
+            & df_all_configs["random_power_profile_shapes"]
+        )
     ]
-    return all_configs
 
+    # Filter out configs where number_of_artificial_datasets is not 0 but all the random_xx parameters are all False
+    mask = (df_all_configs["number_of_artificial_datasets"] > 0) & (
+        (df_all_configs["random_start_time"] == False)
+        & (df_all_configs["shuffle_power_profiles"] == False)
+        & (df_all_configs["random_power_profile_shapes"] == False)
+        & (df_all_configs["random_user_needs"] == False)
+        & (df_all_configs["random_choices"] == False)
+    )
+    df_all_configs = df_all_configs[~mask]
 
-def _check_first_config_parameters(config: dict, search_space: dict):
-    """Check that all the parameters have their first possible value.
-    this function is used to remove some of the configs, in case the
-    parameters are irrelevant."""
-    for k, v in config.items():
-        if False in search_space[k]:
-            if v is not False:
-                return False
-        elif v != search_space[k][0]:
-            return False
-    return True
+    # Filter out configs where session_based_mode is False and other session-based parameters are not their
+    # neutral value
+    if "session_based_mode" in df_all_configs.columns:
+        session_based_mask = (df_all_configs["session_based_mode"] == False) & (
+            (df_all_configs["peak_prediction"] != False)
+            | (
+                df_all_configs["add_number_of_sessions"]
+                != df_neutral_values["add_number_of_sessions"]
+            )
+            | (
+                df_all_configs["add_fraction_of_regular_sessions"]
+                != df_neutral_values["add_fraction_of_regular_sessions"]
+            )
+            | (
+                df_all_configs["use_all_active_sessions"]
+                != df_neutral_values["use_all_active_sessions"]
+            )
+        )
+        df_all_configs = df_all_configs[~session_based_mask]
+
+    return df_all_configs.to_dict(orient="records")
 
 
 def get_random_all_configs_filtered(model_choice):
@@ -143,8 +166,10 @@ def get_random_all_configs_filtered(model_choice):
     search_space_of_model = {k: v for k, v in search_space.items() if k in model_inputs}
     keys, values = zip(*search_space_of_model.items())
     all_configs = [dict(zip(keys, v)) for v in itertools.product(*values)]
+    print(f"Initial number of configs: {len(all_configs):,.0f}")
 
     all_configs = filter_all_configs(all_configs, search_space)
+    print(f"Number of configs after filtering: {len(all_configs):,.0f}")
 
     if len(all_configs) > n_random_samples:
         random_configs = random.sample(all_configs, n_random_samples)

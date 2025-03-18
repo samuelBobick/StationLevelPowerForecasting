@@ -524,9 +524,10 @@ class TorchBaseModel(Base):
                 raise ValueError(
                     "df_padded should be provided to generate windows for train data type"
                 )
-            raw_df_sessions = get_raw_df_sessions(
-                convert_date_from_int_to_datetime(df_padded["date"])
-            )
+            if self.number_of_artificial_datasets > 0:
+                raw_df_sessions = get_raw_df_sessions(
+                    convert_date_from_int_to_datetime(df_padded["date"])
+                )
 
             for i in range(self.number_of_artificial_datasets):
                 artificial_df, _, _ = get_artificial_data(
@@ -540,6 +541,10 @@ class TorchBaseModel(Base):
                     scaling_mode=self.scaling_mode,
                     lookahead=self.lookahead,
                 )
+
+                # we need to drop nan values because artificial_df contains nans for the
+                # missing timesteps
+                artificial_df = artificial_df.dropna(subset=["power"])
                 artificial_dataset: TFToTorchDataset = self.get_one_dataset(
                     artificial_df, data_type, return_y_date, overlapping_windows
                 )  # type: ignore
@@ -573,9 +578,11 @@ class TorchBaseModel(Base):
                 "Week cos",
                 "Year sin",
                 "Year cos",
-            ] + [col for col in self.list_workday_column_names if col != "workday_0"]
+            ] + self.get_filtered_workday_columns()
         elif self.time_mode == "window":
-            cols_to_keep_as_features += ["time_window"] + self.list_workday_column_names
+            cols_to_keep_as_features += [
+                "time_window"
+            ] + self.get_filtered_workday_columns()
 
         dataset = W.convert_to_torch_dataset(
             window_data, cols_to_keep_as_features, cols_to_keep_as_labels=["power"]
@@ -588,6 +595,31 @@ class TorchBaseModel(Base):
             return dataset, y_dates
         else:
             return dataset
+
+    def get_filtered_workday_columns(self) -> list[str]:
+        """The idea here is to reduce the number of workday columns if the information is overlapping.
+        For instance, if x_dim is 192, we have workday_0, workday_96, and workday_192. In this case,
+        workday_0 and workday_192 are enough to represent the workday information
+        """
+        # basically, we just check how many days are in the historical features, and we keep
+        # one workday column every how many days
+        number_of_days = max(self.x_dim // 96 - 1, 0)
+        # we want to keep at least the first and last one, that have information that
+        # would be lost otherwise
+        list_workday_column_names_filtered = [
+            self.list_workday_column_names[0],
+            self.list_workday_column_names[-1],
+        ]
+
+        skipped = 0
+        for workday_column_name in self.list_workday_column_names[1:-1]:
+            if skipped == number_of_days:
+                list_workday_column_names_filtered.append(workday_column_name)
+                skipped = 0
+            else:
+                skipped += 1
+
+        return list_workday_column_names_filtered
 
     def initialize_model(self) -> None:
         raise NotImplementedError("This method must be implemented in the child class.")

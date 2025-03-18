@@ -270,7 +270,7 @@ def plot_df_pacf(
         go.Heatmap(
             z=[heatmap_colors],
             showscale=False,
-            colorscale=[[0, "lightyellow"], [1, "green"]],
+            colorscale=[[0, "#FFEF9C"], [1, "#FFAF00"]],  # 0:light yellow  # 1:orange
         ),
         row=2 * figure_number + 2,
         col=1,
@@ -284,6 +284,7 @@ def plot_df_pacf(
             "The red area represents the confidence interval (values inside "
             "the area are not statistically significant).",
             height=600,  # Total height of the figure6
+            template="plotly_white",
         )
         fig.update_yaxes(title_text="PACF", row=1, col=1)
         fig.update_xaxes(title_text="Lag", row=2, col=1)
