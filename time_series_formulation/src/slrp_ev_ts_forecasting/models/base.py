@@ -110,12 +110,11 @@ class Base:
             # we have to enforce this, otherwise we might have some data leakage
             # with validation data in the training data
             # it is not the case for the other scaling modes
-            warnings.warn(
+            raise ValueError(
                 "get_val_data_from_shuffled_train should be False when "
                 "adding artificial data and using rolling scaling. "
-                "We force it to False."
+                "Please set it to False."
             )
-            self.get_val_data_from_shuffled_train = False
 
         if not session_based_mode and (
             add_number_of_sessions
