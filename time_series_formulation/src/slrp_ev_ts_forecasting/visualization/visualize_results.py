@@ -193,9 +193,14 @@ def plot_loss_against_one_parameter(
         legend_title="Model Name",
         template="plotly_white",
         showlegend=False,
-        width=700,  # Set the width of the plot
-        height=400,  # Set the height of the plot
+        # width=700,  # Set the width of the plot
+        # height=400,  # Set the height of the plot
     )
+
+    # set the x-axis limits manually
+    if y_limits:
+        fig.update_yaxes(range=y_limits)
+
     if show_figure_at_the_end:
         fig.show()
 
@@ -203,14 +208,14 @@ def plot_loss_against_one_parameter(
 
 
 if __name__ == "__main__":
-    plot_loss_against_one_parameter(
-        "rmse",
-        "x_dim",
-        # second_metric_to_show="elapsed_time",
-        # or_filter_model_name=["XGBoost"],
-        include_scatter=False,
-        filename="graph_lag_opt",
-        # y_limits=[5400, 6000],
-        separate_models=True,
-    )
-    # visualize_results("rmse", filename="experiment_basic_benchmark_202502")
+    # plot_loss_against_one_parameter(
+    #     "rmse",
+    #     "timesteps_rolling_window_for_scaling",
+    #     # second_metric_to_show="elapsed_time",
+    #     # or_filter_model_name=["XGBoost"],
+    #     include_scatter=False,
+    #     filename="benchmark_initial_models_v2",
+    #     # y_limits=[36000, 47000],
+    #     separate_models=True,
+    # )
+    visualize_results("rmse", filename="graph_improved_models_v1_ucb")

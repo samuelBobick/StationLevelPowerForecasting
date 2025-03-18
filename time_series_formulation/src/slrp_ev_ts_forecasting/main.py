@@ -29,22 +29,20 @@ def run_one_model_profiled(*args, **kwargs):
 list_model_choices: list[TypeModelChoice] = [
     "LSTM",
     "Basic_NN",
-    "XGBoost",
-    "KNN",
-    "Last_Week",
-    "Similar_Day",
-    "LinearRegression",
+    # "LSTM",
+    # "XGBoost",
+    # "KNN",
+    # "Last_Week",
+    # "Similar_Day",
+    # "LinearRegression",
 ]
 
 number_of_models_per_config = 5
-dataset: TypeDatasetName = "ucsd-all_garages"
+dataset: TypeDatasetName = "slrp-ev_new"
 # list_xdim = [96]
 # session_based_mode = False
 # peak_prediction = False
-list_scaling_mode: list[TypeScalingMode] = [
-    "rolling_standardize",
-    "rolling_normalize",
-]
+list_scaling_mode: list[TypeScalingMode] = ["normalize"]
 
 if __name__ == "__main__":
     for model_choice in list_model_choices:
