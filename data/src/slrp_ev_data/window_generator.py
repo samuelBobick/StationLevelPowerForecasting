@@ -151,7 +151,7 @@ class WindowGenerator:
         # Store the raw data.
         self.train_df = train_df
         self.val_df = val_df
-        if get_val_from_shuffled_train and val_df:
+        if get_val_from_shuffled_train and (val_df is not None):
             raise ValueError(
                 "You cannot specify val_df if you want to get it from train_df. "
                 "When using get_val_from_shuffled_train = True please set val_df "
@@ -385,7 +385,15 @@ class WindowGenerator:
         columns_not_selected = [
             col
             for col in self.column_indices.keys()
-            if col not in (cols_to_flatten + cols_keep_last_value)
+            if col
+            not in (
+                cols_to_flatten
+                + cols_keep_last_value
+                + [
+                    dict_keep_some_values["col_name"]
+                    for dict_keep_some_values in cols_keep_some_values
+                ]
+            )
         ]
         if columns_not_selected:
             print(
