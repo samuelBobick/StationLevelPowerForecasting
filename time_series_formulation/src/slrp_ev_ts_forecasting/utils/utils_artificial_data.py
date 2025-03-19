@@ -3,7 +3,6 @@ import pandas as pd
 from slrp_ev_data.feature_engineering import (
     feature_engineering,
 )
-from slrp_ev_data.read_new_slrpev_data import read_new_slrpev_data
 from slrp_ev_data.utils.data_utils import convert_date_from_int_to_datetime
 from slrp_ev_data.utils.scaling_main import get_scaling_parameters
 from slrp_ev_data.utils.scaling_utils import (
@@ -12,20 +11,26 @@ from slrp_ev_data.utils.scaling_utils import (
 from slrp_ev_ts_forecasting.default_parameters import RANDOM_SEED, TypeScalingMode
 from slrp_ev_ts_forecasting.utils.utils_session_forecasting import (
     extract_features,
-    get_raw_df_sessions,
     revert_power_df,
 )
 
 
-def _compute_user_needs(raw_df_sessions: pd.DataFrame) -> pd.DataFrame:
-    raw_df_sessions["choice"] = raw_df_sessions["is_choice_regular"].apply(
+def get_start_charge_time(row: pd.Series) -> pd.Timestamp:
+    return row["date"][0]
+
+
+def compute_choice(raw_df_sessions: pd.DataFrame) -> pd.Series:
+    return raw_df_sessions["is_choice_regular"].apply(
         lambda x: "REGULAR" if x[0] == 1 else "SCHEDULED"
     )
-    raw_df_sessions["e_need"] = raw_df_sessions["power_profiles"].apply(
-        lambda x: sum(x) / 4
-    )
-    raw_df_sessions["duration"] = raw_df_sessions["power_profiles"].apply(len)
-    return raw_df_sessions
+
+
+def compute_energy_needs(raw_df_sessions: pd.DataFrame) -> pd.Series:
+    return raw_df_sessions["power_profiles"].apply(lambda x: sum(x) / 4)
+
+
+def compute_duration_timesteps(raw_df_sessions: pd.DataFrame) -> pd.Series:
+    return raw_df_sessions["power_profiles"].apply(len)
 
 
 def _update_date_to_duration(row: pd.Series) -> list[pd.Timestamp]:
@@ -41,6 +46,8 @@ def generate_random_scheduled_profile(
     min_power=0,
     max_power=SINGLE_EVSE_NORMALIZATION_PARAM,
 ):
+    # multiply the energy need by 4, to go from kWh to "power by timestep"
+    e_need *= 4
     max_power *= 1 + rng.uniform(-0.05, 0.03)
     # Generate random numbers
     random_numbers = rng.uniform(min_power, max_power, duration)
@@ -75,6 +82,8 @@ def generate_regular_profile(
     rng: np.random.Generator,
     max_power=SINGLE_EVSE_NORMALIZATION_PARAM,
 ):
+    # multiply the energy need by 4, to go from kWh to "power by timestep"
+    e_need *= 4
     max_power *= 1 + rng.uniform(-0.05, 0.03)
 
     profile = np.zeros(duration)
@@ -112,16 +121,43 @@ def _shuffle_power_profiles(
     return similar_sessions.sample(frac=1, random_state=rng)["power_profiles"].iloc[0]
 
 
+def get_start_charge_time_distribution(raw_df_sessions: pd.DataFrame) -> pd.Series:
+    start_charge_times = raw_df_sessions.apply(get_start_charge_time, axis=1)
+    start_charge_times = start_charge_times.dt.hour + start_charge_times.dt.minute / 60
+
+    start_charge_time_distribution = start_charge_times.value_counts().sort_index()
+
+    return start_charge_time_distribution.reindex(np.arange(0, 24, step=0.25)).fillna(0)
+
+
 def _apply_randomize_start_time(
     row: pd.Series,
     rng: np.random.Generator,
-    max_time_shift: pd.Timedelta = pd.Timedelta(hours=3),
+    start_charge_time_distribution: pd.Series,
+    max_time_shift_hours: int = 3,
 ) -> list[pd.Timestamp]:
-    random_time_shift = rng.integers(
-        -max_time_shift.total_seconds(), max_time_shift.total_seconds()  # type: ignore
+    # First, we get the distribution from which we will sample the
+    # new start times
+    current_hour = row["date"][0].hour + row["date"][0].minute / 60
+    # max_time_shift_hours - current hour should be > 0
+    max_time_shift_hours = min(max_time_shift_hours, current_hour)
+    # max_time_shift_hours - current hour should be < 24
+    max_time_shift_hours = min(max_time_shift_hours, 24 - current_hour)
+    start_charge_time_distribution = start_charge_time_distribution.loc[
+        current_hour - max_time_shift_hours : current_hour + max_time_shift_hours
+    ]
+    normalized_start_charge_time_distribution = (
+        start_charge_time_distribution / start_charge_time_distribution.sum()
     )
-    # round to the closest 15 minutes (= closest 900 seconds)
-    random_time_shift = pd.Timedelta(seconds=(random_time_shift // 900) * 900)
+    # Now we sample from the distribution
+    random_time_shift = rng.choice(
+        normalized_start_charge_time_distribution.index,
+        p=normalized_start_charge_time_distribution.values,
+    )
+
+    random_time_shift = pd.Timedelta(hours=random_time_shift - current_hour).round(
+        "15min"
+    )
     return (pd.Series(row["date"]) + random_time_shift).to_list()
 
 
@@ -133,7 +169,7 @@ def make_artificial_sessions(
     random_user_needs: bool,
     random_choices: bool,
     rng: np.random.Generator = np.random.default_rng(RANDOM_SEED),
-    probability_of_scheduled_sessions: float = 0.35,
+    probability_of_scheduled_sessions: float = 0.3,
 ) -> pd.DataFrame:
     """Make an artificial session dataset, randomizing different things in the original
     raw_df_sessions dataset.
@@ -151,22 +187,32 @@ def make_artificial_sessions(
     Returns:
         pd.DataFrame: _description_
     """
-    raw_df_sessions = _compute_user_needs(raw_df_sessions)
+    raw_df_sessions = raw_df_sessions.copy()
+    raw_df_sessions["choice"] = compute_choice(raw_df_sessions)
+    raw_df_sessions["e_need"] = compute_energy_needs(raw_df_sessions)
+    raw_df_sessions["duration"] = compute_duration_timesteps(raw_df_sessions)
     initial_raw_df_sessions = raw_df_sessions.copy()
 
     if random_start_time:
+        start_charge_time_distribution = get_start_charge_time_distribution(
+            raw_df_sessions
+        )
         raw_df_sessions["date"] = raw_df_sessions.apply(
-            _apply_randomize_start_time, axis=1, rng=rng
+            _apply_randomize_start_time,
+            axis=1,
+            rng=rng,
+            start_charge_time_distribution=start_charge_time_distribution,
         )  # type: ignore
 
     if random_user_needs:
         raw_df_sessions["e_need"] = raw_df_sessions["e_need"].apply(
-            lambda x: x * rng.uniform(0.8, 1.2)
+            lambda x: x * rng.uniform(0.7, 1.3)
         )
         # if we randomize the duration, we need to update the date list, this
         # is done later
+        # the minimum duration should be 2 timesteps
         raw_df_sessions["duration"] = raw_df_sessions["duration"].apply(
-            lambda x: int(x * rng.uniform(0.8, 1.2))
+            lambda x: max(int(x * rng.uniform(0.7, 1.3)), 2)
         )
 
     if random_choices:
@@ -202,7 +248,8 @@ def make_artificial_sessions(
         )
 
     # If we add something after here, we need to recompute e_need and the duration
-    raw_df_sessions = _compute_user_needs(raw_df_sessions)
+    raw_df_sessions["e_need"] = compute_energy_needs(raw_df_sessions)
+    raw_df_sessions["duration"] = compute_duration_timesteps(raw_df_sessions)
 
     # shuffle power can change slightly the duration, so we need to update the date
     raw_df_sessions["date"] = raw_df_sessions.apply(_update_date_to_duration, axis=1)
@@ -219,6 +266,7 @@ def make_artificial_sessions(
 
 def get_artificial_data(
     train_data: pd.DataFrame,
+    raw_df_sessions: pd.DataFrame,
     random_start_time: bool,
     shuffle_power_profiles: bool,
     random_power_profile_shapes: bool,
@@ -229,16 +277,6 @@ def get_artificial_data(
     rng: np.random.Generator = np.random.default_rng(RANDOM_SEED),
 ) -> tuple[pd.DataFrame, pd.DataFrame, tuple | pd.DataFrame]:
     train_data = train_data.copy()
-    train_data["date"] = convert_date_from_int_to_datetime(train_data["date"])
-
-    power_df = read_new_slrpev_data(keep_all_columns=True)
-
-    power_df = power_df.loc[
-        (power_df["date"].dt.date >= train_data["date"].min().date())
-        & (power_df["date"].dt.date <= train_data["date"].max().date())
-    ]
-
-    raw_df_sessions = get_raw_df_sessions(power_df)
 
     artificial_raw_df_sessions = make_artificial_sessions(
         raw_df_sessions,
@@ -254,6 +292,10 @@ def get_artificial_data(
         revert_power_df(artificial_raw_df_sessions)
     ).drop(columns=["numberOfActiveSessions", "fractionOfRegularSessions"])
 
+    # we need to convert the train date column to a datetime object before
+    # we can do the merge and have the same dates as the train data
+    train_data = train_data.copy()
+    train_data["date"] = convert_date_from_int_to_datetime(train_data["date"])
     artificial_power_df = artificial_power_df.merge(
         train_data[["date", "power", "number_of_evses_available"]],
         left_on="startChargeTime",
