@@ -3,26 +3,26 @@ from typing import Literal, Optional
 
 import torch
 
-X_DIM = 96
+X_DIM = 96 * 2
 LOOKAHEAD = 96
 TIME_MODE: Literal["window", "cyclical"] = "cyclical"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
 
-# torch models
+# Torch models
 NUMBER_OF_INITIAL_MODELS = 1
-EPOCHS = 5
-BATCH_SIZE = 32
+EPOCHS = 7
+BATCH_SIZE = 64
 DROPOUT = 0.4
-BATCH_NORM: bool = True
+BATCH_NORM: bool = False
 
 # KNN
-N_NEIGHBORS = 5
+N_NEIGHBORS = 4
 PERCENTILE = 50
 
 # Lags optimization
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = (
-    None  # for regression models, such as Basic_NN or XGBoost
+    "long_opt"  # for regression models, such as Basic_NN or XGBoost
 )
 NUMBER_OF_DAYS_FOR_PACF = 35  # 70 was the old parameter, but it is too big for
 # datasets with missing data
@@ -45,6 +45,7 @@ TypeScalingMode = Literal[
     "normalize", "standardize", "rolling_standardize", "rolling_normalize"
 ]
 SCALING_MODE: TypeScalingMode = "rolling_standardize"
+TIMESTEPS_ROLLING_WINDOW_FOR_SCALING = 96 * 30
 
 SESSION_BASED_MODE = False
 PEAK_PREDICTION = False
@@ -57,14 +58,13 @@ USE_ALL_ACTIVE_SESSIONS = True
 # parameters to generate random sessions
 NUMBER_OF_ARTIFICIAL_DATASETS = 0
 RANDOM_START_TIME = True
-SHUFFLE_POWER_PROFILES = (
-    True  # SHUFFLE_POWER_PROFILES and RANDOM_POWER_PROFILE_SHAPES can't be both True
-)
+# SHUFFLE_POWER_PROFILES and RANDOM_POWER_PROFILE_SHAPES can't be both True
+SHUFFLE_POWER_PROFILES = True
 RANDOM_POWER_PROFILE_SHAPES = False
 RANDOM_USER_NEEDS = True
 RANDOM_CHOICES = True
 
-ADD_NUMBER_OF_EVSES_AVAILABLE = True
+ADD_NUMBER_OF_EVSES_AVAILABLE = False
 
 TypeModelChoice = Literal[
     "LinearRegression",

@@ -94,7 +94,7 @@ class XGBoost(RegressionBaseModel):
         return (
             "XGBoost"
             + f"_dropout{self.dropout}"
-            + f"_max_depth{self.max_depth}"
+            + f"_maxDepth{self.max_depth}"
             + self.model_str_name_suffix
         )
 
@@ -131,8 +131,8 @@ class XGBoost(RegressionBaseModel):
             "eval_metric": "rmse",
             "max_depth": self.max_depth,  # default is 6
             "eta": 0.1,  # learning rate, default 0.3
-            "subsample": 1
-            - self.dropout,  # fraction of training set to randomly sample for =
+            "subsample": 1,
+            # - self.dropout,  # fraction of training set to randomly sample for =
             # each tree (has a similar effect as dropout)
             "colsample_bytree": 1 - self.dropout,  # fraction of features to consider
             "device": default_parameters.DEVICE,
