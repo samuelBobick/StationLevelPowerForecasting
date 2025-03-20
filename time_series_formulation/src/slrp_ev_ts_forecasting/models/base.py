@@ -132,6 +132,27 @@ class Base:
         # initialize parameters defined in the child classes
         self.pacf_top_values = None
 
+    def get_parameters_dict(self):
+        # get all the parameters of the class
+        # and put them in a dict for when we save the model
+        parameters_to_not_save = [
+            "verbose",
+            "rng",
+            "pacf_top_values",
+            "cols_to_drop_for_model",
+            "rs",
+        ]
+        parameters_dict = {
+            k: v
+            for k, v in vars(self).items()
+            if (
+                not k.startswith("_")
+                and k not in parameters_to_not_save
+                and type(v) in [int, float, str, bool, list, dict]
+            )
+        }
+        return parameters_dict
+
     def get_top_pacf_values(
         self, data: pd.DataFrame, nb_of_days_for_pacf: int = NUMBER_OF_DAYS_FOR_PACF
     ) -> pd.Series:
