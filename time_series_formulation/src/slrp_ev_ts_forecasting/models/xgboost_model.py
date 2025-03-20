@@ -1,3 +1,4 @@
+import json
 import time
 from typing import Literal
 
@@ -89,6 +90,8 @@ class XGBoost(RegressionBaseModel):
         self.dropout = dropout
         self.max_depth = max_depth
 
+        self.parameters_dict = self.get_parameters_dict()
+
     @property
     def model_str_name(self):
         return (
@@ -107,6 +110,9 @@ class XGBoost(RegressionBaseModel):
         y_val: pd.DataFrame,
         val_mask: pd.Series,
     ):
+        self.feature_names = list(X_train.columns)
+        self.label_names = list(y_train.columns)
+
         dtrain = xgb.DMatrix(
             X_train[train_mask].drop(
                 self.cols_to_drop_for_model,
@@ -144,6 +150,27 @@ class XGBoost(RegressionBaseModel):
             xgb_params, dtrain, num_round, evals=evallist, early_stopping_rounds=10
         )
         return bst
+
+    def save_model(self, bst, model_name: str):
+        saved_model_filename = (
+            default_parameters.SAVED_MODELS_PATH / f"{model_name}.json"
+        )
+
+        # Extract parameters
+        params = {
+            "model_parameters": self.parameters_dict,
+            "feature_names": self.feature_names,
+            "label_names": self.label_names,
+        }
+
+        # Save to JSON file
+        with open(saved_model_filename, "w") as json_file:
+            json.dump(params, json_file, indent=4)
+
+        # Save the XGBoost model parameters
+        bst.save_model(
+            default_parameters.SAVED_MODELS_PATH / f"{model_name}_model.json"
+        )
 
     def predict_model(self, model, X_test: pd.DataFrame):
         dtest = xgb.DMatrix(X_test)

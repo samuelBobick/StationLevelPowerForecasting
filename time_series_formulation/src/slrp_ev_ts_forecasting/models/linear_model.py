@@ -71,24 +71,7 @@ class LinearModel(RegressionBaseModel):
         else:
             self.rs = None
 
-        # get all the parameters of the class
-        # and put them in a dict for when we save the model
-        parameters_to_not_save = [
-            "verbose",
-            "rng",
-            "pacf_top_values",
-            "cols_to_drop_for_model",
-            "rs",
-        ]
-        self.parameters_dict = {
-            k: v
-            for k, v in vars(self).items()
-            if (
-                not k.startswith("_")
-                and k not in parameters_to_not_save
-                and type(v) in [int, float, str, bool, list, dict]
-            )
-        }
+        self.parameters_dict = self.get_parameters_dict()
 
     @property
     def model_str_name(self):
