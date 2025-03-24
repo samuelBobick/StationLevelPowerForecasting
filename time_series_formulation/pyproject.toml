@@ -20,8 +20,8 @@ dependencies = [
   "numpy",
   "matplotlib",
   "plotly",
-  "tensorboard<=2.18",
-  "tensorflow<=2.18",
+  "tensorboard<2.19",
+  "tensorflow<2.19",
   "torch>2.0",
   "torcheval",
   "scikit-learn",
@@ -30,9 +30,10 @@ dependencies = [
   "pmdarima",
   "prophet",
   "tqdm",
+  "plotly"
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]  # list of folders that contain the packages (["."] by default)
 include = ["slrp_ev_ts_forecasting*"]  # package names should match these glob patterns (["*"] by default)
-exclude = ["slrp_ev_ts_forecasting.runs*", "slrp_ev_ts_forecasting.model*", "slrp_ev_ts_forecasting.results*"]  # exclude packages matching these glob patterns (empty by default)
+exclude = ["slrp_ev_ts_forecasting.models.runs*", "slrp_ev_ts_forecasting.results*"]  # exclude packages matching these glob patterns (empty by default)
