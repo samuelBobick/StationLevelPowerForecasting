@@ -128,10 +128,15 @@ class BaselineSimulator:
 
         self.initial_running_peak = initial_running_peak
 
+        self.c = 1
+        self.eps = 0
+
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
         # having to use cp.maximum is much slower than putting this max into inequality constraints
-        return cp.Constant(self.cost_dc) * cp.maximum(
-            current_daily_peak - running_monthly_peak, 0
+        return (
+            self.c
+            * cp.Constant(self.cost_dc)
+            * cp.maximum(current_daily_peak - running_monthly_peak, 0)
         )
 
     def get_current_peak_sch(
@@ -380,8 +385,8 @@ class BaselineSimulator:
             # The user is only plugged in between u_start and u_end so below,
             # so we constraint the timesteps that the user is not plug in to 0
             constraints += [
-                u[u_end : u_start + self.var_dim_constant] <= 0.005,
-                u[u_end : u_start + self.var_dim_constant] >= -0.005,
+                u[u_end : u_start + self.var_dim_constant] <= self.eps,
+                u[u_end : u_start + self.var_dim_constant] >= self.eps,
             ]
 
         ### Solve
