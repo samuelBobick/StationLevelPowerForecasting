@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Literal, Optional, TypedDict
 
 import numpy as np
 import torch
@@ -41,15 +41,17 @@ def compute_losses(
     y_pred: np.ndarray,
     y_true: np.ndarray,
     alpha: float,
-    y_naive_pred: np.ndarray,
-    y_naive_true: np.ndarray,
+    y_naive_pred: Optional[np.ndarray] = None,
+    y_naive_true: Optional[np.ndarray] = None,
 ) -> Losses:
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     # We compute the relative rmse error (scale invariant)
     # source: https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.performance_metrics.forecasting.RelativeLoss.html
     # and https://robjhyndman.com/papers/mase.pdf part 2.4
-    naive_rmse = np.sqrt(mean_squared_error(y_naive_true, y_naive_pred))
-    relative_rmse = rmse / naive_rmse
+    if y_naive_pred and y_naive_true:
+        naive_rmse = np.sqrt(mean_squared_error(y_naive_true, y_naive_pred))
+        relative_rmse = rmse / naive_rmse
+    relative_rmse = 999
 
     wrmse = asymmetric_rmse_detailed(y_true, y_pred, alpha)
     mae = mean_absolute_error(y_true, y_pred)
