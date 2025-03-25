@@ -582,7 +582,7 @@ class BaselineSimulator:
                 choice,
                 len(active_sessions),
                 startChargeTime,
-                verbose=True,
+                verbose=self.verbose,
             )
 
             running_peak = max(
