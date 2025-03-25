@@ -272,6 +272,7 @@ def generate_session_results(
             user_computed_data_for_visualization,
             prices,
             sim.delta_t,
+            sim.TOU,
         )
 
 
@@ -338,6 +339,7 @@ def visualize_simulation(
     user_computed_data_for_visualization: dict,
     prices: dict,
     delta_t: float,
+    TOU: np.ndarray,
 ) -> None:
     """
     Visualize the results of the simulation values. the x axis is time
@@ -368,7 +370,30 @@ def visualize_simulation(
             np.round(sum(power_profiles_df["power"] * delta_t), 2)
         )
 
-    fig = go.Figure()
+    fig = go.Figure(layout=go.Layout(yaxis=dict(range=[0, 60])))
+
+    # Change the background color based on the TOU prices (as bars)
+    number_timesteps_in_simulation = aggregate_power_profile.shape[0]
+    TOU_data = pd.DataFrame(
+        data={
+            "TOU": list(TOU[:96]) * (number_timesteps_in_simulation // 96)
+            + list(TOU[: number_timesteps_in_simulation % 96])
+        },
+        index=aggregate_power_profile["date"],
+    )
+    # Add a heatmap for TOU values as background
+    fig.add_trace(
+        go.Heatmap(
+            x=TOU_data.index,
+            y=[0, 60],  # Adjust the heatmap to span from 0 to 60
+            z=[TOU_data["TOU"]] * 2,  # Duplicate TOU values to match the y range
+            colorscale="Greys",
+            showscale=False,
+            zmin=TOU_data["TOU"].min() * 0.8,
+            zmax=TOU_data["TOU"].max() * 2,
+            hovertemplate="TOU: %{z:.2f} cents/kWh<extra></extra>",
+        )
+    )
 
     # Create a color map for user IDs
     user_ids = user_power_profiles_dfs["user_id"].unique()
