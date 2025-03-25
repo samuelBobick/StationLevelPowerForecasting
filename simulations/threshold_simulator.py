@@ -112,7 +112,7 @@ class ThresholdSimulator(BaselineSimulator):
             raise Exception(f"Optimization failed with status {prob.status}")
 
         return (
-            u.value,
+            u,
             e_delivered.value,
             current_peak_sch.value,
             current_peak_reg.value,
