@@ -1,4 +1,5 @@
 import os
+from multiprocessing import Lock
 from typing import Literal, Optional
 
 import numpy as np
@@ -223,6 +224,17 @@ def generate_session_results(
     demand_charge = round(demand_charge_cents / 100, 2)
     energy_delivered = round(sum(session_results["energy_delivered"]), 2)
 
+    sch_losses, reg_losses = compute_prediction_error(
+        sim.aggregate_power_profile, user_computed_data_for_visualization
+    )
+
+    sch_rmse = round(sch_losses["rmse"], 2)
+    reg_rmse = round(reg_losses["rmse"], 2)
+
+    print(
+        "Profit", total_profit, "\nTOU Cost", TOU_cost, "\nDemand Charge", demand_charge
+    )
+
     row_data = {
         "Month": month,
         "Total Profit ($)": total_profit,
@@ -231,6 +243,8 @@ def generate_session_results(
         "Demand Charge ($)": demand_charge,
         "Peak Power (kW)": demand_charge_kw,
         "Energy Delivered (kWh)": energy_delivered,
+        "Scheduled RMSE": sch_rmse,
+        "Regular RMSE": reg_rmse,
     }
 
     if os.path.exists(summary_file_name):
@@ -248,21 +262,23 @@ def generate_session_results(
             "Demand Charge ($)",
             "Peak Power (kW)",
             "Energy Delivered (kWh)",
+            "Scheduled RMSE",
+            "Regular RMSE",
         ]
 
         summary_df = pd.DataFrame([row_data], columns=columns)
 
     sim.aggregate_power_profile.to_csv(aggregate_power_profile_file_name, index=False)
-    summary_df.to_csv(summary_file_name, index=False)
+    lock = Lock()
+
+    with lock:
+        summary_df.to_csv(summary_file_name, index=False)
 
     if verbose:
         print("---------------- Summary results ----------------")
         for key in row_data:
             print(f"{key}: {row_data[key]}")
     if visualize:
-        sch_losses, reg_losses = compute_prediction_error(
-            sim.aggregate_power_profile, user_computed_data_for_visualization
-        )
         print_losses(sch_losses, "Scheduled Peak Prediction: ")
         print_losses(reg_losses, "Regular Peak Prediction: ")
 
@@ -306,10 +322,18 @@ def compute_prediction_error(
     ]
 
     sch_losses = compute_losses(
-        scheduled_peak_predictions.values, real_values.values, alpha=2
+        scheduled_peak_predictions.values,
+        real_values.values,
+        2,
+        scheduled_peak_predictions.values,
+        real_values.values,
     )
     reg_losses = compute_losses(
-        regular_peak_predictions.values, real_values.values, alpha=2
+        regular_peak_predictions.values,
+        real_values.values,
+        2,
+        regular_peak_predictions.values,
+        real_values.values,
     )
 
     return sch_losses, reg_losses
