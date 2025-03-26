@@ -55,7 +55,9 @@ class TimeseriesForecastSimulator(ForecastSimulator):
 
     def plot_reconstructed_timeseries(self, time, reconstructed_timeseries, forecast):
         time_forecast = pd.date_range(
-            start=time, periods=len(reconstructed_timeseries), freq=f"{self.delta_t}H"
+            start=round_up_to_nearest_timestep(time, self.delta_t),
+            periods=len(reconstructed_timeseries),
+            freq=f"{self.delta_t}H",
         )
 
         fig = go.Figure()
@@ -177,16 +179,25 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         num_active_sessions,
         current_start_charge_time,
         verbose=False,
+        set_min_to_current_sessions=True,
     ):
         """Make a forecast for the next self.var_dim_constant timesteps, assuming the new user chooses regular.
 
         Args:
             current_row: row of sessions_df that is currently being optimized
-            u: optimal power profile from the previous optimization. We haven't yet done the current optimization
+            u_prev: optimal power profile from the previous optimization.
             prev_start_charge_time: time of previous optimization, aka the start of u_prev
             prev_choice: previous user choice in the simulation, i.e. REGULAR or SCHEDULED
-            time (pd.datetime): time of optimization
             num_active_sessions (int): number of active sessions
+            current_start_charge_time (pd.datetime): time that we round up to get the time of the optimization
+            verbose (bool, optional): whether to plot the forecast. Defaults to False.
+            set_min_to_current_sessions (bool, optional): whether to set the minimum power to the \
+                power from the current sessions.
+                E.g., we want to forecast hour h1, h2, h3 knowing that the sum \
+                of the current sessions for these timesteps is [10, 12, 11]. The forecast \
+                might give a prediction of [9, 13, 15]. If set_min_to_current_sessions is True, \
+                the forecast will be [10, 13, 15] instead (we change the first value to match the current sessions). \
+                This is useful to make the forecast more realistic.
 
         Returns:
             prediction of current peak given time, past power profile, and scheduled power_profile
@@ -194,16 +205,12 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         rounded_current_time = round_up_to_nearest_timestep(
             current_start_charge_time, self.delta_t
         )
-        timesteps = pd.date_range(
-            end=rounded_current_time - pd.Timedelta(minutes=15),
-            periods=96,
-            freq="15min",
-        )
 
+        # to make the forecast, we consider that the next session is regular
         aggregate_future_profile = get_next_reg_profile(
             current_row, self.delta_t, self.flexibility_constant, self.power_rate
         )
-
+        # we add the current scheduled profiles to aggregate_future_profile
         if (
             u_prev is not None
         ):  # on the first iteration, u_prev will be None - there is no prior session
@@ -227,13 +234,14 @@ class TimeseriesForecastSimulator(ForecastSimulator):
                     (0, timesteps_elapsed),
                     mode="constant",
                     constant_values=0,
-                )
+                )  # type: ignore
             else:
                 u_prev_reshaped = np.zeros(self.var_dim_constant)
 
             self.prev_aggregate_u_for_forecast = u_prev_reshaped
             aggregate_future_profile = aggregate_future_profile + u_prev_reshaped
 
+        # we add the current regular profiles to aggregate_future_profile
         aggregate_future_profile = (
             aggregate_future_profile
             + get_aggregate_active_reg_future_profiles(
@@ -244,29 +252,35 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             )
         )
 
+        # get historical power profile
+        historical_timesteps = pd.date_range(
+            end=rounded_current_time - pd.Timedelta(minutes=15),
+            periods=96,
+            freq="15min",
+        )
         historical_power_profile = self.aggregate_power_profile[
-            self.aggregate_power_profile["date"].isin(timesteps)
+            self.aggregate_power_profile["date"].isin(historical_timesteps)
         ]["power"].values
 
-        # Sometimes at the beginning of the month, we must left pad to get ebough data to make a prediction
+        # Sometimes at the beginning of the month, we must left pad to get enough data to make a prediction
         historical_power_profile = np.pad(
             historical_power_profile,
             (self.var_dim_constant - historical_power_profile.size, 0),
             mode="constant",
-        )
+        )  # type: ignore
 
         # get time features
-        time_features = pd.DataFrame(data=[current_start_charge_time], columns=["date"])
+        time_features = pd.DataFrame(data=[rounded_current_time], columns=["date"])
         engineer_time_features(time_features)
         # clean and put in the correct format
         time_features = time_features.drop(columns=["date"]).values.squeeze()
 
-        time_tomorrow = current_start_charge_time + pd.Timedelta(hours=24)
+        time_tomorrow = rounded_current_time + pd.Timedelta(hours=24)
         tomorrow_workday = int(time_tomorrow.dayofweek < 5)
         if time_tomorrow.date() in self.holidays.date:
             tomorrow_workday = 0
 
-        time_in_15_min = current_start_charge_time + pd.Timedelta(minutes=15)
+        time_in_15_min = rounded_current_time + pd.Timedelta(minutes=15)
         time_in_15_min_workday = int(time_in_15_min.dayofweek < 5)
         if time_in_15_min.date() in self.holidays.date:
             time_in_15_min_workday = 0
@@ -285,6 +299,11 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         prediction = self.make_prediction(
             features, time_in_15_min_workday, current_start_charge_time
         )
+
+        if set_min_to_current_sessions:
+            prediction = cp.maximum(
+                prediction, aggregate_future_profile[: self.lookahead] * 1000
+            )
 
         if verbose:
             self.visualize_samples(current_start_charge_time, features, prediction.value)  # type: ignore
