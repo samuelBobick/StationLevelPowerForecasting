@@ -51,7 +51,8 @@ def compute_losses(
     if (y_naive_pred is not None) and (y_naive_true is not None):
         naive_rmse = np.sqrt(mean_squared_error(y_naive_true, y_naive_pred))
         relative_rmse = rmse / naive_rmse
-    relative_rmse = 999
+    else:
+        relative_rmse = 999
 
     wrmse = asymmetric_rmse_detailed(y_true, y_pred, alpha)
     mae = mean_absolute_error(y_true, y_pred)
