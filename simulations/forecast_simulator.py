@@ -16,7 +16,10 @@ from slrp_ev_data.utils.scaling_utils import (
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
-from utils.utils_time_and_indexes import round_up_to_nearest_timestep
+from utils.utils_time_and_indexes import (
+    convert_time_to_index,
+    round_up_to_nearest_timestep,
+)
 
 
 class ForecastSimulator(BaselineSimulator):
@@ -243,6 +246,37 @@ class ForecastSimulator(BaselineSimulator):
         )
         time_u = pd.date_range(start=time, periods=len(u), freq=f"{self.delta_t}H")
 
+        # Add time of use in background
+        whole_time_index = pd.concat([pd.Series(time_power), pd.Series(time_u)])
+        number_timesteps_in_simulation = whole_time_index.shape[0]
+        TOU_current_idx = convert_time_to_index(time, self.delta_t)
+        TOU_data = pd.DataFrame(
+            data={
+                "TOU": list(self.TOU[TOU_current_idx:96])
+                + list(self.TOU[:96])
+                * ((number_timesteps_in_simulation - 96 + TOU_current_idx) // 96)
+                + list(
+                    self.TOU[
+                        : (number_timesteps_in_simulation - 96 + TOU_current_idx) % 96
+                    ]
+                )
+            },
+            index=whole_time_index,
+        )
+        # Add a heatmap for TOU values as background
+        fig.add_trace(
+            go.Heatmap(
+                x=TOU_data.index + pd.Timedelta(minutes=15 / 2),
+                y=[0, 60_000],  # Adjust the heatmap to span from 0 to 60
+                z=[TOU_data["TOU"]] * 2,  # Duplicate TOU values to match the y range
+                colorscale="Greys",
+                showscale=False,
+                zmin=TOU_data["TOU"].min() * 0.5,
+                zmax=TOU_data["TOU"].max() * 2,
+                hovertemplate="TOU: %{z:.2f} cents/kWh<extra></extra>",
+            )
+        )
+
         # plot aggregated power
         fig.add_trace(
             go.Scatter(
@@ -328,5 +362,21 @@ class ForecastSimulator(BaselineSimulator):
             title="Features and Prediction Visualization",
             xaxis_title="Time",
             yaxis_title="Power (W or scaled)",
+        )
+
+        # update yaxis limits with the min and max of the 3 power profiles
+        fig.update_yaxes(
+            range=[
+                min(
+                    power.min(),
+                    u.min(),
+                    prediction.min() if prediction is not None else 0,
+                ),
+                max(
+                    power.max(),
+                    u.max(),
+                    prediction.max() if prediction is not None else 0,
+                ),
+            ]
         )
         fig.show()

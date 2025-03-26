@@ -224,12 +224,15 @@ def generate_session_results(
     demand_charge = round(demand_charge_cents / 100, 2)
     energy_delivered = round(sum(session_results["energy_delivered"]), 2)
 
-    sch_losses, reg_losses = compute_prediction_error(
+    sch_losses, reg_losses, initial_pred_losses = compute_prediction_error(
         sim.aggregate_power_profile, user_computed_data_for_visualization
     )
 
     sch_rmse = round(sch_losses["rmse"], 2)
     reg_rmse = round(reg_losses["rmse"], 2)
+    initial_pred_rmse = (
+        round(initial_pred_losses["rmse"], 2) if initial_pred_losses else None
+    )
 
     print(
         "Profit", total_profit, "\nTOU Cost", TOU_cost, "\nDemand Charge", demand_charge
@@ -245,6 +248,7 @@ def generate_session_results(
         "Energy Delivered (kWh)": energy_delivered,
         "Scheduled RMSE": sch_rmse,
         "Regular RMSE": reg_rmse,
+        "Initial Prediction RMSE": initial_pred_rmse,
     }
 
     if os.path.exists(summary_file_name):
@@ -264,6 +268,7 @@ def generate_session_results(
             "Energy Delivered (kWh)",
             "Scheduled RMSE",
             "Regular RMSE",
+            "Initial Prediction RMSE",
         ]
 
         summary_df = pd.DataFrame([row_data], columns=columns)
@@ -281,6 +286,10 @@ def generate_session_results(
     if visualize:
         print_losses(sch_losses, "Scheduled Peak Prediction: ")
         print_losses(reg_losses, "Regular Peak Prediction: ")
+        if initial_pred_losses:
+            print_losses(
+                initial_pred_losses, "Initial Peak Prediction (timeseries forecast): "
+            )
 
         visualize_simulation(
             sim.aggregate_power_profile,
@@ -293,19 +302,13 @@ def generate_session_results(
 
 
 def compute_prediction_error(
-    aggregate_power_profile, user_computed_data_for_visualization
-) -> tuple[Losses, Losses]:
+    aggregate_power_profile, user_computed_data_for_visualization: pd.DataFrame
+) -> tuple[Losses, Losses, Losses | None]:
     # turn dictionaries into dataframe for easier manipulation
     df_user_computed_data_for_visualization = pd.DataFrame(
         user_computed_data_for_visualization
     ).T.set_index("Start charge time")
 
-    scheduled_peak_predictions = df_user_computed_data_for_visualization[
-        "Peak pred (sch)"
-    ]
-    regular_peak_predictions = df_user_computed_data_for_visualization[
-        "Peak pred (reg)"
-    ]
     real_values = df_user_computed_data_for_visualization.apply(
         _apply_get_real_peak_value,
         axis=1,
@@ -315,21 +318,51 @@ def compute_prediction_error(
     # filter out the values for which the day is not over yet
     last_day = real_values.index[-1].date()
     real_values = real_values.loc[real_values.index.date < real_values.index.date.max()]
-    scheduled_peak_predictions = scheduled_peak_predictions.loc[
-        scheduled_peak_predictions.index.date < last_day
-    ]
-    regular_peak_predictions = regular_peak_predictions.loc[
-        regular_peak_predictions.index.date < last_day
-    ]
 
-    sch_losses = compute_losses(
-        scheduled_peak_predictions.values, real_values.values, alpha=2
-    )
-    reg_losses = compute_losses(
-        regular_peak_predictions.values, real_values.values, alpha=2
+    sch_losses = _compute_one_type_of_prediction_losses(
+        "Peak pred (sch)",
+        df_user_computed_data_for_visualization,
+        real_values,
+        last_day,
     )
 
-    return sch_losses, reg_losses
+    reg_losses = _compute_one_type_of_prediction_losses(
+        "Peak pred (reg)",
+        df_user_computed_data_for_visualization,
+        real_values,
+        last_day,
+    )
+
+    initial_pred_losses = _compute_one_type_of_prediction_losses(
+        "Peak initial forecast",
+        df_user_computed_data_for_visualization,
+        real_values,
+        last_day,
+    )
+
+    return sch_losses, reg_losses, initial_pred_losses
+
+
+def _compute_one_type_of_prediction_losses(
+    prediction_key: str,
+    df_user_computed_data_for_visualization: pd.DataFrame,
+    real_values,
+    last_day: pd.Timestamp,
+) -> Losses:
+
+    these_peak_predictions = df_user_computed_data_for_visualization[prediction_key]
+    if pd.isna(these_peak_predictions).any():
+        return None  # type: ignore
+
+    these_peak_predictions = these_peak_predictions.loc[
+        these_peak_predictions.index.date < last_day
+    ]
+
+    these_losses = compute_losses(
+        these_peak_predictions.values, real_values.values, alpha=2
+    )
+
+    return these_losses
 
 
 def _apply_get_real_peak_value(
@@ -400,12 +433,12 @@ def visualize_simulation(
     # Add a heatmap for TOU values as background
     fig.add_trace(
         go.Heatmap(
-            x=TOU_data.index,
+            x=TOU_data.index + pd.Timedelta(minutes=15 / 2),
             y=[0, 60],  # Adjust the heatmap to span from 0 to 60
             z=[TOU_data["TOU"]] * 2,  # Duplicate TOU values to match the y range
             colorscale="Greys",
             showscale=False,
-            zmin=TOU_data["TOU"].min() * 0.8,
+            zmin=TOU_data["TOU"].min() * 0.5,
             zmax=TOU_data["TOU"].max() * 2,
             hovertemplate="TOU: %{z:.2f} cents/kWh<extra></extra>",
         )
@@ -462,7 +495,7 @@ def visualize_simulation(
         go.Scatter(
             x=df_user_computed_data_for_visualization["Start charge time"],
             y=[price[0] for user_id, price in prices.items()],
-            mode="lines",
+            mode="lines+markers",
             name="Scheduled Price",
             yaxis="y2",
             line=dict(dash="dash", color=color_scale_darker[2]),  # green
@@ -473,7 +506,7 @@ def visualize_simulation(
         go.Scatter(
             x=df_user_computed_data_for_visualization["Start charge time"],
             y=[price[1] for user_id, price in prices.items()],
-            mode="lines",
+            mode="lines+markers",
             name="Regular Price",
             yaxis="y2",
             line=dict(dash="dash", color=color_scale_darker[0]),  # red

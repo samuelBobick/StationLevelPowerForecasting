@@ -682,6 +682,11 @@ class BaselineSimulator:
                 "Duration (hours)": last_row["DurationHrs"],
                 "Peak pred (sch)": current_peak_sch,
                 "Peak pred (reg)": current_peak_reg,
+                "Peak initial forecast": (
+                    max(self.forecast.value.tolist())
+                    if hasattr(self, "forecast")
+                    else None
+                ),
             }
 
             previous_running_peak = running_peak
