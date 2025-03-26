@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 import cvxpy as cp
 import numpy as np
@@ -35,11 +35,11 @@ class PeakForecastSimulator(ForecastSimulator):
         model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions",
         smooth_power_features: bool = SMOOTH_POWER_FEATURES,
         smooth_window_size: int = SMOOTH_WINDOW_SIZE,
-        model_type: str = "linear",
+        model_type: Literal["linear", "xgboost"] = "linear",
     ):
         self.model_type = model_type
         if self.model_type == "linear":
-            self.model_name = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions"
+            self._model_name = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions"
         else:
             raise ValueError(
                 f"Model type {self.model_type} is not yet supported. Please choose linear."

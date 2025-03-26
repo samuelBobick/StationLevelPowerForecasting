@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 import cvxpy as cp
 import numpy as np
@@ -31,14 +31,16 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_type: str = "xgboost",
+        model_type: Literal["linear", "xgboost"] = "xgboost",
     ):
         """_summary_"""
         self.model_type = model_type
         if self.model_type == "linear":
-            self.model_name = "LinearModel_SessionBased_WithNbSessions_WithAllActiveSessions8hr"
+            self._model_name = (
+                "LinearModel_SessionBased_WithNbSessions_WithAllActiveSessions8hr"
+            )
         elif self.model_type == "xgboost":
-            self.model_name = "XGBoost_dropout0.4_maxDepth4_SessionBased_WithNbSessions_WithAllActiveSessions"
+            self._model_name = "XGBoost_dropout0.4_maxDepth4_SessionBased_WithNbSessions_WithAllActiveSessions"
         else:
             raise ValueError(
                 f"Model type {self.model_type} is not yet supported. Please choose linear or xgboost."
