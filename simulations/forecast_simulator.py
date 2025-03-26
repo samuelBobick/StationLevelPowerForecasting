@@ -5,6 +5,7 @@ import cvxpy as cp
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import xgboost as xgb
 from baseline_simulator import BaselineSimulator
 from constants.global_parameters import (
     SMOOTH_POWER_FEATURES,
@@ -35,7 +36,7 @@ class ForecastSimulator(BaselineSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_name: str = "LinearModel_SessionBased_PeakPrediction_WithNbSessions_WithAllActiveSessions8hr",
+        model_type: str = "linear",
     ):
         """_summary_"""
         super().__init__(
@@ -51,13 +52,13 @@ class ForecastSimulator(BaselineSimulator):
             verbose,
         )
 
+        self.model_type = model_type
+
         self.forecasting_models = {}
         for workday in [0, 1]:
-            filename = f"{model_name}_{workday}.json"
+            filename = f"{self.model_name}_{workday}.json"
             self.forecasting_models[workday] = self.load_model_parameters(filename)
 
-        self.features_name = self.forecasting_models[0]["feature_names"]
-        self.labels_name = self.forecasting_models[0]["label_names"]
         # get normalization parameters
         self.get_normalization_parameters(self.features_name, self.labels_name)
 
@@ -69,8 +70,19 @@ class ForecastSimulator(BaselineSimulator):
 
         self.check_model_parameters(model_params)
 
-        model_params["intercept"] = np.array(model_params["intercept"])
-        model_params["coefficients"] = np.array(model_params["coefficients"])
+        self.features_name = model_params["feature_names"]
+        self.labels_name = model_params["label_names"]
+
+        if self.model_type == "linear":
+            model_params["intercept"] = np.array(model_params["intercept"])
+            model_params["coefficients"] = np.array(model_params["coefficients"])
+        else:
+            for workday in [0, 1]:
+                model_params = xgb.Booster()
+                model_params.load_model(
+                    str(SAVED_MODELS_PATH / f"{filename[:-5]}_model.json")
+                )
+
         return model_params
 
     def check_model_parameters(self, model_params):
@@ -179,10 +191,19 @@ class ForecastSimulator(BaselineSimulator):
         )
 
         model = self.forecasting_models[workday]
-        coefficients = model["coefficients"].squeeze()
-        intercept = model["intercept"].squeeze()
 
-        prediction = (coefficients @ normalized_features) + intercept
+        if self.model_type == "linear":
+            coefficients = model["coefficients"].squeeze()
+            intercept = model["intercept"].squeeze()
+            prediction = (coefficients @ normalized_features) + intercept
+        else:
+            dtest = xgb.DMatrix(
+                pd.DataFrame(data=normalized_features.reshape(1, len(normalized_features)), columns=self.features_name)
+            )
+            # dtest.feature_names = self.features_name
+            prediction = model.predict(
+                dtest, iteration_range=(0, model.best_iteration + 1)
+            ).squeeze()
 
         # the prediction can sometimes be negative, we need to make sure it is positive
         prediction = cp.maximum(prediction, 0)
