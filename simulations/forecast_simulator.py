@@ -1,5 +1,5 @@
 import json
-from typing import Optional
+from typing import Literal, Optional
 
 import cvxpy as cp
 import numpy as np
@@ -36,7 +36,7 @@ class ForecastSimulator(BaselineSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_type: str = "linear",
+        model_type: Literal["linear", "xgboost"] = "linear",
     ):
         """_summary_"""
         super().__init__(
@@ -77,11 +77,10 @@ class ForecastSimulator(BaselineSimulator):
             model_params["intercept"] = np.array(model_params["intercept"])
             model_params["coefficients"] = np.array(model_params["coefficients"])
         else:
-            for workday in [0, 1]:
-                model_params = xgb.Booster()
-                model_params.load_model(
-                    str(SAVED_MODELS_PATH / f"{filename[:-5]}_model.json")
-                )
+            model_params = xgb.Booster()
+            model_params.load_model(
+                str(SAVED_MODELS_PATH / f"{filename[:-5]}_model.json")
+            )
 
         return model_params
 
@@ -198,9 +197,11 @@ class ForecastSimulator(BaselineSimulator):
             prediction = (coefficients @ normalized_features) + intercept
         else:
             dtest = xgb.DMatrix(
-                pd.DataFrame(data=normalized_features.reshape(1, len(normalized_features)), columns=self.features_name)
+                pd.DataFrame(
+                    data=normalized_features.reshape(1, len(normalized_features)),
+                    columns=self.features_name,
+                )
             )
-            # dtest.feature_names = self.features_name
             prediction = model.predict(
                 dtest, iteration_range=(0, model.best_iteration + 1)
             ).squeeze()
@@ -401,3 +402,10 @@ class ForecastSimulator(BaselineSimulator):
             ]
         )
         fig.show()
+
+    @property
+    def model_name(self):
+        if not hasattr(self, "_model_name") or self._model_name is None:
+            self._model_name = None
+            raise ValueError("Model name not set, it should be set in the child class")
+        return self._model_name
