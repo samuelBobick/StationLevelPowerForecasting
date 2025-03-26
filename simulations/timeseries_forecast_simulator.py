@@ -31,9 +31,19 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_name: str = "LinearModel_SessionBased_WithNbSessions_WithAllActiveSessions8hr",
+        model_type: str = "xgboost",
     ):
         """_summary_"""
+        self.model_type = model_type
+        if self.model_type == "linear":
+            self.model_name = "LinearModel_SessionBased_WithNbSessions_WithAllActiveSessions8hr"
+        elif self.model_type == "xgboost":
+            self.model_name = "XGBoost_dropout0.4_maxDepth4_SessionBased_WithNbSessions_WithAllActiveSessions"
+        else:
+            raise ValueError(
+                f"Model type {self.model_type} is not yet supported. Please choose linear or xgboost."
+            )
+
         super().__init__(
             test_df,
             var_dim_constant,
@@ -45,7 +55,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             initial_running_peak,
             monte_carlo,
             verbose,
-            model_name,
+            model_type,
         )
 
         # Caches to save aggregte_future_profile (aka what we know about the future)

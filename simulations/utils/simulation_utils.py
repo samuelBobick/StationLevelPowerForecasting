@@ -102,6 +102,7 @@ def get_simulator(
     monte_carlo: bool = False,
     verbose: bool = False,
     initial_running_peak: float = 0,
+    model_type: str = 'xgboost'
 ):
     """_summary_
 
@@ -164,6 +165,7 @@ def get_simulator(
             initial_running_peak,
             monte_carlo,
             verbose,
+            model_type
         )
     elif scenario == "timeseries_forecast":
         return TimeseriesForecastSimulator(
@@ -177,6 +179,7 @@ def get_simulator(
             initial_running_peak,
             monte_carlo,
             verbose,
+            model_type
         )
     else:
         raise ValueError(
