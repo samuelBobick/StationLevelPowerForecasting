@@ -51,8 +51,10 @@ class ForecastSimulator(BaselineSimulator):
             monte_carlo,
             verbose,
         )
-
         self.model_type = model_type
+        print(
+            f"INFO: Using model type {self.model_type} (out of 'linear' and 'xgboost')"
+        )
 
         self.forecasting_models = {}
         for workday in [0, 1]:
