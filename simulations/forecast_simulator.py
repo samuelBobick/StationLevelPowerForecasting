@@ -17,11 +17,11 @@ from slrp_ev_data.utils.scaling_utils import (
     retrieve_train_min_and_max,
 )
 from slrp_ev_ts_forecasting.default_parameters import SAVED_MODELS_PATH
+from utils.utils_simulation_visualization import create_tou_heatmap_trace
 from utils.utils_time_and_indexes import (
     convert_time_to_index,
     round_up_to_nearest_timestep,
 )
-from utils.utils_visualization import create_tou_heatmap_trace
 
 
 class ForecastSimulator(BaselineSimulator):
