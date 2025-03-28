@@ -20,8 +20,10 @@ from utils.utils import (
 )
 from utils.utils_time_and_indexes import (
     convert_power_profile_to_df,
+    convert_time_to_index,
     get_end_charge_times,
 )
+from utils.utils_visualization import create_tou_heatmap_trace
 
 TypeScenario = Literal[
     "all_scheduled",
@@ -29,9 +31,26 @@ TypeScenario = Literal[
     "standard",
     "smooth_dc_penalty",
     "threshold",
-    "peak_forecast",
-    "timeseries_forecast",
+    "peak_forecast_linear",
+    "timeseries_forecast_naive",
+    "timeseries_forecast_linear",
+    "timeseries_forecast_xgboost",
 ]
+
+
+def parse_type_scenario(scenario: TypeScenario) -> tuple[str, str | None]:
+    """Parse the scenario string to separate the scenario name and the model_type,
+    if there is a model type
+
+    Args:
+        scenario (TypeScenario): scenario name
+    """
+    if "peak_forecast" in scenario:
+        return "peak_forecast", scenario.split("_")[-1]
+    elif "timeseries_forecast" in scenario:
+        return "timeseries_forecast", scenario.split("_")[-1]
+    else:
+        return scenario, None
 
 
 def filter_data(
@@ -102,18 +121,19 @@ def get_simulator(
     monte_carlo: bool = False,
     verbose: bool = False,
     initial_running_peak: float = 0,
-    model_type: Literal["linear", "xgboost"] = "xgboost",
 ):
     """_summary_
 
     Args:
-        scenario (_type_): _description_
+        scenario (TypeScenario): _description_
     """
     if initial_running_peak > 0:
         print(f"INFO: Using initial running peak of {initial_running_peak} kW")
         print("---------------- Starting simulation ----------------")
 
-    if scenario in ["all_scheduled", "all_regular", "standard"]:
+    scenario_name, model_type = parse_type_scenario(scenario)
+
+    if scenario_name in ["all_scheduled", "all_regular", "standard"]:
         return BaselineSimulator(
             data,
             var_dim_constant,
@@ -126,7 +146,7 @@ def get_simulator(
             monte_carlo,
             verbose,
         )
-    elif scenario == "smooth_dc_penalty":
+    elif scenario_name == "smooth_dc_penalty":
         return SmoothDCPenaltySimulator(
             data,
             var_dim_constant,
@@ -139,7 +159,7 @@ def get_simulator(
             monte_carlo,
             verbose,
         )
-    elif scenario == "threshold":
+    elif scenario_name == "threshold":
         return ThresholdSimulator(
             data,
             var_dim_constant,
@@ -153,7 +173,13 @@ def get_simulator(
             verbose,
             step,
         )
-    elif scenario == "peak_forecast":
+    elif scenario_name == "peak_forecast":
+        if model_type is None:
+            raise ValueError(
+                "Model type not provided for peak_forecast scenario. \
+                The model type should be added in the scenario name as {mpc_scenario}_{model_type}. \
+                Please refer to TypeScenario."
+            )
         return PeakForecastSimulator(
             data,
             var_dim_constant,
@@ -165,9 +191,15 @@ def get_simulator(
             initial_running_peak,
             monte_carlo,
             verbose,
-            model_type,
+            model_type=model_type,  # type: ignore
         )
-    elif scenario == "timeseries_forecast":
+    elif scenario_name == "timeseries_forecast":
+        if model_type is None:
+            raise ValueError(
+                "Model type not provided for timeseries_forecast scenario. \
+                The model type should be added in the scenario name as {mpc_scenario}_{model_type}. \
+                Please refer to TypeScenario."
+            )
         return TimeseriesForecastSimulator(
             data,
             var_dim_constant,
@@ -179,7 +211,7 @@ def get_simulator(
             initial_running_peak,
             monte_carlo,
             verbose,
-            model_type,
+            model_type=model_type,  # type: ignore
         )
     else:
         raise ValueError(
@@ -294,7 +326,7 @@ def generate_session_results(
                 initial_pred_losses, "Initial Peak Prediction (timeseries forecast): "
             )
 
-        visualize_simulation(
+        visualize_simulation_power(
             sim.aggregate_power_profile,
             power_profiles,
             user_computed_data_for_visualization,
@@ -302,6 +334,10 @@ def generate_session_results(
             sim.delta_t,
             sim.TOU,
         )
+
+        visualize_simulation_prices(session_results, TOU=sim.TOU)
+
+        visualize_simulation_choices(session_results)
 
 
 def compute_prediction_error(
@@ -321,6 +357,11 @@ def compute_prediction_error(
     # filter out the values for which the day is not over yet
     last_day = real_values.index[-1].date()
     real_values = real_values.loc[real_values.index.date < real_values.index.date.max()]
+    if real_values.empty:
+        raise ValueError(
+            "You need to have more than 1 day of data to compute the RMSE of the peak \
+            predictions. Please rerun the simulation with more days."
+        )
 
     sch_losses = _compute_one_type_of_prediction_losses(
         "Peak pred (sch)",
@@ -385,7 +426,7 @@ def _apply_get_real_peak_value(
     return aggregate_power_profile[mask]["power"].max()
 
 
-def visualize_simulation(
+def visualize_simulation_power(
     aggregate_power_profile: pd.DataFrame,
     power_profiles: dict,
     user_computed_data_for_visualization: dict,
@@ -425,27 +466,9 @@ def visualize_simulation(
     fig = go.Figure(layout=go.Layout(yaxis=dict(range=[0, 60])))
 
     # Change the background color based on the TOU prices (as bars)
-    number_timesteps_in_simulation = aggregate_power_profile.shape[0]
-    TOU_data = pd.DataFrame(
-        data={
-            "TOU": list(TOU[:96]) * (number_timesteps_in_simulation // 96)
-            + list(TOU[: number_timesteps_in_simulation % 96])
-        },
-        index=aggregate_power_profile["date"],
-    )
+    TOU_data_index = aggregate_power_profile["date"]
     # Add a heatmap for TOU values as background
-    fig.add_trace(
-        go.Heatmap(
-            x=TOU_data.index + pd.Timedelta(minutes=15 / 2),
-            y=[0, 60],  # Adjust the heatmap to span from 0 to 60
-            z=[TOU_data["TOU"]] * 2,  # Duplicate TOU values to match the y range
-            colorscale="Greys",
-            showscale=False,
-            zmin=TOU_data["TOU"].min() * 0.5,
-            zmax=TOU_data["TOU"].max() * 2,
-            hovertemplate="TOU: %{z:.2f} cents/kWh<extra></extra>",
-        )
-    )
+    fig.add_trace(create_tou_heatmap_trace(TOU_data_index, TOU, unit="kW"))
 
     # Create a color map for user IDs
     user_ids = user_power_profiles_dfs["user_id"].unique()
@@ -555,4 +578,126 @@ def visualize_simulation(
         xaxis_title="Date",
         yaxis_title="Aggregate Station Power (kWh)",
     )
+    fig.show()
+
+
+def visualize_simulation_prices(
+    session_results: pd.DataFrame,
+    box_plot: bool = False,
+    TOU: Optional[np.ndarray] = None,
+):
+    """Creates a figure with a boxplot (or just scatter) of the prices, grouped by hours.
+    On the x axis, we have hours, while on the y axis we have prices.
+    For each hour, there are 2 boxes, one for the scheduled prices, and one for the regular prices.
+    The prices are in cents/kWh.
+
+    Args:
+        session_results (pd.DataFrame): output DataFrame of the function get_session_results
+        box_plot (bool): if True, creates a box plot. If False, creates a scatter plot.
+        TOU (np.ndarray, optional): Time-of-Use price array for adding background heatmap. Defaults to None.
+    """
+    df_session_prices = session_results[["start_time", "z_sch", "z_reg"]].copy()
+    df_session_prices["hour"] = df_session_prices["start_time"].dt.hour
+    df_session_prices = df_session_prices.drop(columns="start_time")
+
+    fig = go.Figure()
+
+    # Add TOU heatmap in the background if TOU is provided
+    if TOU is not None:
+        whole_time_index = pd.Series(
+            data=np.arange(
+                start=df_session_prices["hour"].min(),
+                stop=df_session_prices["hour"].max(),
+                step=0.25,
+            )
+        )
+        TOU_current_idx = convert_time_to_index(
+            pd.to_datetime("2020-01-01 00:00:00")
+            + pd.Timedelta(hours=df_session_prices["hour"].min()),
+            0.25,
+        )
+        fig.add_trace(
+            create_tou_heatmap_trace(
+                whole_time_index, TOU, TOU_current_idx=TOU_current_idx, unit="kW"
+            )
+        )
+
+    for price_type in ["z_sch", "z_reg"]:
+        color = "green" if price_type == "z_sch" else "red"
+        if box_plot:
+            fig.add_trace(
+                go.Box(
+                    x=df_session_prices["hour"],
+                    y=df_session_prices[price_type],
+                    name=price_type,
+                    boxmean="sd",
+                    marker=dict(color=color),
+                )
+            )
+        else:
+            df_average_prices = df_session_prices.groupby("hour")[price_type].mean()
+            fig.add_trace(
+                go.Scatter(
+                    x=df_average_prices.index,
+                    y=df_average_prices,
+                    mode="lines+markers",
+                    name=price_type,
+                    marker=dict(color=color),
+                    line=dict(dash="dash"),
+                )
+            )
+
+    title = "Distribution of average prices per hour"
+    # add average regular and scheduled prices in the title
+    title += f"<br>    Average scheduled price: {df_session_prices['z_sch'].mean():.1f} cents/kWh"
+    title += f"<br>    Average regular price: {df_session_prices['z_reg'].mean():.1f} cents/kWh"
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Hour",
+        yaxis_title="Average price (cents/kWh)",
+        template="plotly_white",
+    )
+
+    fig.show()
+
+
+def visualize_simulation_choices(session_results: pd.DataFrame):
+    """Creates a figure with a bar plot. Each hour has one bar, representing the
+    fraction of people that chose scheduled charging.
+
+    Args:
+        session_results (pd.DataFrame): output DataFrame of the function get_session_results
+    """
+
+    df_session_choices = session_results[["start_time", "choice"]].copy()
+    df_session_choices["hour"] = df_session_choices["start_time"].dt.hour
+    df_session_choices = df_session_choices.drop(columns="start_time")
+    df_session_choices = (
+        df_session_choices.groupby(["hour"]).value_counts(normalize=True).unstack()
+    )
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=df_session_choices.index,
+            y=df_session_choices["SCHEDULED"],
+            name="choice",
+            marker=dict(color="blue"),
+        )
+    )
+
+    title = "Choice of charging per hour"
+    # add average ratio of people choosing scheduled charging in the title, and total number of people
+    title += f"<br>    Average fraction of users choosing scheduled charging: {df_session_choices['SCHEDULED'].mean():.2f}"
+    title += f"<br>    Total number of users: {session_results.shape[0]}"
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Hour",
+        yaxis_title="Fraction of users choosing scheduled charging",
+        template="plotly_white",
+    )
+
     fig.show()

@@ -170,6 +170,7 @@ def get_session_results(test_df, power_profiles, prices, power_rate, TOU, delta_
         z_reg_hourly = z_reg * energy_delivered / (hours_if_reg)
         row_data = {
             "dcosId": dcosId,
+            "choice": row["choice"],
             "z_sch": z_sch,
             "z_reg": z_reg,
             "hourly_scheduled_price": round(z_sch_hourly, 2),
