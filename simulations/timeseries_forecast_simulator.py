@@ -41,7 +41,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
             )
         elif self.model_type == "xgboost":
             self._model_name = "XGBoost_dropout0.4_maxDepth4_SessionBased_WithNbSessions_WithAllActiveSessions"
-        else:
+        elif self.model_type not in ["naive"]:
             raise ValueError(
                 f"Model type {self.model_type} is not yet supported. Please choose linear or xgboost."
             )

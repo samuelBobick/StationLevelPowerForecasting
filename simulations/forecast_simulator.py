@@ -21,6 +21,7 @@ from utils.utils_time_and_indexes import (
     convert_time_to_index,
     round_up_to_nearest_timestep,
 )
+from utils.utils_visualization import create_tou_heatmap_trace
 
 
 class ForecastSimulator(BaselineSimulator):
@@ -36,7 +37,7 @@ class ForecastSimulator(BaselineSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_type: Literal["linear", "xgboost"] = "linear",
+        model_type: Literal["naive", "linear", "xgboost"] = "linear",
     ):
         """_summary_"""
         super().__init__(
@@ -53,18 +54,22 @@ class ForecastSimulator(BaselineSimulator):
         )
         self.model_type = model_type
         print(
-            f"INFO: Using model type {self.model_type} (out of 'linear' and 'xgboost')"
+            f"INFO: Using model type {self.model_type} (out of 'naive', 'linear' and 'xgboost')"
         )
 
         self.forecasting_models = {}
-        for workday in [0, 1]:
-            filename = f"{self.model_name}_{workday}.json"
-            self.forecasting_models[workday] = self.load_model_parameters(filename)
+        if model_type == "naive":
+            self.lookahead = 32
 
-        # get normalization parameters
-        self.get_normalization_parameters(self.features_name, self.labels_name)
+        else:
+            for workday in [0, 1]:
+                filename = f"{self.model_name}_{workday}.json"
+                self.forecasting_models[workday] = self.load_model_parameters(filename)
 
-        self.lookahead = len(self.labels_name)
+            # get normalization parameters
+            self.get_normalization_parameters(self.features_name, self.labels_name)
+
+            self.lookahead = len(self.labels_name)
 
     def load_model_parameters(self, filename):
         with open(SAVED_MODELS_PATH / filename, "r") as json_file:
@@ -187,6 +192,13 @@ class ForecastSimulator(BaselineSimulator):
         Returns:
             predictions
         """
+        if self.model_type == "naive":
+            prediction = features[-self.lookahead - 1 : -1]
+
+            return cp.Constant(
+                prediction
+            )  # cp.Constant to return a cp.Expression format
+
         normalized_features = (features - self.features_norm_parameters_min) / (
             self.features_norm_parameters_max - self.features_norm_parameters_min
         )
@@ -250,10 +262,14 @@ class ForecastSimulator(BaselineSimulator):
         power_indexes = []
         u_indexes = []
         other_indexes = []
+
+        if self.model_type == "naive":
+            self.features_name = self._create_naive_model_feature_names(sample.shape[0])
+
         for i, name in enumerate(self.features_name):
-            if name.startswith("power"):
+            if name.startswith("power_"):
                 power_indexes.append(i)
-            elif name.startswith("u"):
+            elif name.startswith("u_"):
                 u_indexes.append(i)
             else:
                 other_indexes.append(i)
@@ -272,32 +288,11 @@ class ForecastSimulator(BaselineSimulator):
 
         # Add time of use in background
         whole_time_index = pd.concat([pd.Series(time_power), pd.Series(time_u)])
-        number_timesteps_in_simulation = whole_time_index.shape[0]
         TOU_current_idx = convert_time_to_index(time, self.delta_t)
-        TOU_data = pd.DataFrame(
-            data={
-                "TOU": list(self.TOU[TOU_current_idx:96])
-                + list(self.TOU[:96])
-                * ((number_timesteps_in_simulation - 96 + TOU_current_idx) // 96)
-                + list(
-                    self.TOU[
-                        : (number_timesteps_in_simulation - 96 + TOU_current_idx) % 96
-                    ]
-                )
-            },
-            index=whole_time_index,
-        )
         # Add a heatmap for TOU values as background
         fig.add_trace(
-            go.Heatmap(
-                x=TOU_data.index + pd.Timedelta(minutes=15 / 2),
-                y=[0, 60_000],  # Adjust the heatmap to span from 0 to 60
-                z=[TOU_data["TOU"]] * 2,  # Duplicate TOU values to match the y range
-                colorscale="Greys",
-                showscale=False,
-                zmin=TOU_data["TOU"].min() * 0.5,
-                zmax=TOU_data["TOU"].max() * 2,
-                hovertemplate="TOU: %{z:.2f} cents/kWh<extra></extra>",
+            create_tou_heatmap_trace(
+                whole_time_index, self.TOU, TOU_current_idx, unit="W"
             )
         )
 
@@ -411,3 +406,12 @@ class ForecastSimulator(BaselineSimulator):
             self._model_name = None
             raise ValueError("Model name not set, it should be set in the child class")
         return self._model_name
+
+    def _create_naive_model_feature_names(self, number_of_features):
+        return (
+            [f"power_{i}" for i in range(self.var_dim_constant)]
+            + ["unused"]
+            * (number_of_features - 1 - self.var_dim_constant - self.lookahead)
+            + [f"u_{i + 1}" for i in range(self.lookahead)]
+            + ["unused"]
+        )
