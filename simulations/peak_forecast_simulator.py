@@ -57,7 +57,7 @@ class PeakForecastSimulator(ForecastSimulator):
             initial_running_peak,
             monte_carlo,
             verbose,
-            model_name,
+            model_type,
         )
         self.forecast_historical_input_dim = 96
         self.smooth_power_features = smooth_power_features
