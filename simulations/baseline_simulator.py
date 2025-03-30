@@ -356,15 +356,14 @@ class BaselineSimulator:
         num_sch_user = len(e_need_lst)  # This considers the next user is scheduled
 
         ### Decision Variables
-        e_delivered = cp.Variable(
-            shape=((self.var_dim_constant + 1) * num_sch_user, 1)
-        )  # energy delivered
         u = cp.Variable(
-            shape=(self.var_dim_constant * num_sch_user, 1)
+            shape=(self.var_dim_constant * num_sch_user, 1),
+            # nonneg=True,
+            bounds=[0, self.power_rate],
         )  # charging profile (extra scheduled user profile included in case new user chooses scheduled
 
         ### Constraints incorporate all SCH users
-        constraints = [u >= 0, u <= self.power_rate]
+        constraints = []
 
         # Iterate through all existing scheduled users (considering the next one is also scheduled)
         for i in range(num_sch_user):
@@ -385,8 +384,7 @@ class BaselineSimulator:
             # The user is only plugged in between u_start and u_end so below,
             # so we constraint the timesteps that the user is not plug in to 0
             constraints += [
-                u[u_end : u_start + self.var_dim_constant] <= self.eps,
-                u[u_end : u_start + self.var_dim_constant] >= self.eps,
+                u[u_end : u_start + self.var_dim_constant] == 0,
             ]
 
         ### Solve
@@ -402,7 +400,6 @@ class BaselineSimulator:
 
         return (
             u,
-            e_delivered,
             J,
             J_array,
             current_peak_sch,
@@ -433,7 +430,6 @@ class BaselineSimulator:
         """
         (
             u,
-            e_delivered,
             J,
             J_array,
             current_peak_sch,
@@ -443,7 +439,12 @@ class BaselineSimulator:
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
-        prob.solve(solver=cp.SCS, max_iters=10000, eps=0.01)
+        prob.solve(
+            solver=cp.SCS,
+            max_iters=10000,
+            eps=1e-4,  # Convergence tolerance
+            alpha=1,  # step size of the solver, higher values converge faster but are less stable. Default is 1.8
+        )
         if prob.status == "optimal_inaccurate":
             # TODO: look into why this is happening
             print("WARNING: optimal solution found, but is inaccurate")
@@ -452,7 +453,6 @@ class BaselineSimulator:
 
         return (
             u,
-            e_delivered.value,
             current_peak_sch.value,
             current_peak_reg.value,
             J,
@@ -485,7 +485,6 @@ class BaselineSimulator:
 
             (
                 uk_flex,
-                e_delivered,
                 current_peak_sch,
                 current_peak_reg,
                 J,
@@ -604,6 +603,8 @@ class BaselineSimulator:
             )
             min_J = grid_search_results[optimal_prices]["J"]
             min_J_arr = grid_search_results[optimal_prices]["J_arr"]
+            # need to remove negative values coming from numerical imprecisions (0 being -2e-6)
+            # that can leave to larger negative values when summing over the whole array
             u_cvxpy = grid_search_results[optimal_prices]["u"]
             u = u_cvxpy.value
             v = grid_search_results[optimal_prices]["v"]
@@ -638,7 +639,13 @@ class BaselineSimulator:
             TOU_start_idx, TOU_current_idx, TOU_end_idx, N_remain = get_timestep_info(
                 last_row, pd.to_datetime(last_row["startChargeTime"]), self.delta_t
             )
-            e_need = round(sum(u[: self.var_dim_constant])[0] * self.delta_t, 2)
+            e_need = np.round(
+                get_total_e_need(
+                    last_row, self.delta_t, self.flexibility_constant, self.power_rate
+                )
+                * self.delta_t,
+                2,
+            )
             hours_if_reg = (
                 e_need / self.power_rate
             )  # how many time steps would it take the user to charge if they chose regular?
@@ -712,6 +719,7 @@ class BaselineSimulator:
                     "Optimized delivery of",
                     e_need,
                     f'kWh to session #{last_row["dcosId"]}',
+                    f"for {last_row["DurationHrs"]} hours",
                 )
                 print("Number of active sessions:", len(sub_df))
                 print("Running peak thus far", round(running_peak, 2))
