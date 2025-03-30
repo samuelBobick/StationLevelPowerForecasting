@@ -53,17 +53,24 @@ def get_remaining_e_need(
 
     if len(power_profiles[row["dcosId"]]) > 0:
         e_need -= sum(power_profiles[row["dcosId"]][:power_profile_current_idx])
+
         # if user has already consumed some power, subtract it from their demand
         if (
             e_need < 0
         ):  # handle numerical imprecision and set completed charging sessions to exactly zero
             e_need = 0
 
-        # Check if user requests an infeasible amount of power. TODO remove if no bug
-        # need to add 1 to avoid numerical imprecision leading to infeasible results
-        assert e_need <= N_remain * power_rate + 1, (
-            f"remaining energy is infeasible e_need: {e_need}, "
-            f"max energy possible: {N_remain * power_rate}"
-        )
+        # Check if user requests an infeasible amount of power.
+        if e_need > N_remain * power_rate:
+            # If the error is not too big, it is probably due to numerical imprecision
+            # and we can set the demand to the maximum possible.
+            # otherwise, we raise an error
+            if e_need > N_remain * power_rate + 1:
+                raise ValueError(
+                    f"Remaining energy is infeasible e_need: {e_need}, "
+                    f"max energy possible: {N_remain * power_rate}"
+                )
+            else:
+                e_need = N_remain * power_rate
 
     return e_need

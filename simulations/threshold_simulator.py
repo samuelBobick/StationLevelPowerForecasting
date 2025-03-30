@@ -81,7 +81,6 @@ class ThresholdSimulator(BaselineSimulator):
         """
         (
             u,
-            e_delivered,
             J,
             J_array,
             current_peak_sch,
@@ -95,7 +94,12 @@ class ThresholdSimulator(BaselineSimulator):
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
-        prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
+        prob.solve(
+            solver=cp.SCS,
+            max_iters=10000,
+            eps=1e-4,  # Convergence tolerance
+            alpha=1,  # step size of the solver, higher values converge faster but are less stable. Default is 1.8
+        )
 
         while running_peak <= self.power_rate * 8 and prob.status != "optimal":
             # Increment the hard threshold constraints by self.step
@@ -106,14 +110,18 @@ class ThresholdSimulator(BaselineSimulator):
 
             obj = cp.Minimize(J)
             prob = cp.Problem(obj, constraints)
-            prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
+            prob.solve(
+                solver=cp.SCS,
+                max_iters=10000,
+                eps=1e-4,  # Convergence tolerance
+                alpha=1,  # step size of the solver, higher values converge faster but are less stable. Default is 1.8
+            )
 
         if prob.status != "optimal":
             raise Exception(f"Optimization failed with status {prob.status}")
 
         return (
             u,
-            e_delivered.value,
             current_peak_sch.value,
             current_peak_reg.value,
             J,
