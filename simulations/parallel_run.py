@@ -20,7 +20,9 @@ def run_simulation(
 
     initial_running_peak: float = 0
     results_file_name = f"{folder_path}/{month}_{year}_{scenario}_{i}.csv"
-    aggregate_power_profile_file_name = f"{folder_path}/aggregate_power_profile_{i}.csv"
+    aggregate_power_profile_file_name = (
+        f"{folder_path}/aggregate_power_profile_{month}_{year}_{i}.csv"
+    )
     summary_file_name = f"{folder_path}/summary.csv"
     retry_count = 0
     success = False
