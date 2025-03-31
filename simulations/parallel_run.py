@@ -12,7 +12,7 @@ from utils.simulation_utils import filter_data, generate_session_results, get_si
 
 # Move this function to the top level so it can be pickled
 def run_simulation(
-    i, month, year, scenario, sessions_df, folder_path, eps, max_retries=5
+    i, month, year, scenario, sessions_df, folder_path, eps, max_retries=2
 ):
     run_verbose = False
     final_verbose = False
@@ -20,7 +20,7 @@ def run_simulation(
 
     initial_running_peak: float = 0
     results_file_name = f"{folder_path}/{month}_{year}_{scenario}_{i}.csv"
-    aggregate_power_profile_file_name = f"{folder_path}/aggregate_power_profile.csv"
+    aggregate_power_profile_file_name = f"{folder_path}/aggregate_power_profile_{i}.csv"
     summary_file_name = f"{folder_path}/summary.csv"
     retry_count = 0
     success = False
@@ -62,16 +62,16 @@ def run_simulation(
 
 
 def main():
-    months = range(8, 10)
+    months = range(1, 13)
     year = 2023
-    num_iterations = 20
+    num_iterations = 10
 
     for scenario in [
-        "standard",
-        "timeseries_forecast_naive",
-        "timeseries_forecast_linear",
-        "timeseries_forecast_xgboost",
-        "smooth_dc_penalty",
+        # "standard",
+        # "smooth_dc_penalty",
+        # "timeseries_forecast_naive",
+        # "timeseries_forecast_linear",
+        # "timeseries_forecast_xgboost",
         "threshold",
     ]:
         sessions_file = Path(__file__).resolve().parents[1] / "data" / "Sessions3.csv"
