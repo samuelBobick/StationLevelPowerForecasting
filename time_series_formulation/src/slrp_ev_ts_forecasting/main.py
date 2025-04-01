@@ -27,21 +27,21 @@ def run_one_model_profiled(*args, **kwargs):
 
 
 list_model_choices: list[TypeModelChoice] = [
-    "LSTM",
-    "Basic_NN",
+    # "Basic_NN",
     # "LSTM",
     # "XGBoost",
     # "KNN",
     # "Last_Week",
     # "Similar_Day",
     # "LinearRegression",
+    "SessionNaive"
 ]
 
-number_of_models_per_config = 5
+number_of_models_per_config = 1
 dataset: TypeDatasetName = "slrp-ev_new"
 # list_xdim = [96]
-# session_based_mode = False
-# peak_prediction = False
+session_based_mode = True
+peak_prediction = False
 list_scaling_mode: list[TypeScalingMode] = ["normalize"]
 
 if __name__ == "__main__":
@@ -53,11 +53,11 @@ if __name__ == "__main__":
                     model_choice=model_choice,
                     model_parameters={
                         # "optimize_lags": None,
-                        # "x_dim": 96 * 2,
-                        # "scaling_mode": scaling_mode,
-                        # "session_based_mode": session_based_mode,
-                        # "peak_prediction": peak_prediction,
+                        "x_dim": 96 * 1,
+                        "scaling_mode": scaling_mode,
+                        "session_based_mode": session_based_mode,
+                        "peak_prediction": peak_prediction,
                     },
-                    save_results_filename="benchmark_improved_models_v1",
+                    save_results_filename="xgboost_session_forecast",
                     dataset=dataset,
                 )
