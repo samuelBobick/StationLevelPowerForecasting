@@ -48,11 +48,13 @@ def compute_losses(
     # We compute the relative rmse error (scale invariant)
     # source: https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.performance_metrics.forecasting.RelativeLoss.html
     # and https://robjhyndman.com/papers/mase.pdf part 2.4
+
     if (y_naive_pred is not None) and (y_naive_true is not None):
         naive_rmse = np.sqrt(mean_squared_error(y_naive_true, y_naive_pred))
         relative_rmse = rmse / naive_rmse
     else:
         relative_rmse = 999
+
 
     wrmse = asymmetric_rmse_detailed(y_true, y_pred, alpha)
     mae = mean_absolute_error(y_true, y_pred)

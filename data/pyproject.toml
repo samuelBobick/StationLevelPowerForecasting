@@ -19,7 +19,8 @@ dependencies = [
   "pandas>=2.2,<=2.3",
   "pandera",
   "numpy",
-  "tensorflow",
+  "tensorflow<2.19",
   "matplotlib",
   "torch>2.0",
+  "plotly"
 ]
