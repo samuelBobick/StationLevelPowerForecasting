@@ -17,6 +17,7 @@ class ThresholdSimulator(BaselineSimulator):
         flexibility_constant: float = 0.57,
         tariff_name: TypeTariffName = "BEV2S Secondary June 2023",
         custom_cost_dc: Optional[float] = MODIFIED_DC,
+        initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
         step: float = 1,
@@ -50,6 +51,7 @@ class ThresholdSimulator(BaselineSimulator):
             flexibility_constant,
             tariff_name,
             custom_cost_dc,
+            initial_running_peak,
             monte_carlo,
             verbose,
         )
@@ -63,7 +65,6 @@ class ThresholdSimulator(BaselineSimulator):
         sub_df: pd.DataFrame,
         current_time: pd.Timestamp,
         running_peak: float,
-        power_profiles: dict,
         prices: dict,
     ):
         """
@@ -76,20 +77,16 @@ class ThresholdSimulator(BaselineSimulator):
                 sessions at the time of optimization
             current_time: time of optimization
             running_peak: running peak power this billing cycle
-            power_profiles: dictionary mapping dcosIds to power_profiles
             prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
         """
         (
             u,
-            e_delivered,
             J,
             J_array,
             current_peak_sch,
             current_peak_reg,
             constraints,
-        ) = self.initialize_problem(
-            z, v, sub_df, current_time, running_peak, power_profiles, prices
-        )
+        ) = self.initialize_problem(z, v, sub_df, current_time, running_peak, prices)
 
         # Hard threshold constraint
         constraints += [current_peak_sch <= running_peak]
@@ -97,7 +94,12 @@ class ThresholdSimulator(BaselineSimulator):
 
         obj = cp.Minimize(J)
         prob = cp.Problem(obj, constraints)
-        prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
+        prob.solve(
+            solver=cp.SCS,
+            max_iters=10000,
+            eps=1e-4,  # Convergence tolerance
+            alpha=1,  # step size of the solver, higher values converge faster but are less stable. Default is 1.8
+        )
 
         while running_peak <= self.power_rate * 8 and prob.status != "optimal":
             # Increment the hard threshold constraints by self.step
@@ -108,14 +110,18 @@ class ThresholdSimulator(BaselineSimulator):
 
             obj = cp.Minimize(J)
             prob = cp.Problem(obj, constraints)
-            prob.solve(solver=cp.SCS, max_iters=10000, eps=1e-5)
+            prob.solve(
+                solver=cp.SCS,
+                max_iters=10000,
+                eps=1e-4,  # Convergence tolerance
+                alpha=1,  # step size of the solver, higher values converge faster but are less stable. Default is 1.8
+            )
 
         if prob.status != "optimal":
             raise Exception(f"Optimization failed with status {prob.status}")
 
         return (
-            u.value,
-            e_delivered.value,
+            u,
             current_peak_sch.value,
             current_peak_reg.value,
             J,
