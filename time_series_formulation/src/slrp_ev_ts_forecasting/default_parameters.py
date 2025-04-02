@@ -4,7 +4,7 @@ from typing import Literal, Optional
 import torch
 
 X_DIM = 96 * 2
-LOOKAHEAD = 96
+LOOKAHEAD = 32
 TIME_MODE: Literal["window", "cyclical"] = "cyclical"
 GET_VAL_DATA_FROM_SHUFFLED_TRAIN = True
 
@@ -22,7 +22,7 @@ PERCENTILE = 50
 # Lags optimization
 TypeOptimizeLags = Optional[Literal["short_opt", "long_opt"]]
 OPTIMIZE_LAGS: TypeOptimizeLags = (
-    "long_opt"  # for regression models, such as Basic_NN or XGBoost
+    None  # for regression models, such as Basic_NN or XGBoost
 )
 NUMBER_OF_DAYS_FOR_PACF = 35  # 70 was the old parameter, but it is too big for
 # datasets with missing data
@@ -64,7 +64,7 @@ RANDOM_POWER_PROFILE_SHAPES = False
 RANDOM_USER_NEEDS = True
 RANDOM_CHOICES = True
 
-ADD_NUMBER_OF_EVSES_AVAILABLE = False
+ADD_NUMBER_OF_EVSES_AVAILABLE = True
 
 TypeModelChoice = Literal[
     "LinearRegression",
@@ -80,6 +80,7 @@ TypeModelChoice = Literal[
     "ARIMA",
     "Prophet",
     "PeakPersistence",
+    "SessionNaive",
 ]
 
 if torch.cuda.is_available():

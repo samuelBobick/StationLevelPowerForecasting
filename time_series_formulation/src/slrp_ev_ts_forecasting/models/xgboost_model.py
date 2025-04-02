@@ -110,7 +110,12 @@ class XGBoost(RegressionBaseModel):
         y_val: pd.DataFrame,
         val_mask: pd.Series,
     ):
-        self.feature_names = list(X_train.columns)
+        self.feature_names = list(
+            X_train.drop(
+                self.cols_to_drop_for_model,
+                axis=1,
+            ).columns
+        )
         self.label_names = list(y_train.columns)
 
         dtrain = xgb.DMatrix(

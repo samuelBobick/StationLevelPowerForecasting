@@ -8,6 +8,7 @@ from slrp_ev_ts_forecasting.models.last_week import LastWeek
 from slrp_ev_ts_forecasting.models.linear_model import LinearModel
 from slrp_ev_ts_forecasting.models.lstm import LSTM
 from slrp_ev_ts_forecasting.models.peak_persistence import PeakPersistence
+from slrp_ev_ts_forecasting.models.session_naive import SessionNaive
 from slrp_ev_ts_forecasting.models.similar_day import SimilarDay
 from slrp_ev_ts_forecasting.models.sktime_base import SktimeBaseModel
 from slrp_ev_ts_forecasting.models.tcn import TCN
@@ -118,6 +119,11 @@ DICT_MODEL: dict[TypeModelChoice, dict] = {
     },
     "PeakPersistence": {
         "model": PeakPersistence,
+        "model_params": {},
+        "fit_params": {},
+    },
+    "SessionNaive": {
+        "model": SessionNaive,
         "model_params": {},
         "fit_params": {},
     },
