@@ -128,8 +128,7 @@ class BaselineSimulator:
 
         self.initial_running_peak = initial_running_peak
 
-        self.c = 1
-        self.eps = 0
+        self.c = 1  # scaling factor to balance the demand charge penalty with the TOU cost in the objective function
 
     def get_dc_penalty(self, current_daily_peak, running_monthly_peak) -> cp.Expression:
         # having to use cp.maximum is much slower than putting this max into inequality constraints
