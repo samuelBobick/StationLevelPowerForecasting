@@ -1,9 +1,11 @@
 from typing import Literal, Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly
 import plotly.graph_objects as go
+import seaborn as sns
 from utils.utils_time_and_indexes import (
     convert_power_profile_to_df,
     convert_time_to_index,
@@ -15,7 +17,7 @@ def create_tou_heatmap_trace(
     TOU: np.ndarray,
     TOU_current_idx: int = 0,
     unit: Literal["kW", "W"] = "kW",
-):
+) -> go.Heatmap:
     """
     Creates a heatmap trace for TOU visualization in the background of plots.
 
@@ -28,8 +30,8 @@ def create_tou_heatmap_trace(
     Returns:
         go.Heatmap: A Plotly heatmap trace.
     """
+    # Create the TOU data for the heatmap
     number_timesteps_in_simulation = whole_time_index.shape[0]
-
     if number_timesteps_in_simulation > (96 - TOU_current_idx):
         data = {
             "TOU": list(TOU[TOU_current_idx:96])
@@ -87,10 +89,19 @@ def visualize_simulation_power(
     TOU: np.ndarray,
 ) -> None:
     """
-    Visualize the results of the simulation values. the x axis is time
+    Plots the power results of the simulation values. The x axis is time.
+    The plots contains the following:
+        - The aggregate power profile (in blue)
+        - The power profiles of each user (as areas of different colors)
 
     Args:
         aggregate_power_profile: dataframe with columns "date" and "power"
+        power_profiles: dictionary mapping dcosIds to power profiles
+        user_computed_data_for_visualization: dictionary mapping dcosIds to dictionaries with
+            keys "Start charge time", "Energy needed", "Energy delivered", "Duration (hours)", "Choice"
+        prices: dictionary mapping dcosIds to (sch_price, reg_price) tuples
+        delta_t: timestep size, in hours (e.g. 0.25 for 15-minute timesteps).
+        TOU: Time-of-Use electricity price array, in units of cents/kWh
     """
     # turn dictionaries into dataframe for easier manipulation
     df_user_computed_data_for_visualization = pd.DataFrame(
@@ -242,13 +253,18 @@ def visualize_simulation_prices(
 ):
     """Creates a figure with a boxplot (or just scatter) of the prices, grouped by hours.
     On the x axis, we have hours, while on the y axis we have prices.
-    For each hour, there are 2 boxes, one for the scheduled prices, and one for the regular prices.
+    For each hour, there are 2 boxes (or markers), one for the scheduled prices, and one for the regular prices.
     The prices are in cents/kWh.
+    Optionally, the function can also show the average power profile (in blue) and the TOU heatmap in the background.
 
     Args:
-        session_results (pd.DataFrame): output DataFrame of the function get_session_results
+        session_results (pd.DataFrame): results of the simulation by session. \
+            Output DataFrame of the function get_session_results, or read from a saved csv file.
         box_plot (bool): if True, creates a box plot. If False, creates a scatter plot.
-        TOU (np.ndarray, optional): Time-of-Use price array for adding background heatmap. Defaults to None.
+        TOU (np.ndarray, optional): Time-of-Use electricity price array, in units of cents/kWh. \
+            If None, TOU heatmap is not shown. Defaults to None.
+        aggregate_power_profile (pd.DataFrame, optional): DataFrame with columns "date" and "power". \
+            If None, average hourly power distribution is not shown. Defaults to None.
     """
     df_session_prices = session_results[["start_time", "z_sch", "z_reg"]].copy()
     df_session_prices["hour"] = df_session_prices["start_time"].dt.hour
@@ -358,14 +374,14 @@ def visualize_simulation_choices(session_results: pd.DataFrame):
     fraction of people that chose scheduled charging.
 
     Args:
-        session_results (pd.DataFrame): output DataFrame of the function get_session_results
+        session_results (pd.DataFrame): output DataFrame of the function get_session_results, or read from a saved csv file.
     """
 
     df_session_choices = session_results[["start_time", "choice"]].copy()
     df_session_choices["hour"] = df_session_choices["start_time"].dt.hour
     df_session_choices = df_session_choices.drop(columns="start_time")
     df_session_choices = (
-        df_session_choices.groupby(["hour"]).value_counts(normalize=True).unstack()
+        df_session_choices.groupby(["hour"]).value_counts(normalize=True).unstack()  # type: ignore
     )
 
     fig = go.Figure()
@@ -392,3 +408,37 @@ def visualize_simulation_choices(session_results: pd.DataFrame):
     )
 
     fig.show()
+
+
+def plot_prices_grid_profit_heatmap(grid_search_results: dict):
+    """
+    Function to plot a heatmap of the profit for each price combination
+
+    Inputs:
+        grid_search_results: dictionary containing the results of the grid search
+    """
+    # Collect the data
+    data = []
+    for z_sch, z_reg in grid_search_results.keys():
+        J = grid_search_results[(z_sch, z_reg)]["J"]
+        data.append([z_sch, z_reg, J])
+
+    # Create a DataFrame with the correct column names
+    df = pd.DataFrame(data, columns=["z_sch", "z_reg", "Cost"])
+
+    # Pivot the data correctly
+    pivot_table = df.pivot(index="z_sch", columns="z_reg", values="Cost")
+
+    # Plotting the heatmap
+    plt.figure(figsize=(5, 4))
+    sns.heatmap(
+        pivot_table,
+        annot=True,
+        fmt=".0f",
+        cmap="YlGnBu",
+        cbar_kws={"label": "Cost"},
+    )
+    plt.title("Profit Heatmap")
+    plt.xlabel("z_reg ($/kWh)")
+    plt.ylabel("z_sch ($/kWh)")
+    plt.show()

@@ -39,7 +39,8 @@ TypeScenario = Literal[
 
 def parse_type_scenario(scenario: TypeScenario) -> tuple[str, str | None]:
     """Parse the scenario string to separate the scenario name and the model_type,
-    if there is a model type
+    if there is a model type. E.g. "peak_forecast_linear" will be parsed to ("peak_forecast", "linear").
+    If there is no model type, the second element of the tuple will be None.
 
     Args:
         scenario (TypeScenario): scenario name
@@ -53,19 +54,23 @@ def parse_type_scenario(scenario: TypeScenario) -> tuple[str, str | None]:
 
 
 def filter_data(
-    data,
-    month,
-    year,
-    scenario: TypeScenario,
+    data: pd.DataFrame,
+    month: int,
+    year: int,
+    set_choices: Literal["all_scheduled", "all_regular", "standard"],
     date_greater_than: Optional[pd.Timestamp] = None,
-):
-    """Helper function to filter the sessions dataframe
+) -> pd.DataFrame:
+    """Helper function to filter the sessions dataframe and keep the relevant ones.
 
     Args:
-        data (pd.DataFrame): dataframe of sessions
-        month (int): month, as an integer. 1 = Jan, 2 = Feb, ...
-        year (int): year
-        scenario (string): if the scenario
+        data (pd.DataFrame): dataframe of sessions. This is for example the file `Sessions3.csv`.
+        month (int): month to keep, as an integer. 1 = Jan, 2 = Feb, ...
+        year (int): year to keep
+        set_choices (string): If the set_choices is "all_scheduled", we change the \
+            choices of all the sessions to "SCHEDULED". If the set_choices is "all_regular", \
+            we change the choice of all sessions to "REGULAR". \
+            If the set_choices is "standard", we keep the historical choices.
+        date_greater_than (pd.Timestamp, optional): start date to filter the sessions by.
 
     Returns:
         test_df (pd.DataFrame): filtered dataframe
@@ -97,18 +102,23 @@ def filter_data(
     )
     test_df = test_df[(end_charge_time.dt.day - start_charge_time.dt.day) == 0]
 
-    if scenario == "all_scheduled":
+    if set_choices == "all_scheduled":
         test_df["choice"] = "SCHEDULED"
-    elif scenario == "all_regular":
+    elif set_choices == "all_regular":
         test_df["choice"] = "REGULAR"
     else:
-        print("INFO: Using historical choices")
+        print(
+            "INFO: Using historical choices. You might want to change the set_choices of this function (filter_data) "
+            "to 'all_scheduled' or 'all_regular' to change the choices of the user. "
+            "WARNING: Historical regular users will have flexibility in their charging requirements ONLY if the "
+            "set_choices is set to 'all_scheduled' in this function."
+        )
 
     return test_df
 
 
 def get_simulator(
-    data,
+    data: pd.DataFrame,
     scenario: TypeScenario,
     var_dim_constant: int = 96,
     delta_t: float = 0.25,
@@ -121,11 +131,7 @@ def get_simulator(
     verbose: bool = False,
     initial_running_peak: float = 0,
 ):
-    """_summary_
-
-    Args:
-        scenario (TypeScenario): _description_
-    """
+    """Get the simulation object based on the scenario name."""
     if initial_running_peak > 0:
         print(f"INFO: Using initial running peak of {initial_running_peak} kW")
         print("---------------- Starting simulation ----------------")
@@ -219,25 +225,34 @@ def get_simulator(
 
 
 def generate_session_results(
-    sim,
-    month,
-    results_file_name,
-    summary_file_name,
-    aggregate_power_profile_file_name,
+    sim: BaselineSimulator,
+    results_file_name: str,
+    summary_file_name: str,
+    aggregate_power_profile_file_name: str,
     verbose=False,
     visualize=False,
 ):
-    """Simulate. Save the simulation in results_file_name and append to summary file located at summary_file_name
+    """Simulate the given sim.
+    Save the simulation in results_file_name and append to summary file located at summary_file_name.
+    Also print summary information and plots of the simulation if verbose is True.
 
     Args:
         sim (BaselineSimulator): simulator
-        month (int): month, as an integer. 1 = Jan, 2 = Feb, ...
         results_file_name (string): filepath to store result dataframe
         summary_file_name (string): filepath of summary dataframe. If summary dataframe doesn't exist, creates a .csv file here.
         aggregate_power_profile_file_name (string): filepath of aggregate_power_profile dataframe. If summary dataframe doesn't exist, creates a .csv file here.
         verbose (bool, optional): If true, prints summary information of the results. Defaults to False.
         visualize (bool, optional): If true, visualizes the results. Defaults to False.
     """
+    # parse the months from the simulation data, and make sure we only have 1 month
+    months = pd.to_datetime(sim.test_df["startChargeTime"]).dt.month.unique()
+    if len(months) > 1:
+        raise ValueError(
+            "You need to run the simulation on a single month."
+            "Please make sure the simulation data only contains 1 month"
+        )
+    month = months[0]
+
     power_profiles, prices, hourly_prices, user_computed_data_for_visualization = (
         sim.simulate()
     )
@@ -344,7 +359,7 @@ def generate_session_results(
 
 
 def compute_prediction_error(
-    aggregate_power_profile, user_computed_data_for_visualization: pd.DataFrame
+    aggregate_power_profile, user_computed_data_for_visualization: dict
 ) -> tuple[Losses, Losses, Losses | None]:
     # turn dictionaries into dataframe for easier manipulation
     df_user_computed_data_for_visualization = pd.DataFrame(
@@ -362,25 +377,25 @@ def compute_prediction_error(
     real_values = real_values.loc[real_values.index.date < real_values.index.date.max()]
     if real_values.empty:
         raise ValueError(
-            "You need to have more than 1 day of data to compute the RMSE of the peak \
-            predictions. Please rerun the simulation with more days."
+            "You need to have more than 1 day of data to compute the RMSE of the peak"
+            "predictions. Please rerun the simulation with more days."
         )
 
-    sch_losses = _compute_one_type_of_prediction_losses(
+    sch_losses = _compute_one_prediction_error(
         "Peak pred (sch)",
         df_user_computed_data_for_visualization,
         real_values,
         last_day,
     )
 
-    reg_losses = _compute_one_type_of_prediction_losses(
+    reg_losses = _compute_one_prediction_error(
         "Peak pred (reg)",
         df_user_computed_data_for_visualization,
         real_values,
         last_day,
     )
 
-    initial_pred_losses = _compute_one_type_of_prediction_losses(
+    initial_pred_losses = _compute_one_prediction_error(
         "Peak initial forecast",
         df_user_computed_data_for_visualization,
         real_values,
@@ -390,14 +405,14 @@ def compute_prediction_error(
     return sch_losses, reg_losses, initial_pred_losses
 
 
-def _compute_one_type_of_prediction_losses(
-    prediction_key: str,
+def _compute_one_prediction_error(
+    prediction_column: str,
     df_user_computed_data_for_visualization: pd.DataFrame,
     real_values,
     last_day: pd.Timestamp,
 ) -> Losses:
 
-    these_peak_predictions = df_user_computed_data_for_visualization[prediction_key]
+    these_peak_predictions = df_user_computed_data_for_visualization[prediction_column]
     if pd.isna(these_peak_predictions).any():
         return None  # type: ignore
 

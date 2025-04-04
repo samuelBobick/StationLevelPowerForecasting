@@ -31,7 +31,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         initial_running_peak: float = 0,
         monte_carlo: bool = False,
         verbose: bool = False,
-        model_type: Literal["linear", "xgboost"] = "xgboost",
+        model_type: Literal["naive", "linear", "xgboost"] = "xgboost",
     ):
         """_summary_"""
         self.model_type = model_type
@@ -112,11 +112,15 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         """Helper fuction to get the peak, assuming the new user chooses scheduled
 
         Args:
-            num_reg_user (int): number of regular users
-            num_sch_user (int): number of scheduled users
-            u (cp.Variable): scheduled power profile
+            num_reg_user (int): UNUSED in timeseries forecast simulator
+            num_sch_user (int): UNUSED in timeseries forecast simulator
+            u (cp.Variable): power profile variable array of the scheduled users. \
+                The 96 first elements are the next scheduled user, and the rest are the \
+                existing scheduled users.
             time (pd.datetime): time of optimization
             row (pd.Series): row from the sessions DataFrame
+            verbose (bool, optional): whether to plot the reconstructed forecast. \
+                Defaults to False.
 
         Returns:
             cp.Expression: current scheduled peak
@@ -148,15 +152,19 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         row,
         verbose=False,
     ) -> cp.Expression:
-        """Helper fuction to get the peak, assuming the new user chooses regular
+        """Helper function to get the peak, assuming the new user chooses regular
 
         Args:
-            num_reg_user (int): number of regular users
-            num_sch_user (int): number of scheduled users
-            u (cp.Variable): scheduled power profile
+            num_reg_user (int): UNUSED in timeseries forecast simulator
+            num_sch_user (int): UNUSED in timeseries forecast simulator
+            u (cp.Variable): power profile variable array of the scheduled users. \
+                The 96 first elements are the next scheduled user, and the rest are the \
+                existing scheduled users.
             time (pd.datetime): time of optimization
-            row (pd.Series): row from the sessions DataFrame
-
+            row (pd.Series): row from the sessions DataFrame, UNUSED in timeseries forecast simulator
+            verbose (bool, optional): whether to plot the reconstructed forecast. \
+                Defaults to False.
+                
         Returns:
             float: current regular peak
         """
@@ -186,33 +194,37 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         self,
         current_row,
         u_prev,
-        prev_start_charge_time,
-        prev_choice,
-        num_active_sessions,
-        current_start_charge_time,
+        prev_start_charge_time: pd.Timestamp,
+        prev_choice: Literal["REGULAR", "SCHEDULED"],
+        num_active_sessions: int,
+        current_start_charge_time: pd.Timestamp,
         verbose=False,
         set_min_to_current_sessions=True,
     ):
-        """Make a forecast for the next self.var_dim_constant timesteps, assuming the new user chooses regular.
+        """
+        Make a forecast for the next self.var_dim_constant timesteps,
+        assuming the new user chooses regular. \n
+        The forecast is saved in self.forecast. This function also saves
+        self.aggregate_future_profile_for_forecast, the power profile used to make
+        the forecast.
 
         Args:
             current_row: row of sessions_df that is currently being optimized
-            u_prev: optimal power profile from the previous optimization.
+            u_prev: optimal power profile of scheduled session, \
+                from the previous optimization.
             prev_start_charge_time: time of previous optimization, aka the start of u_prev
             prev_choice: previous user choice in the simulation, i.e. REGULAR or SCHEDULED
             num_active_sessions (int): number of active sessions
             current_start_charge_time (pd.datetime): time that we round up to get the time of the optimization
             verbose (bool, optional): whether to plot the forecast. Defaults to False.
             set_min_to_current_sessions (bool, optional): whether to set the minimum power to the \
-                power from the current sessions.
+                power from the current sessions \
+                (=clipping the forecast by the naive forecast). \
                 E.g., we want to forecast hour h1, h2, h3 knowing that the sum \
                 of the current sessions for these timesteps is [10, 12, 11]. The forecast \
                 might give a prediction of [9, 13, 15]. If set_min_to_current_sessions is True, \
                 the forecast will be [10, 13, 15] instead (we change the first value to match the current sessions). \
                 This is useful to make the forecast more realistic.
-
-        Returns:
-            prediction of current peak given time, past power profile, and scheduled power_profile
         """
         rounded_current_time = round_up_to_nearest_timestep(
             current_start_charge_time, self.delta_t
