@@ -27,7 +27,7 @@ class ThresholdSimulator(BaselineSimulator):
 
         Args:
             var_dim_constant: 24-hour lookahead. Default is 96 (96 timesteps in a day with 15min data).
-            delta_t: Size, in hour, of a timestep (e.g. 15min interval are 0.25h intervals). Default is 0.25.
+            delta_t: Size, in hour, of a timestep (e.g. 0.25 for 15-minute timesteps). Default is 0.25.
             power_rate: Maximum power in kW of the chargers. Default is 6.6 kW.
             flexibility_constant: Proportion of flexibility to artificially reduce to the energy need of the \
                 regular users, compared to the cumulative energy they used historically. \

@@ -1,8 +1,11 @@
+import numpy as np
 import pandas as pd
 from utils.utils_time_and_indexes import get_timestep_info
 
 
-def get_total_e_need(row, delta_t, flexibility_constant, power_rate):
+def get_total_e_need(
+    row, delta_t: float, flexibility_constant: float, power_rate: float
+) -> float:
     """Returns the total energy need, DIVIDED BY delta_t (in hour, e.g. 0.25)
     This e_need represent more the power needed at each timestep than the
     total energy needed for the session.
@@ -30,16 +33,16 @@ def get_total_e_need(row, delta_t, flexibility_constant, power_rate):
 
 def get_remaining_e_need(
     row, current_time, power_profiles, delta_t, power_rate, flexibility_constant
-):
+) -> float:
     """
     Helper function to calculate the energy demand of a particular session.
-    This e_need represent more the power needed at each timestep than the
-    total energy needed for the session.
+    This e_need is equal to the energy needed in kWh divided by delta_t
+    and represents the power needed at each timestep.
 
         row: row from sessions_df
         current_time: time of optimization as a pd.datetime object
         power_profiles: dictionary mapping dcosIds to power_profiles
-        delta_t: timestep size, in hours
+        delta_t: timestep size, in hours (e.g. 0.25 for 15-minute timesteps).
         power_rate: max power of a single EV charger, in kW
         flexibility_constant: proportion of regular demand that a user would have demanded if they chose scheduled
     """
@@ -74,3 +77,14 @@ def get_remaining_e_need(
                 e_need = N_remain * power_rate
 
     return e_need
+
+
+def get_number_timesteps_for_regular(row, power_rate, delta_t, flexibility_constant):
+    """
+    Helper function to get the number of timesteps needed to charge the EV if the user chose regular
+    """
+    e_need = get_total_e_need(row, delta_t, flexibility_constant, power_rate)
+    N_reg = int(
+        np.round(e_need / power_rate)
+    )  # how many time steps would it take the user to charge if they chose regular?
+    return N_reg
