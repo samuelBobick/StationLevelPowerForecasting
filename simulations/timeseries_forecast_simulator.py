@@ -33,7 +33,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         verbose: bool = False,
         model_type: Literal["naive", "linear", "xgboost"] = "xgboost",
     ):
-        """_summary_"""
+        """Child of ForeacastSimulator"""
         self.model_type = model_type
         if self.model_type == "linear":
             self._model_name = (
@@ -66,6 +66,16 @@ class TimeseriesForecastSimulator(ForecastSimulator):
         self.forecast = np.zeros(self.var_dim_constant)
 
     def plot_reconstructed_timeseries(self, time, reconstructed_timeseries, forecast):
+        """
+        Plot the optimized timeseries against the time series prediciton.
+        The prediction assumes that existing sessions are not re-optimized and that the new user chooses regular,
+            so we often observe that the reconstructed timeseries is less than the original forecast.
+
+        Args:
+            time (pd.datetime): time of current optimization.
+            reconstructed_timeseries (np.array): newly optimized aggregate power profile.
+            forecast (np.array): original forecasted aggregate power profile.
+        """
         time_forecast = pd.date_range(
             start=round_up_to_nearest_timestep(time, self.delta_t),
             periods=len(reconstructed_timeseries),
