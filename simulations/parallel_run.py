@@ -15,8 +15,18 @@ from utils.simulation_utils import (
 warnings.filterwarnings("ignore")
 
 
-# Move this function to the top level so it can be pickled
-def run_simulation(i, month, year, scenario, sessions_df, folder_path, max_retries=2):
+def run_simulation(i, month, year, scenario, sessions_df, folder_path):
+    """
+    Run simulations in parallel.
+
+    Args:
+        i (int): current iteration number.
+        month (int): 1-12, representing the month to simulate.
+        year (int): year to simulate.
+        scenario (TypeScenario): type of simulation to run.
+        sessions_df (pd.DataFrame): dataframe of sessions in the format of sessions3.csv.
+        folder_path (String): path to save the simulation results.
+    """
     run_verbose = False
     final_verbose = False
     filter_date_greater_than: pd.Timestamp | None = None
@@ -28,36 +38,26 @@ def run_simulation(i, month, year, scenario, sessions_df, folder_path, max_retri
     )
     summary_file_name = f"{folder_path}/summary.csv"
 
-    retry_count = 0
-    success = False
-    while not success and retry_count < max_retries:
-        try:
-            test_df = filter_data(
-                sessions_df, month, year, "all_scheduled", filter_date_greater_than
-            )
-            sim = get_simulator(
-                test_df,
-                scenario,
-                verbose=run_verbose,
-                initial_running_peak=initial_running_peak,
-                monte_carlo=True,
-            )
+    test_df = filter_data(
+        sessions_df, month, year, "all_scheduled", filter_date_greater_than
+    )
+    sim = get_simulator(
+        test_df,
+        scenario,
+        verbose=run_verbose,
+        initial_running_peak=initial_running_peak,
+        monte_carlo=True,
+    )
 
-            generate_session_results(
-                sim,
-                month,
-                results_file_name,
-                summary_file_name,
-                aggregate_power_profile_file_name,
-                visualize=final_verbose,
-                verbose=final_verbose,
-            )
-            success = True
-        except Exception as e:
-            print(f"An error occurred: {e}. No retry strategy defined at the moment.")
-
-    if not success:
-        print(f"Maximum retry attempts reached for iteration {i} in month {month}")
+    generate_session_results(
+        sim,
+        month,
+        results_file_name,
+        summary_file_name,
+        aggregate_power_profile_file_name,
+        visualize=final_verbose,
+        verbose=final_verbose,
+    )
 
 
 def main(
@@ -66,6 +66,15 @@ def main(
     year: int,
     num_iterations_of_each_month: int,
 ):
+    """
+    Simulate months in parallel
+
+    Args:
+        scenarios (list[TypeScenario]): list of scenarios to simulate.
+        months (range | list[int]): months to simulate.
+        year (int): year to simulate.
+        num_iterations_of_each_month (int): number of simulations to run per month.
+    """
     for scenario in scenarios:
         sessions_file = Path(__file__).resolve().parents[1] / "data" / "Sessions3.csv"
         sessions_df = pd.read_csv(sessions_file).sort_values(by="startChargeTime")
@@ -98,11 +107,11 @@ def main(
 if __name__ == "__main__":
     main(
         scenarios=[
-            # "standard",
-            # "smooth_dc_penalty",
-            # "timeseries_forecast_naive",
-            # "timeseries_forecast_linear",
-            # "timeseries_forecast_xgboost",
+            "standard",
+            "smooth_dc_penalty",
+            "timeseries_forecast_naive",
+            "timeseries_forecast_linear",
+            "timeseries_forecast_xgboost",
             "threshold",
         ],
         months=range(1, 13),
