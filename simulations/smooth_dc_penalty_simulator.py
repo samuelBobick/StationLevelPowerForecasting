@@ -19,7 +19,7 @@ class SmoothDCPenaltySimulator(BaselineSimulator):
         monte_carlo: bool = False,
         verbose: bool = False,
     ):
-        """_summary_
+        """Child of BaselineSimulator which wraps the demand charge penalty term with the softplus function, softplus(x) = log(1 + e^x).
 
         Args:
             dc_penalty_smoothing (float, optional): smoothing parameter used in the \

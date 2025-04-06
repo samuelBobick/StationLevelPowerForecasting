@@ -67,7 +67,7 @@ class TimeseriesForecastSimulator(ForecastSimulator):
 
     def plot_reconstructed_timeseries(self, time, reconstructed_timeseries, forecast):
         """
-        Plot the optimized timeseries against the time series prediciton.
+        Plot the optimized timeseries against the time series prediction.
         The prediction assumes that existing sessions are not re-optimized and that the new user chooses regular,
             so we often observe that the reconstructed timeseries is less than the original forecast.
 
