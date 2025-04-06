@@ -45,7 +45,7 @@ class PeakForecastSimulator(ForecastSimulator):
                 f"Model type {self.model_type} is not yet supported. Please choose linear."
             )
 
-        """_summary_"""
+        """Child of ForecastSimulator"""
         super().__init__(
             test_df,
             var_dim_constant,
