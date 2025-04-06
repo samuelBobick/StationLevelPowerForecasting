@@ -39,7 +39,10 @@ class ForecastSimulator(BaselineSimulator):
         verbose: bool = False,
         model_type: Literal["naive", "linear", "xgboost"] = "linear",
     ):
-        """_summary_"""
+        """
+        Child class of BaselineSimulator.
+        Parent class of TimeseriesForecastSimulator and PeakForecastSimulator.
+        """
         super().__init__(
             test_df,
             var_dim_constant,
@@ -238,6 +241,15 @@ class ForecastSimulator(BaselineSimulator):
         return reversed_prediction
 
     def smooth_profile(self, profile, window_size: int = 3):
+        """Add a moving average smoother to profile.
+
+        Args:
+            profile (np.array): power profile
+            window_size (int, optional): Size of moving average smoother. Defaults to 3.
+
+        Returns:
+            np.array: smoothed power profile
+        """
         kernel = np.ones(window_size) / window_size
 
         smoothed_profile = cp.convolve(kernel, profile)
@@ -259,6 +271,13 @@ class ForecastSimulator(BaselineSimulator):
         sample: np.ndarray,
         prediction: Optional[np.ndarray] = None,
     ):
+        """Visualize a line plot of optimized active power profiles, the prediction (either a point for peak forecasting or a time series for time series forecasting)
+
+        Args:
+            time (pd.Timestamp): time of current optimization
+            sample (np.ndarray): features used to generate the prediction.
+            prediction (Optional[np.ndarray], optional): Prediction (either a point or time series). Defaults to None.
+        """
         power_indexes = []
         u_indexes = []
         other_indexes = []
