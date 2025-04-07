@@ -227,7 +227,7 @@ def get_sub_df(
 def aggregate_u_scheduled_profiles(
     u: cp.Variable | cp.Expression, var_dim_constant: int
 ) -> cp.Expression:
-    """Aggregate the power profiles of all scheduled users"""
+    """Aggregate the power profiles of all scheduled users."""
     # order=C is crucial here to do the correct reshaping, see documentation of cp.reshape
     # initial shape of u: (self.var_dim_constant * (num_sch_user), 1),
     # with num_sch_user the number of scheduled users including the current one
@@ -243,6 +243,17 @@ def get_aggregate_active_reg_future_profiles(
     power_profiles: dict,
     delta_t: float,
 ) -> np.ndarray:
+    """Aggregates all existing REGULAR power profiles.
+
+    Args:
+        test_df (pd.DataFrame): the pandas DataFrame used in the simulation
+        current_time (pd.Timestamp): time of current optimization
+        power_profiles (dict): dictionary mapping dcosIds to power profiles
+        delta_t (float): timestep size, in hours (e.g. 0.25 for 15-minute timesteps).
+
+    Returns:
+        np.ndarray: aggregate power profile of all existing REGULAR profiles.
+    """
     sub_df_without_last = get_sub_df(test_df, current_time, delta_t)[:-1]
     output = np.zeros(96)
 
@@ -260,7 +271,21 @@ def get_aggregate_active_reg_future_profiles(
     return output
 
 
-def get_next_reg_profile(row, delta_t, flexibility_constant, power_rate):
+def get_next_reg_profile(
+    row: pd.Series, delta_t: float, flexibility_constant: float, power_rate: float
+):
+    """
+    Get the power profile or the session contained in row, assuming that user chooses REGULAR
+
+    Args:
+        row (pd.Series): row of test_df
+        delta_t (float): timestep size, in hours (e.g. 0.25 for 15-minute timesteps).
+        flexibility_constant (float): tproportion of regular demand that a user would have demanded if they chose scheduled
+        power_rate (float): max power of a single EV charger, in kW.
+
+    Returns:
+        np.ndarray: the session contained in row, assuming that user chooses REGULAR
+    """
     N_reg = get_number_timesteps_for_regular(
         row, power_rate, delta_t, flexibility_constant
     )
