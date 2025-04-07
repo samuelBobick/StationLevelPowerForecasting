@@ -361,6 +361,23 @@ def generate_session_results(
 def compute_prediction_error(
     aggregate_power_profile, user_computed_data_for_visualization: dict
 ) -> tuple[Losses, Losses, Losses | None]:
+    """
+    Computes error of peak predictions for each optimization.
+    This function is run after the simulation for logging in summary.csv.
+
+    Args:
+        aggregate_power_profile (pd.DataFrame): DataFrame with the columns 'date' and 'power' containing the aggregate load at the station.
+        user_computed_data_for_visualization (pd.DataFrame): Cached data from simulation.
+
+    Raises:
+        ValueError: Error is thrown if the simulation length is less than one full day
+
+    Returns:
+        tuple[Losses, Losses, Losses | None]:
+            (peak prediction | m = SCHEDULED,
+            peak prediction | m = REGULAR,
+            initial peak foreacast: assumes m = REGULAR and existing SCHEDULED sessions cannot be reoptimized)
+    """
     # turn dictionaries into dataframe for easier manipulation
     df_user_computed_data_for_visualization = pd.DataFrame(
         user_computed_data_for_visualization
@@ -411,6 +428,17 @@ def _compute_one_prediction_error(
     real_values,
     last_day: pd.Timestamp,
 ) -> Losses:
+    """Computes one type of prediction error
+
+    Args:
+        prediction_column (str): either "Peak pred (sch)", "Peak pred (reg)", or "Peak initial foreacst"
+        df_user_computed_data_for_visualization (pd.DataFrame): cached data from simulation
+        real_values (pd.Series): ground truth peak values
+        last_day (pd.Timestamp): last day of the simulation
+
+    Returns:
+        Losses: Losses object (see time_series_formulation/src/slrp_ev_ts_forecasting/compute_losses.py)
+    """
 
     these_peak_predictions = df_user_computed_data_for_visualization[prediction_column]
     if pd.isna(these_peak_predictions).any():
