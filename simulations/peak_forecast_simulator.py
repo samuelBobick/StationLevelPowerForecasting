@@ -45,7 +45,7 @@ class PeakForecastSimulator(ForecastSimulator):
                 f"Model type {self.model_type} is not yet supported. Please choose linear."
             )
 
-        """_summary_"""
+        """Child of ForecastSimulator"""
         super().__init__(
             test_df,
             var_dim_constant,
@@ -81,8 +81,11 @@ class PeakForecastSimulator(ForecastSimulator):
         Args:
             num_reg_user (int): number of regular users
             num_sch_user (int): number of scheduled users
-            u (cp.Variable): scheduled power profile
+            u (cp.Variable): power profile variable array of the scheduled users. \
+                The 96 first elements are the next scheduled user, and the rest are the \
+                existing scheduled users.
             time (pd.datetime): time of optimization
+            row: UNUSED in peak forecast simulator
 
         Returns:
             cp.Expression: current scheduled peak
@@ -123,7 +126,9 @@ class PeakForecastSimulator(ForecastSimulator):
         Args:
             num_reg_user (int): number of regular users
             num_sch_user (int): number of scheduled users
-            u (cp.Variable): scheduled power profile
+            u (cp.Variable): power profile variable array of the scheduled users. \
+                The 96 first elements are the next scheduled user, and the rest are the \
+                existing scheduled users.
             time (pd.datetime): time of optimization
 
         Returns:

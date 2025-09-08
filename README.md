@@ -1,0 +1,1 @@
+To find the files to run, you can search for the files that have `if __name__ == "__main__":`
