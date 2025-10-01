@@ -27,7 +27,7 @@ Data used for this project is collected from SLRP-EV, a human-in-the-loop EV cha
 
 Teng Zeng, Sangjae Bae, Bertrand Travacca, and Scott J. Moura. "Inducing human behavior to maximize operation performance at PEV charging station." *IEEE Transactions on Smart Grid*, vol. 12, no. 4, pp. 3353–3363, IEEE, 2021. https://doi.org/10.1109/TSG.2021.3067072
 
-Hassan Obeid, Ayşe Tuğba Öztürk, Wente Zeng, and Scott J. Moura. "Learning and optimizing charging behavior at PEV charging stations: Randomized pricing experiments, and joint power and price optimization." *Applied Energy*, vol. 351, 121862, Elsevier, 2023. https://doi.org/10.1016/j.apenergy.2023.121862 Ayşe Tuğba Öztürk, Hassan Obeid, Teng Zeng, Wente Zeng, and Scott J. Moura. "Joint price and power optimization experiment for workplace charging stations." *Sustainable Cities and Society*, 106784, Elsevier, 2025. https://doi.org/10.1016/j.scs.2025.106784.
+Hassan Obeid, Ayşe Tuğba Öztürk, Wente Zeng, and Scott J. Moura. "Learning and optimizing charging behavior at PEV charging stations: Randomized pricing experiments, and joint power and price optimization." *Applied Energy*, vol. 351, 121862, Elsevier, 2023. https://doi.org/10.1016/j.apenergy.2023.121862
 
 Ayşe Tuğba Öztürk, Hassan Obeid, Teng Zeng, Wente Zeng, and Scott J. Moura. "Joint price and power optimization experiment for workplace charging stations." *Sustainable Cities and Society*, 106784, Elsevier, 2025. https://doi.org/10.1016/j.scs.2025.106784.
 
