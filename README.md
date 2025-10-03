@@ -2,7 +2,7 @@
 
 ## Setup
 
-- To install the necessary packages, navigate to `time_series_formulation` and run `pip install -e .`.
+- To install the necessary packages, navigate to `time_series_formulation` and `data`, and run `pip install -e .`.
 - For dataset access, email ecal@berkeley.edu.
 - `simulations/general_simulator.ipynb` contains infrastructure to test each optimizer with a Monte Carlo simulation and is a good starting point for understanding the codebase.
 ## Code 
